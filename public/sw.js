@@ -1,4 +1,4 @@
-const CACHE_NAME = "actn-admin-v15"
+const CACHE_NAME = "actn-admin-v16"
 const STATIC_ASSETS = [
   "/manifest.webmanifest",
   "/actn-admin-icon.png",

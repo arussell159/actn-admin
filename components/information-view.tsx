@@ -24,8 +24,6 @@ import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardTitle,
 } from "@/components/ui/card"
 import {
   DropdownMenu,
@@ -723,6 +721,41 @@ export function InformationView() {
     return () => window.removeEventListener(informationUpdatedEvent, refresh)
   }, [])
 
+  const noteHeaderTitle = activeNode ? (
+    editingTitle ? (
+      <Input
+        value={titleDraft}
+        onChange={(event) => setTitleDraft(event.target.value)}
+        onBlur={saveTitle}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            saveTitle()
+          }
+
+          if (event.key === "Escape") {
+            setTitleDraft(activeNode.title)
+            setEditingTitle(false)
+          }
+        }}
+        className="h-8 max-w-[min(18rem,65vw)] px-2 text-center text-base font-semibold md:max-w-md md:text-left"
+        autoFocus
+      />
+    ) : (
+      <button
+        type="button"
+        className="min-w-0 max-w-[min(18rem,65vw)] truncate rounded-md px-1 text-center hover:bg-muted md:max-w-md md:text-left"
+        onClick={() => {
+          setTitleDraft(activeNode.title)
+          setEditingTitle(true)
+        }}
+      >
+        {activeNode.title}
+      </button>
+    )
+  ) : (
+    "Notebook"
+  )
+
   return (
     <SidebarProvider
       style={
@@ -735,18 +768,13 @@ export function InformationView() {
       <AppSidebar variant="inset" />
       <SidebarInset>
         <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
-          <SiteHeader title="Notebook" />
+          <SiteHeader title="Notebook" titleContent={noteHeaderTitle} />
           <div className="flex flex-1 px-0 py-0 sm:px-4 sm:py-4 lg:px-6">
             <Card className="min-h-0 flex-1 rounded-none bg-transparent py-0 shadow-none ring-0 sm:rounded-lg sm:bg-card sm:shadow-sm sm:ring-1">
               <CardContent className="grid min-h-[calc(100svh-8rem)] gap-0 p-0 lg:grid-cols-[20rem_minmax(0,1fr)]">
                 <aside className="hidden border-b p-5 lg:block lg:border-r lg:border-b-0">
                   <div className="mb-4 flex items-center justify-between gap-3">
-                    <div>
-                      <CardTitle>Notebook</CardTitle>
-                      <CardDescription>
-                        Folders and notes for misc information.
-                      </CardDescription>
-                    </div>
+                    <span aria-hidden="true" />
                     <DropdownMenu>
                       <DropdownMenuTrigger
                         render={
@@ -865,53 +893,6 @@ export function InformationView() {
                     </div>
                   </div>
 
-                  <div className="flex flex-col gap-2 px-3 py-3 sm:mb-4 sm:px-0 sm:py-0 md:flex-row md:items-center md:justify-between">
-                    <CardTitle className="flex min-w-0 items-center gap-2">
-                      {activeNode?.type === "folder" ? (
-                        <FolderIcon className="size-5 shrink-0" />
-                      ) : (
-                        <FileTextIcon className="size-5 shrink-0" />
-                      )}
-                      {activeNode ? (
-                        editingTitle ? (
-                          <Input
-                            value={titleDraft}
-                            onChange={(event) =>
-                              setTitleDraft(event.target.value)
-                            }
-                            onBlur={saveTitle}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") {
-                                saveTitle()
-                              }
-
-                              if (event.key === "Escape") {
-                                setTitleDraft(activeNode.title)
-                                setEditingTitle(false)
-                              }
-                            }}
-                            className="h-9 max-w-md text-base font-semibold"
-                            autoFocus
-                          />
-                        ) : (
-                          <button
-                            type="button"
-                            className="min-w-0 rounded-md px-1 text-left hover:bg-muted"
-                            onClick={() => {
-                              setTitleDraft(activeNode.title)
-                              setEditingTitle(true)
-                            }}
-                          >
-                            <span className="block truncate">
-                              {activeNode.title}
-                            </span>
-                          </button>
-                        )
-                      ) : (
-                        "Notebook"
-                      )}
-                    </CardTitle>
-                  </div>
                   {activeNode?.type === "note" ? (
                     <div className="overflow-hidden bg-background sm:rounded-lg sm:border">
                       <SimpleEditor

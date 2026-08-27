@@ -10,7 +10,6 @@ import { SiteHeader } from "@/components/site-header"
 import { Button } from "@/components/ui/button"
 import {
   Card,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
@@ -102,10 +101,7 @@ export function PreviousMonthEndsView() {
         <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
           <SiteHeader title="Previous Months" />
           <div className="grid gap-4 px-4 py-4 lg:px-6">
-            <section className="flex items-center justify-between gap-3">
-              <div>
-                <h1 className="text-2xl font-semibold">Month End</h1>
-              </div>
+            <section className="flex justify-end">
               <Button className="w-fit" render={<AppLink href="/month-end/new" />}>
                   <PlusIcon />
                   New Month End
@@ -122,93 +118,83 @@ export function PreviousMonthEndsView() {
                 </CardHeader>
               </Card>
             ) : records.length ? (
-              <Card className="rounded-lg shadow-sm">
-                <CardHeader>
-                  <CardTitle>Previous Months</CardTitle>
-                  <CardDescription>
-                    Closed month-end records by period.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Table containerClassName="rounded-lg border bg-background">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Completion Date</TableHead>
-                        <TableHead>Last Updated</TableHead>
-                        <TableHead aria-label="Actions" />
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {records.map((monthEnd) => (
-                        <TableRow key={monthEnd.period}>
-                          <TableCell className="font-medium">
-                            <AppLink
-                              href={`/previous-month-ends/view?period=${monthEnd.period}`}
-                              className="block"
+              <Table containerClassName="rounded-lg border bg-background">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Completion Date</TableHead>
+                    <TableHead>Last Updated</TableHead>
+                    <TableHead aria-label="Actions" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {records.map((monthEnd) => (
+                    <TableRow key={monthEnd.period}>
+                      <TableCell className="font-medium">
+                        <AppLink
+                          href={`/previous-month-ends/view?period=${monthEnd.period}`}
+                          className="block"
+                        >
+                          {getMonthEndTitle(monthEnd)}
+                        </AppLink>
+                      </TableCell>
+                      <TableCell>
+                        <AppLink
+                          href={`/previous-month-ends/view?period=${monthEnd.period}`}
+                          className="block"
+                        >
+                          {formatDateTime(monthEnd.completedAt)}
+                        </AppLink>
+                      </TableCell>
+                      <TableCell>
+                        <AppLink
+                          href={`/previous-month-ends/view?period=${monthEnd.period}`}
+                          className="block"
+                        >
+                          {formatDateTime(monthEnd.updatedAt)}
+                        </AppLink>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            render={
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                aria-label={`Actions for ${getMonthEndTitle(monthEnd)}`}
+                              />
+                            }
+                          >
+                            <MoreHorizontalIcon />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                            align="end"
+                            className="min-w-40"
+                          >
+                            <DropdownMenuItem
+                              onClick={() =>
+                                router.push(
+                                  `/previous-month-ends/view?period=${encodeURIComponent(monthEnd.period)}`
+                                )
+                              }
                             >
-                              {getMonthEndTitle(monthEnd)}
-                            </AppLink>
-                          </TableCell>
-                          <TableCell>
-                            <AppLink
-                              href={`/previous-month-ends/view?period=${monthEnd.period}`}
-                              className="block"
+                              <EditIcon />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onClick={() => deleteRecord(monthEnd.period)}
                             >
-                              {formatDateTime(monthEnd.completedAt)}
-                            </AppLink>
-                          </TableCell>
-                          <TableCell>
-                            <AppLink
-                              href={`/previous-month-ends/view?period=${monthEnd.period}`}
-                              className="block"
-                            >
-                              {formatDateTime(monthEnd.updatedAt)}
-                            </AppLink>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger
-                                render={
-                                  <Button
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    aria-label={`Actions for ${getMonthEndTitle(monthEnd)}`}
-                                  />
-                                }
-                              >
-                                <MoreHorizontalIcon />
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent
-                                align="end"
-                                className="min-w-40"
-                              >
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    router.push(
-                                      `/previous-month-ends/view?period=${encodeURIComponent(monthEnd.period)}`
-                                    )
-                                  }
-                                >
-                                  <EditIcon />
-                                  Edit
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  variant="destructive"
-                                  onClick={() => deleteRecord(monthEnd.period)}
-                                >
-                                  <Trash2Icon />
-                                  Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
+                              <Trash2Icon />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             ) : (
               <Card className="rounded-lg shadow-sm">
                 <CardHeader>

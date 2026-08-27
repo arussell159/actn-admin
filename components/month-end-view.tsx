@@ -611,24 +611,24 @@ export function MonthEndView({ period }: { period?: string } = {}) {
       <AppSidebar variant="inset" />
       <SidebarInset>
         <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
-          <SiteHeader title="Dashboard" />
+          <SiteHeader
+            title={record ? getMonthEndTitle(record) : "Current Month End"}
+          />
           <div className="@container/month-end flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
             <section className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="flex min-w-0 items-center gap-3">
-                {shouldShowPreviousBackButton ? (
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    aria-label="Back to previous months"
-                    render={<AppLink href="/previous-month-ends" />}
-                  >
-                    <ArrowLeftIcon />
-                  </Button>
-                ) : null}
-                <h1 className="text-2xl font-semibold">
-                  {record ? getMonthEndTitle(record) : "Current Month End"}
-                </h1>
-              </div>
+              {shouldShowPreviousBackButton ? (
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  className="w-fit"
+                  aria-label="Back to previous months"
+                  render={<AppLink href="/previous-month-ends" />}
+                >
+                  <ArrowLeftIcon />
+                </Button>
+              ) : (
+                <span className="hidden md:block" aria-hidden="true" />
+              )}
               {isClosed ? (
                 <Button
                   variant="outline"
