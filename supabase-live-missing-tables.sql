@@ -38,6 +38,134 @@ to authenticated
 using (true)
 with check (true);
 
+create table if not exists public.month_end_master_records (
+  id text primary key,
+  month_end_id text not null references public.month_end_records(id) on delete cascade,
+  period text not null,
+  country_id text not null,
+  country_name text not null,
+  sales_order_number text not null default '',
+  bill_of_lading_number text not null default '',
+  ctn_number text not null default '',
+  status text not null default '',
+  amount numeric not null default 0,
+  source_class text not null default '',
+  source_internal_id text not null default '',
+  source_row_index integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+alter table public.month_end_master_records
+add column if not exists amount numeric not null default 0;
+
+create index if not exists month_end_master_records_month_country_idx
+on public.month_end_master_records(month_end_id, country_id);
+
+create index if not exists month_end_master_records_period_idx
+on public.month_end_master_records(period);
+
+alter table public.month_end_master_records enable row level security;
+
+drop policy if exists "Allow public month-end master record reads" on public.month_end_master_records;
+drop policy if exists "Allow public month-end master record inserts" on public.month_end_master_records;
+drop policy if exists "Allow public month-end master record updates" on public.month_end_master_records;
+drop policy if exists "Allow public month-end master record deletes" on public.month_end_master_records;
+drop policy if exists "Allow authenticated month-end master record access" on public.month_end_master_records;
+
+create policy "Allow public month-end master record reads"
+on public.month_end_master_records
+for select
+to anon
+using (true);
+
+create policy "Allow public month-end master record inserts"
+on public.month_end_master_records
+for insert
+to anon
+with check (true);
+
+create policy "Allow public month-end master record updates"
+on public.month_end_master_records
+for update
+to anon
+using (true)
+with check (true);
+
+create policy "Allow public month-end master record deletes"
+on public.month_end_master_records
+for delete
+to anon
+using (true);
+
+create policy "Allow authenticated month-end master record access"
+on public.month_end_master_records
+for all
+to authenticated
+using (true)
+with check (true);
+
+create table if not exists public.month_end_country_report_records (
+  id text primary key,
+  month_end_id text not null references public.month_end_records(id) on delete cascade,
+  period text not null,
+  country_id text not null,
+  country_name text not null,
+  invoice_number text not null default '',
+  ctn_number text not null default '',
+  bill_of_lading_number text not null default '',
+  reference text not null default '',
+  amount numeric not null default 0,
+  source_row_count integer not null default 1,
+  parser_key text not null default '',
+  created_at timestamptz not null default now()
+);
+
+alter table public.month_end_country_report_records
+add column if not exists bill_of_lading_number text not null default '';
+
+create index if not exists month_end_country_report_records_month_country_idx
+on public.month_end_country_report_records(month_end_id, country_id);
+
+alter table public.month_end_country_report_records enable row level security;
+
+drop policy if exists "Allow public month-end country report record reads" on public.month_end_country_report_records;
+drop policy if exists "Allow public month-end country report record inserts" on public.month_end_country_report_records;
+drop policy if exists "Allow public month-end country report record updates" on public.month_end_country_report_records;
+drop policy if exists "Allow public month-end country report record deletes" on public.month_end_country_report_records;
+drop policy if exists "Allow authenticated month-end country report record access" on public.month_end_country_report_records;
+
+create policy "Allow public month-end country report record reads"
+on public.month_end_country_report_records
+for select
+to anon
+using (true);
+
+create policy "Allow public month-end country report record inserts"
+on public.month_end_country_report_records
+for insert
+to anon
+with check (true);
+
+create policy "Allow public month-end country report record updates"
+on public.month_end_country_report_records
+for update
+to anon
+using (true)
+with check (true);
+
+create policy "Allow public month-end country report record deletes"
+on public.month_end_country_report_records
+for delete
+to anon
+using (true);
+
+create policy "Allow authenticated month-end country report record access"
+on public.month_end_country_report_records
+for all
+to authenticated
+using (true)
+with check (true);
+
 create table if not exists public.quote_items (
   internal_id text primary key,
   name text not null,

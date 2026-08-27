@@ -105,6 +105,10 @@ const defaultDockHrefs = [
 
 type ModuleItem = (typeof allModuleItems)[number]
 
+function subscribeToClientMount() {
+  return () => {}
+}
+
 function isActivePath(pathname: string, matches: string[]) {
   return matches.some((match) =>
     match === "/" || match === "/month-end"
@@ -193,7 +197,12 @@ export function MobileTabBar() {
     isActivePath(pathname, item.match)
   )
   const activeIndicatorIndex = activeDockIndex >= 0 ? activeDockIndex : 4
-  const portalTarget = typeof document === "undefined" ? null : document.body
+  const isMounted = React.useSyncExternalStore(
+    subscribeToClientMount,
+    () => true,
+    () => false
+  )
+  const portalTarget = isMounted ? document.body : null
 
   React.useEffect(() => {
     let isMounted = true
@@ -399,30 +408,30 @@ export function MobileTabBar() {
                   <h2 className="font-semibold">More</h2>
                   <div className="overflow-hidden rounded-xl border bg-background">
                     {moreItems.map((item, index) => {
-                  const Icon = item.icon
+                      const Icon = item.icon
                       const canAddToDock = dockHrefs.length < maxDockItems
 
-                  return (
-                    <React.Fragment key={item.href}>
-                      {index > 0 ? <Separator /> : null}
-                      <div className="flex min-h-14 items-center gap-3 rounded-xl px-3">
-                        <Icon className="size-5 shrink-0 text-muted-foreground" />
-                        <span className="min-w-0 flex-1 font-medium">
-                          {item.label}
-                        </span>
-                        <button
-                          type="button"
+                      return (
+                        <React.Fragment key={item.href}>
+                          {index > 0 ? <Separator /> : null}
+                          <div className="flex min-h-14 items-center gap-3 rounded-xl px-3">
+                            <Icon className="size-5 shrink-0 text-muted-foreground" />
+                            <span className="min-w-0 flex-1 font-medium">
+                              {item.label}
+                            </span>
+                            <button
+                              type="button"
                               className="grid size-9 place-items-center rounded-full text-primary disabled:text-muted-foreground"
-                          disabled={!canAddToDock}
-                          onClick={() => toggleDockItem(item.href)}
+                              disabled={!canAddToDock}
+                              onClick={() => toggleDockItem(item.href)}
                               aria-label={`Move ${item.label} to Dock`}
-                        >
+                            >
                               <PlusIcon className="size-5" />
-                        </button>
-                      </div>
-                    </React.Fragment>
-                  )
-                })}
+                            </button>
+                          </div>
+                        </React.Fragment>
+                      )
+                    })}
                   </div>
                 </section>
               </div>

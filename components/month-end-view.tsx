@@ -54,6 +54,7 @@ import {
   type MonthEndValue,
   type MonthEndRecord,
 } from "@/lib/month-end-db"
+import { getCanonicalCountryId } from "@/lib/month-end-master-records"
 import {
   getMonthEndTemplate,
   loadMonthEndTemplate,
@@ -77,6 +78,14 @@ function taskKey(scope: string, taskId: string) {
 
 function noteKey(rowId: string) {
   return `${rowId}__note`
+}
+
+function countryRecordHref(period: string, countryId: string) {
+  const canonicalCountryId = getCanonicalCountryId(countryId)
+
+  return `/month-end/country?period=${encodeURIComponent(
+    period
+  )}&country=${encodeURIComponent(canonicalCountryId)}`
 }
 
 function asBool(value: unknown) {
@@ -440,6 +449,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
   ).length
   const isClosed = record?.status === "Closed"
   const shouldShowPreviousBackButton = Boolean(period && isClosed)
+  const activePeriod = record?.period ?? period ?? ""
 
   function updateTask(key: string, value: boolean) {
     setChecked((current) => ({ ...current, [key]: value }))
@@ -877,7 +887,16 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                   paddingLeft: `${row.indent * 1}rem`,
                                 }}
                               >
-                                <div className="truncate">{row.name}</div>
+                                {isParentRow ? (
+                                  <div className="truncate">{row.name}</div>
+                                ) : (
+                                  <AppLink
+                                    href={countryRecordHref(activePeriod, row.id)}
+                                    className="block truncate underline-offset-4 hover:underline"
+                                  >
+                                    {row.name}
+                                  </AppLink>
+                                )}
                                 {!isParentRow ? (
                                   <div className="mt-1 text-xs text-muted-foreground">
                                     {doneCount}/{requiredTasks.length} complete
@@ -1105,14 +1124,26 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                     : "whitespace-nowrap pr-8 font-medium"
                                 }
                               >
-                                <span
-                                  className="block"
-                                  style={{
-                                    marginLeft: `${row.indent * 1.75}rem`,
-                                  }}
-                                >
-                                  {row.name}
-                                </span>
+                                {isParentRow ? (
+                                  <span
+                                    className="block"
+                                    style={{
+                                      marginLeft: `${row.indent * 1.75}rem`,
+                                    }}
+                                  >
+                                    {row.name}
+                                  </span>
+                                ) : (
+                                  <AppLink
+                                    href={countryRecordHref(activePeriod, row.id)}
+                                    className="block underline-offset-4 hover:underline"
+                                    style={{
+                                      marginLeft: `${row.indent * 1.75}rem`,
+                                    }}
+                                  >
+                                    {row.name}
+                                  </AppLink>
+                                )}
                               </TableCell>
                               <TableCell className="pl-4 text-muted-foreground">
                                 {isEditingNote ? (

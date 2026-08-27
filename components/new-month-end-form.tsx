@@ -30,6 +30,12 @@ import {
   type MonthEndRecord,
   type MonthEndValue,
 } from "@/lib/month-end-db"
+import { parseCsv } from "@/lib/csv"
+import {
+  isMasterCsv,
+  parseMonthEndMasterCsv,
+  saveMonthEndMasterRecords,
+} from "@/lib/month-end-master-records"
 import {
   getMonthEndTemplate,
   type TemplateCountryRow,
@@ -78,58 +84,6 @@ function suggestedPeriod(existingRecords: MonthEndRecord[]) {
 
 function normalizeMatch(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "")
-}
-
-function parseCsv(text: string) {
-  const rows: string[][] = []
-  let field = ""
-  let row: string[] = []
-  let inQuotes = false
-
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index]
-    const nextChar = text[index + 1]
-
-    if (char === '"' && inQuotes && nextChar === '"') {
-      field += '"'
-      index += 1
-      continue
-    }
-
-    if (char === '"') {
-      inQuotes = !inQuotes
-      continue
-    }
-
-    if (char === "," && !inQuotes) {
-      row.push(field)
-      field = ""
-      continue
-    }
-
-    if ((char === "\n" || char === "\r") && !inQuotes) {
-      if (char === "\r" && nextChar === "\n") {
-        index += 1
-      }
-
-      row.push(field)
-      if (row.some((cell) => cell.trim())) {
-        rows.push(row)
-      }
-      row = []
-      field = ""
-      continue
-    }
-
-    field += char
-  }
-
-  row.push(field)
-  if (row.some((cell) => cell.trim())) {
-    rows.push(row)
-  }
-
-  return rows
 }
 
 function parseExchangeRates(csvText: string, countries: TemplateCountryRow[]) {
@@ -230,19 +184,28 @@ export function NewMonthEndForm({
   )
   const [month, setMonth] = React.useState(defaults.month)
   const [year, setYear] = React.useState(defaults.year)
-  const [csvFileName, setCsvFileName] = React.useState("")
-  const [csvText, setCsvText] = React.useState("")
+  const [uploadedFiles, setUploadedFiles] = React.useState<
+    { name: string; text: string }[]
+  >([])
   const [createError, setCreateError] = React.useState("")
   const period = `${year}-${month}`
 
-  async function attachCsv(file?: File) {
-    if (!file) {
+  async function attachCsv(files?: FileList | File[]) {
+    const fileList = Array.from(files ?? [])
+
+    if (!fileList.length) {
       return
     }
 
     setCreateError("")
-    setCsvFileName(file.name)
-    setCsvText(await file.text())
+    const nextFiles = await Promise.all(
+      fileList.map(async (file) => ({
+        name: file.name,
+        text: await file.text(),
+      }))
+    )
+
+    setUploadedFiles(nextFiles)
   }
 
   async function createMonthEnd() {
@@ -256,8 +219,10 @@ export function NewMonthEndForm({
       }
 
       const template = await getMonthEndTemplate()
-      const parsedRates = csvText
-        ? parseExchangeRates(csvText, template.countries)
+      const masterFile = uploadedFiles.find((file) => isMasterCsv(file.text))
+      const exchangeFile = uploadedFiles.find((file) => !isMasterCsv(file.text))
+      const parsedRates = exchangeFile
+        ? parseExchangeRates(exchangeFile.text, template.countries)
         : []
       const checked = parsedRates.reduce<Record<string, MonthEndValue>>(
         (nextChecked, item) => {
@@ -278,6 +243,16 @@ export function NewMonthEndForm({
       }
 
       await saveMonthEndRecord(record)
+      if (masterFile) {
+        const masterRecords = parseMonthEndMasterCsv({
+          csvText: masterFile.text,
+          countries: template.countries,
+          monthEndId: record.id,
+          period: record.period,
+        })
+
+        await saveMonthEndMasterRecords(record.id, masterRecords)
+      }
       window.dispatchEvent(new Event("month-end:records-updated"))
       onCreated(record)
     } catch (error) {
@@ -350,21 +325,24 @@ export function NewMonthEndForm({
           onDragOver={(event) => event.preventDefault()}
           onDrop={(event) => {
             event.preventDefault()
-            attachCsv(event.dataTransfer.files[0])
+            attachCsv(event.dataTransfer.files)
           }}
         >
           <UploadIcon className="size-6 text-muted-foreground" />
           <span className="font-medium">
-            Drag and drop the prepaid exchange rate CSV
+            Drag and drop the exchange rate and master CSV files
           </span>
           <span className="text-sm text-muted-foreground">
-            {csvFileName || "or click to choose a file"}
+            {uploadedFiles.length
+              ? `${uploadedFiles.length} file${uploadedFiles.length === 1 ? "" : "s"} ready`
+              : "or click to choose files"}
           </span>
           <input
             type="file"
             accept=".csv,text/csv"
+            multiple
             className="sr-only"
-            onChange={(event) => attachCsv(event.target.files?.[0])}
+            onChange={(event) => attachCsv(event.target.files ?? undefined)}
           />
         </label>
         {createError ? (

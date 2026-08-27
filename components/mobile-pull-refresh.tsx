@@ -7,11 +7,24 @@ import { createPortal } from "react-dom"
 import { useMobilePullRefresh } from "@/hooks/use-mobile-pull-refresh"
 import { cn } from "@/lib/utils"
 
+function subscribeToClientMount() {
+  return () => {}
+}
+
 export function MobilePullRefresh() {
   const { isRefreshing, pullDistance, progress } = useMobilePullRefresh()
-  const portalTarget = typeof document === "undefined" ? null : document.body
+  const isMounted = React.useSyncExternalStore(
+    subscribeToClientMount,
+    () => true,
+    () => false
+  )
+  const portalTarget = isMounted ? document.body : null
 
   React.useEffect(() => {
+    if (!portalTarget) {
+      return
+    }
+
     document.documentElement.style.setProperty(
       "--mobile-pull-distance",
       `${pullDistance}px`
@@ -24,7 +37,7 @@ export function MobilePullRefresh() {
     return () => {
       document.documentElement.style.removeProperty("--mobile-pull-distance")
     }
-  }, [isRefreshing, pullDistance])
+  }, [isRefreshing, portalTarget, pullDistance])
 
   if (!portalTarget) {
     return null
