@@ -183,7 +183,7 @@
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior-y: contain;
-    padding-top: env(safe-area-inset-top, 0px);
+    padding-top: 0;
     padding-bottom: 0;
     transform: translateY(var(--mobile-pull-distance, 0px));
     transition: transform 150ms ease-out;
