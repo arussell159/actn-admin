@@ -18,12 +18,12 @@ body {
   font-weight: 400;
   font-style: normal;
   padding: 0;
-  overscroll-behavior-y: none;
+  overscroll-behavior-y: auto;
 }
 
 html,
 body {
-  overscroll-behavior-x: none;
+  overscroll-behavior-x: auto;
 }
 
 html,
@@ -91,8 +91,12 @@ body,
 
 @media screen and (max-width: 767px) {
   .simple-editor-wrapper {
-    min-height: calc(100svh - 14rem);
-    height: calc(100svh - 14rem);
+    min-height: calc(100svh - 7.5rem);
+    height: calc(100svh - 7.5rem);
+  }
+
+  .simple-editor-content {
+    max-width: none;
   }
 }
 
@@ -105,6 +109,6 @@ body,
   }
 
   .simple-editor-content .tiptap.ProseMirror.simple-editor {
-    padding: 1rem 1.5rem 30vh;
+    padding: 1rem 1rem 30vh;
   }
 }

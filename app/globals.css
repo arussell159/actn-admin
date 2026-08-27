@@ -127,6 +127,7 @@
     width: 100%;
     min-width: 0;
     margin: 0;
+    overscroll-behavior-y: auto;
     scrollbar-width: none;
     -ms-overflow-style: none;
     -webkit-text-size-adjust: 100%;
@@ -148,5 +149,12 @@
   }
   html {
     @apply font-sans;
+  }
+}
+
+@media (max-width: 767px) {
+  body,
+  body * {
+    font-size: max(16px, 1em);
   }
 }

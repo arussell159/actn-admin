@@ -734,7 +734,7 @@ export function InformationView() {
       <SidebarInset>
         <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
           <SiteHeader title="Notebook" />
-          <div className="flex flex-1 px-3 py-3 sm:px-4 sm:py-4 lg:px-6">
+          <div className="flex flex-1 px-0 py-0 sm:px-4 sm:py-4 lg:px-6">
             <Card className="min-h-0 flex-1 rounded-none bg-transparent py-0 shadow-none ring-0 sm:rounded-lg sm:bg-card sm:shadow-sm sm:ring-1">
               <CardContent className="grid min-h-[calc(100svh-8rem)] gap-0 p-0 lg:grid-cols-[20rem_minmax(0,1fr)]">
                 <aside className="hidden border-b p-5 lg:block lg:border-r lg:border-b-0">
@@ -796,7 +796,7 @@ export function InformationView() {
                 </aside>
 
                 <section className="min-w-0 p-0 sm:p-5">
-                  <div className="sticky top-0 z-10 mb-3 border-b bg-background/95 py-2 backdrop-blur sm:-mx-5 sm:px-5 lg:hidden">
+                  <div className="sticky top-0 z-10 border-b bg-background/95 px-3 py-2 backdrop-blur sm:-mx-5 sm:px-5 lg:hidden">
                     <div className="flex items-center gap-2">
                       <details className="group min-w-0 flex-1">
                         <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 rounded-lg border bg-background px-3 text-sm font-medium marker:hidden">
@@ -860,7 +860,7 @@ export function InformationView() {
                     </div>
                   </div>
 
-                  <div className="mb-3 flex flex-col gap-2 sm:mb-4 md:flex-row md:items-center md:justify-between">
+                  <div className="flex flex-col gap-2 px-3 py-3 sm:mb-4 sm:px-0 sm:py-0 md:flex-row md:items-center md:justify-between">
                     <CardTitle className="flex min-w-0 items-center gap-2">
                       {activeNode?.type === "folder" ? (
                         <FolderIcon className="size-5 shrink-0" />
@@ -913,7 +913,7 @@ export function InformationView() {
                     ) : null}
                   </div>
                   {activeNode?.type === "note" ? (
-                    <div className="overflow-hidden rounded-lg border bg-background">
+                    <div className="overflow-hidden bg-background sm:rounded-lg sm:border">
                       <SimpleEditor
                         key={activeNode.id}
                         value={contentDraft}
