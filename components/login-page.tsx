@@ -19,7 +19,7 @@ export function LoginPage() {
             ACTN Admin
           </a>
         </div>
-        <div className="flex flex-1 items-center justify-center">
+        <div className="flex flex-1 items-start justify-center pt-[16svh] sm:items-center sm:pt-0">
           <div className="w-full max-w-xs">
             <LoginForm />
           </div>

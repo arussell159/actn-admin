@@ -45,6 +45,19 @@ function getLoginErrorMessage(error: { message?: string; code?: string }) {
   return message
 }
 
+function getPasskeyErrorMessage(error?: { message?: string; code?: string } | null) {
+  const message = error?.message || ""
+  const code = error?.code || ""
+
+  if (code === "passkey_disabled" || /passkeys? .*disabled/i.test(message)) {
+    return "Face ID is not enabled in Supabase yet. Use your password for now."
+  }
+
+  return (
+    message || "Face ID sign in did not finish. Use your password to continue."
+  )
+}
+
 function browserSupportsPasskey() {
   return (
     typeof window !== "undefined" &&
@@ -81,7 +94,7 @@ export function LoginForm({
       setIsPasskeyAvailable(supportsPasskey)
       setHasSavedPasskey(savedPasskey)
 
-      if (supportsPasskey && savedPasskey) {
+      if (supportsPasskey) {
         signInWithPasskey({ automatic: true })
       }
     }, 0)
@@ -106,7 +119,7 @@ export function LoginForm({
 
     if (passkeyError) {
       setPasskeyMessage(
-        "Password login worked. Face ID setup did not finish, so password login is still available."
+        getPasskeyErrorMessage(passkeyError)
       )
       return
     }
@@ -138,12 +151,13 @@ export function LoginForm({
 
       if (passkeyError || !data?.session) {
         if (!automatic) {
-          setError(
-            passkeyError?.message ||
-              "Face ID sign in did not finish. Use your password to continue."
-          )
+          setError(getPasskeyErrorMessage(passkeyError))
         } else {
-          setPasskeyMessage("Use your password if Face ID does not appear.")
+          setPasskeyMessage(
+            passkeyError?.code === "passkey_disabled"
+              ? getPasskeyErrorMessage(passkeyError)
+              : "Use your password if Face ID does not appear."
+          )
         }
         return
       }
@@ -154,7 +168,7 @@ export function LoginForm({
       if (!automatic) {
         setError(
           passkeyError instanceof Error
-            ? passkeyError.message
+            ? getPasskeyErrorMessage(passkeyError)
             : "Face ID sign in did not finish. Use your password to continue."
         )
       } else {
@@ -215,7 +229,7 @@ export function LoginForm({
       {...props}
     >
       <FieldGroup>
-        <div className="flex flex-col items-center gap-1 text-center">
+        <div className="hidden flex-col items-center gap-1 text-center sm:flex">
           <h1 className="text-2xl font-bold">Login to your account</h1>
           <p className="text-sm text-balance text-muted-foreground">
             Enter your email below to login to your account
@@ -229,6 +243,7 @@ export function LoginForm({
             placeholder="m@example.com"
             autoComplete="email"
             inputMode="email"
+            className="h-12 rounded-2xl px-4 text-base"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             required
@@ -240,6 +255,7 @@ export function LoginForm({
             id="password"
             type="password"
             autoComplete="current-password"
+            className="h-12 rounded-2xl px-4 text-base"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             required
@@ -247,7 +263,12 @@ export function LoginForm({
         </Field>
         {error ? <FieldError>{error}</FieldError> : null}
         <Field>
-          <Button type="submit" disabled={isSubmitting}>
+          <Button
+            type="submit"
+            size="lg"
+            className="h-12 rounded-2xl text-base"
+            disabled={isSubmitting}
+          >
             {isSubmitting ? (
               <LoaderCircleIcon className="animate-spin" />
             ) : null}
@@ -259,6 +280,8 @@ export function LoginForm({
             <Button
               type="button"
               variant="outline"
+              size="lg"
+              className="h-12 rounded-2xl text-base"
               disabled={isPasskeySubmitting}
               onClick={() => signInWithPasskey()}
             >
@@ -267,7 +290,7 @@ export function LoginForm({
               ) : (
                 <FingerprintIcon />
               )}
-              {hasSavedPasskey ? "Sign in with Face ID" : "Use Face ID"}
+              {hasSavedPasskey ? "Sign in with Face ID" : "Retry Face ID"}
             </Button>
           </Field>
         ) : null}
