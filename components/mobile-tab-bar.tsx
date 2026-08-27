@@ -268,7 +268,7 @@ export function MobileTabBar() {
       aria-label="Mobile app navigation"
     >
       <span
-        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 bg-background"
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 border-t border-white/40 bg-background/65 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-2xl supports-backdrop-filter:bg-background/50"
         style={{
           height: "calc(env(safe-area-inset-bottom, 0px) + 0.25rem)",
         }}
