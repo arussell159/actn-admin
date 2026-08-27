@@ -1,12 +1,28 @@
 "use client"
 
 import { LoaderCircleIcon } from "lucide-react"
+import * as React from "react"
 
 import { useMobilePullRefresh } from "@/hooks/use-mobile-pull-refresh"
 import { cn } from "@/lib/utils"
 
 export function MobilePullRefresh() {
   const { isRefreshing, pullDistance, progress } = useMobilePullRefresh()
+
+  React.useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--mobile-pull-distance",
+      `${pullDistance}px`
+    )
+
+    if (!pullDistance && !isRefreshing) {
+      document.documentElement.style.removeProperty("--mobile-pull-distance")
+    }
+
+    return () => {
+      document.documentElement.style.removeProperty("--mobile-pull-distance")
+    }
+  }, [isRefreshing, pullDistance])
 
   return (
     <div

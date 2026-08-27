@@ -169,6 +169,8 @@ export function MobileTabBar() {
   const [isMoreOpen, setIsMoreOpen] = React.useState(false)
   const [dockHrefs, setDockHrefs] = React.useState(defaultDockHrefs)
   const [isCustomizing, setIsCustomizing] = React.useState(false)
+  const [isActiveIndicatorPressed, setIsActiveIndicatorPressed] =
+    React.useState(false)
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -262,7 +264,10 @@ export function MobileTabBar() {
         <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.5),rgba(255,255,255,0.08)_42%,rgba(15,23,42,0.04))]" />
         <div className="relative z-10 grid grid-cols-5 items-center">
           <span
-            className="absolute top-1/2 z-0 size-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-muted/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_6px_18px_rgba(15,23,42,0.08)] transition-[left] duration-300 ease-out"
+            className={cn(
+              "pointer-events-none absolute top-1/2 z-0 h-10 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full bg-muted/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_6px_18px_rgba(15,23,42,0.08)] transition-[left,background-color] duration-300 ease-out",
+              isActiveIndicatorPressed && "bg-muted-foreground/20"
+            )}
             style={{ left: `calc(${activeIndicatorIndex * 20 + 10}%)` }}
             aria-hidden="true"
           />
@@ -276,12 +281,25 @@ export function MobileTabBar() {
               href={item.href}
               aria-current={isActive ? "page" : undefined}
               title={item.label}
+              onPointerEnter={() => {
+                if (isActive) {
+                  setIsActiveIndicatorPressed(true)
+                }
+              }}
+              onPointerLeave={() => setIsActiveIndicatorPressed(false)}
+              onPointerDown={() => {
+                if (isActive) {
+                  setIsActiveIndicatorPressed(true)
+                }
+              }}
+              onPointerUp={() => setIsActiveIndicatorPressed(false)}
               className={cn(
-                "mx-auto grid size-10 place-items-center rounded-full text-muted-foreground transition-colors active:text-foreground",
-                isActive && "text-foreground"
+                "relative z-10 mx-auto grid size-11 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted/70 active:bg-muted-foreground/20 active:text-muted-foreground",
+                isActive &&
+                  "bg-transparent text-foreground hover:bg-transparent active:bg-transparent active:text-foreground"
               )}
             >
-              <Icon className="size-5 shrink-0" />
+              <Icon className="size-5.5 shrink-0" />
               <span className="sr-only">{item.label}</span>
             </AppLink>
           )
@@ -290,13 +308,26 @@ export function MobileTabBar() {
         <Sheet open={isMoreOpen} onOpenChange={handleMoreOpenChange}>
           <SheetTrigger
             className={cn(
-              "mx-auto grid size-10 place-items-center rounded-full text-muted-foreground transition-colors active:text-foreground",
-              isMoreActive && "text-foreground"
+              "relative z-10 mx-auto grid size-11 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted/70 active:bg-muted-foreground/20 active:text-muted-foreground",
+              isMoreActive &&
+                "bg-transparent text-foreground hover:bg-transparent active:bg-transparent active:text-foreground"
             )}
+            onPointerEnter={() => {
+              if (isMoreActive) {
+                setIsActiveIndicatorPressed(true)
+              }
+            }}
+            onPointerLeave={() => setIsActiveIndicatorPressed(false)}
+            onPointerDown={() => {
+              if (isMoreActive) {
+                setIsActiveIndicatorPressed(true)
+              }
+            }}
+            onPointerUp={() => setIsActiveIndicatorPressed(false)}
             aria-label="Open more navigation"
             title="More"
           >
-            <MenuIcon className="size-5 shrink-0" />
+            <MenuIcon className="size-5.5 shrink-0" />
             <span className="sr-only">More</span>
           </SheetTrigger>
           <SheetContent
