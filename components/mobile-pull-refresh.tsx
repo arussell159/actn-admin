@@ -2,12 +2,14 @@
 
 import { LoaderCircleIcon } from "lucide-react"
 import * as React from "react"
+import { createPortal } from "react-dom"
 
 import { useMobilePullRefresh } from "@/hooks/use-mobile-pull-refresh"
 import { cn } from "@/lib/utils"
 
 export function MobilePullRefresh() {
   const { isRefreshing, pullDistance, progress } = useMobilePullRefresh()
+  const portalTarget = typeof document === "undefined" ? null : document.body
 
   React.useEffect(() => {
     document.documentElement.style.setProperty(
@@ -24,7 +26,11 @@ export function MobilePullRefresh() {
     }
   }, [isRefreshing, pullDistance])
 
-  return (
+  if (!portalTarget) {
+    return null
+  }
+
+  return createPortal(
     <div
       className="pointer-events-none fixed inset-x-0 top-0 z-50 flex justify-center pt-[calc(env(safe-area-inset-top)+0.75rem)] transition-opacity duration-150 md:hidden"
       style={{
@@ -44,6 +50,7 @@ export function MobilePullRefresh() {
           }}
         />
       </div>
-    </div>
+    </div>,
+    portalTarget
   )
 }

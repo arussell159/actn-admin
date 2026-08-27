@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import {
-  CalculatorIcon,
   CheckIcon,
   ChevronsUpDownIcon,
   MinusIcon,
@@ -17,9 +16,7 @@ import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -356,25 +353,11 @@ export function QuoteToolView() {
         <SiteHeader title="Quote Tool" />
         <main className="flex flex-1 flex-col gap-4 p-4 lg:p-6">
           <Card className="rounded-lg shadow-sm">
-            <CardHeader className="gap-2">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <CalculatorIcon className="size-5 text-muted-foreground" />
-                    Build Quote
-                  </CardTitle>
-                  <CardDescription>
-                    Fees always show first. Choose one item category to display
-                    below fees.
-                  </CardDescription>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" onClick={resetQuote}>
-                    <RotateCcwIcon />
-                    Reset
-                  </Button>
-                </div>
-              </div>
+            <CardHeader className="items-end pb-2">
+              <Button variant="outline" onClick={resetQuote}>
+                <RotateCcwIcon />
+                Reset
+              </Button>
             </CardHeader>
             <CardContent>
               <FieldGroup className="grid gap-4 md:grid-cols-3">

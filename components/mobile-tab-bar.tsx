@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { createPortal } from "react-dom"
 import { usePathname } from "next/navigation"
 import {
   closestCenter,
@@ -192,6 +193,7 @@ export function MobileTabBar() {
     isActivePath(pathname, item.match)
   )
   const activeIndicatorIndex = activeDockIndex >= 0 ? activeDockIndex : 4
+  const portalTarget = typeof document === "undefined" ? null : document.body
 
   React.useEffect(() => {
     let isMounted = true
@@ -255,7 +257,11 @@ export function MobileTabBar() {
     }
   }
 
-  return (
+  if (!portalTarget) {
+    return null
+  }
+
+  return createPortal(
     <nav
       className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-5 pb-[max(env(safe-area-inset-bottom),0.15rem)] md:hidden"
       aria-label="Mobile app navigation"
@@ -452,6 +458,7 @@ export function MobileTabBar() {
         </Sheet>
         </div>
       </div>
-    </nav>
+    </nav>,
+    portalTarget
   )
 }
