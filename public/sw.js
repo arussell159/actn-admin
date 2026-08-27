@@ -1,15 +1,5 @@
-const CACHE_NAME = "actn-admin-v4"
-const APP_SHELL = [
-  "/",
-  "/login",
-  "/month-end",
-  "/month-end/new",
-  "/previous-month-ends",
-  "/previous-month-ends/view",
-  "/pricing-upload",
-  "/quote-tool",
-  "/information",
-  "/template-builder",
+const CACHE_NAME = "actn-admin-v5"
+const STATIC_ASSETS = [
   "/manifest.webmanifest",
   "/actn-admin-icon.png",
   "/actn-admin-icon-192.png",
@@ -17,9 +7,21 @@ const APP_SHELL = [
   "/login-side-image.jpg",
 ]
 
+function isStaticAsset(request) {
+  const url = new URL(request.url)
+
+  return (
+    request.method === "GET" &&
+    url.origin === self.location.origin &&
+    (STATIC_ASSETS.includes(url.pathname) ||
+      url.pathname.startsWith("/_next/static/") ||
+      /\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js|woff2?)$/i.test(url.pathname))
+  )
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
   )
   self.skipWaiting()
 })
@@ -31,7 +33,7 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => key !== CACHE_NAME)
+            .filter((key) => key.startsWith("actn-admin") && key !== CACHE_NAME)
             .map((key) => caches.delete(key))
         )
       )
@@ -40,20 +42,24 @@ self.addEventListener("activate", (event) => {
 })
 
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") {
+  if (!isStaticAsset(event.request)) {
     return
   }
 
   event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        if (response.ok && new URL(event.request.url).origin === self.location.origin) {
+    caches.match(event.request).then((cached) => {
+      if (cached) {
+        return cached
+      }
+
+      return fetch(event.request).then((response) => {
+        if (response.ok) {
           const copy = response.clone()
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy))
         }
 
         return response
       })
-      .catch(() => caches.match(event.request).then((cached) => cached || caches.match("/")))
+    })
   )
 })

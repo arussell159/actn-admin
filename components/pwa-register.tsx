@@ -22,8 +22,19 @@ export function PwaRegister() {
       return
     }
 
-    navigator.serviceWorker.register("/sw.js").catch(() => {
-      // The app still works online if service worker registration fails.
+    navigator.serviceWorker
+      .register("/sw.js")
+      .then((registration) => registration.update())
+      .catch(() => {
+        // The app still works online if service worker registration fails.
+      })
+
+    window.caches?.keys().then((keys) => {
+      keys.forEach((key) => {
+        if (key.startsWith("actn-admin") && key !== "actn-admin-v5") {
+          window.caches.delete(key)
+        }
+      })
     })
   }, [])
 
