@@ -237,3 +237,42 @@ on public.quote_records
 for delete
 to anon
 using (true);
+
+create table if not exists public.app_settings (
+  id text primary key,
+  value jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.app_settings enable row level security;
+
+drop policy if exists "Allow public app setting reads" on public.app_settings;
+drop policy if exists "Allow public app setting inserts" on public.app_settings;
+drop policy if exists "Allow public app setting updates" on public.app_settings;
+drop policy if exists "Allow public app setting deletes" on public.app_settings;
+
+create policy "Allow public app setting reads"
+on public.app_settings
+for select
+to anon
+using (true);
+
+create policy "Allow public app setting inserts"
+on public.app_settings
+for insert
+to anon
+with check (true);
+
+create policy "Allow public app setting updates"
+on public.app_settings
+for update
+to anon
+using (true)
+with check (true);
+
+create policy "Allow public app setting deletes"
+on public.app_settings
+for delete
+to anon
+using (true);

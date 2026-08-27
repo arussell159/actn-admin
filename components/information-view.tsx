@@ -457,6 +457,7 @@ export function InformationView() {
   >()
   const [treeTitleDraft, setTreeTitleDraft] = React.useState("")
   const [noteSearch, setNoteSearch] = React.useState("")
+  const mobileNoteSelectorRef = React.useRef<HTMLDetailsElement | null>(null)
   const [collapsedFolderIds, setCollapsedFolderIds] = React.useState(
     () => new Set<string>()
   )
@@ -538,6 +539,7 @@ export function InformationView() {
     setContentDraft(node?.type === "note" ? (node.content ?? "") : "")
     setTitleDraft(node?.title ?? "")
     setEditingTitle(false)
+    mobileNoteSelectorRef.current?.removeAttribute("open")
     router.replace(`/information?node=${encodeURIComponent(nodeId)}`)
     window.dispatchEvent(new Event("information-notes:navigation"))
   }
@@ -798,7 +800,10 @@ export function InformationView() {
                 <section className="min-w-0 p-0 sm:p-5">
                   <div className="sticky top-0 z-10 border-b bg-background/95 px-3 py-2 backdrop-blur sm:-mx-5 sm:px-5 lg:hidden">
                     <div className="flex items-center gap-2">
-                      <details className="group min-w-0 flex-1">
+                      <details
+                        ref={mobileNoteSelectorRef}
+                        className="group min-w-0 flex-1"
+                      >
                         <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 rounded-lg border bg-background px-3 text-sm font-medium marker:hidden">
                           <span className="min-w-0 truncate">
                             {activeNode?.title ?? "Notebook"}
@@ -906,11 +911,6 @@ export function InformationView() {
                         "Notebook"
                       )}
                     </CardTitle>
-                    {activeNode?.type === "note" ? (
-                      <span className="text-sm text-muted-foreground">
-                        Autosaved
-                      </span>
-                    ) : null}
                   </div>
                   {activeNode?.type === "note" ? (
                     <div className="overflow-hidden bg-background sm:rounded-lg sm:border">
@@ -921,15 +921,19 @@ export function InformationView() {
                       />
                     </div>
                   ) : activeNode?.type === "folder" ? (
-                    <FolderDashboard
-                      folder={activeNode}
-                      nodes={nodes}
-                      onOpenNote={selectNode}
-                    />
+                    <div className="px-3 pb-3 sm:px-0 sm:pb-0">
+                      <FolderDashboard
+                        folder={activeNode}
+                        nodes={nodes}
+                        onOpenNote={selectNode}
+                      />
+                    </div>
                   ) : (
-                    <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
-                      <HomeIcon className="size-8" />
-                      <p>Select a note from the tree or create a new one.</p>
+                    <div className="px-3 pb-3 sm:px-0 sm:pb-0">
+                      <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
+                        <HomeIcon className="size-8" />
+                        <p>Select a note from the tree or create a new one.</p>
+                      </div>
                     </div>
                   )}
                 </section>

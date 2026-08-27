@@ -147,6 +147,11 @@
   body {
     @apply bg-background text-foreground;
   }
+  html[data-scroll-lock="true"],
+  html[data-scroll-lock="true"] body {
+    height: 100%;
+    overflow: hidden;
+  }
   html {
     @apply font-sans;
   }
@@ -156,5 +161,9 @@
   body,
   body * {
     font-size: max(16px, 1em);
+  }
+
+  [data-slot="sidebar-inset"] {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 6rem);
   }
 }
