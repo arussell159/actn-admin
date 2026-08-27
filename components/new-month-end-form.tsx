@@ -156,7 +156,7 @@ function getCreateErrorMessage(error: unknown) {
     return "You are not signed in with a valid Supabase session. Sign out, sign back in, and try again."
   }
 
-  if (/Missing NEXT_PUBLIC_SUPABASE_URL|PUBLISHABLE_KEY/i.test(message)) {
+  if (/Missing NEXT_PUBLIC_SUPABASE_URL|PUBLISHABLE_KEY|ANON_KEY/i.test(message)) {
     return "Supabase is not configured for this app."
   }
 

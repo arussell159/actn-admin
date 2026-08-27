@@ -1,4 +1,8 @@
 import { createPublicClient } from "@/lib/public-client"
+import {
+  getSupabasePublishableKey,
+  getSupabaseUrl,
+} from "@/lib/supabase-env"
 import type { QuoteCatalogItem } from "@/lib/quote-items-catalog"
 
 export type QuoteLineItem = QuoteCatalogItem & {
@@ -23,10 +27,7 @@ export type QuoteRecord = {
 }
 
 function hasSupabaseConfig() {
-  return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-  )
+  return Boolean(getSupabaseUrl() && getSupabasePublishableKey())
 }
 
 function getSupabaseClient() {

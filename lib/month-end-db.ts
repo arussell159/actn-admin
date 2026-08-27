@@ -1,4 +1,5 @@
 import { createPublicClient } from "@/lib/public-client"
+import { assertSupabaseConfig } from "@/lib/supabase-env"
 
 export type MonthEndStatus = "Open" | "Closed"
 export type MonthEndValue = boolean | number | string
@@ -85,15 +86,7 @@ export function getNextPeriod(period: string) {
 }
 
 function getSupabaseClient() {
-  if (
-    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    !process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-  ) {
-    throw new Error(
-      "Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
-    )
-  }
-
+  assertSupabaseConfig()
   return createPublicClient()
 }
 

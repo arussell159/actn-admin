@@ -1,9 +1,12 @@
 import { createBrowserClient } from '@supabase/ssr'
+import { assertSupabaseConfig } from "@/lib/supabase-env"
 
 export function createClient() {
+  const { supabaseUrl, supabaseKey } = assertSupabaseConfig()
+
   return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    supabaseUrl,
+    supabaseKey,
     {
       auth: {
         experimental: {

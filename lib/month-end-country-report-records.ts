@@ -1,4 +1,5 @@
 import { createPublicClient } from "@/lib/public-client"
+import { assertSupabaseConfig } from "@/lib/supabase-env"
 import {
   mergeReportValues,
   normalizeCountryReportReference,
@@ -37,15 +38,7 @@ const localStorageKey = "actn-month-end-country-report-records-v1"
 export const antaserInvoiceParserKey = "antaser-invoice-v1"
 
 function getSupabaseClient() {
-  if (
-    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    !process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-  ) {
-    throw new Error(
-      "Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
-    )
-  }
-
+  assertSupabaseConfig()
   return createPublicClient()
 }
 

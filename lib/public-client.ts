@@ -1,9 +1,12 @@
 import { createClient as createSupabaseClient } from "@supabase/supabase-js"
+import { assertSupabaseConfig } from "@/lib/supabase-env"
 
 export function createPublicClient() {
+  const { supabaseUrl, supabaseKey } = assertSupabaseConfig()
+
   return createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    supabaseUrl,
+    supabaseKey,
     {
       auth: {
         autoRefreshToken: false,
@@ -12,7 +15,7 @@ export function createPublicClient() {
       },
       global: {
         headers: {
-          Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!}`,
+          Authorization: `Bearer ${supabaseKey}`,
         },
       },
     }

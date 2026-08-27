@@ -1,5 +1,6 @@
 import { parseCsv, findCsvColumn, normalizeCsvHeader } from "@/lib/csv"
 import { createPublicClient } from "@/lib/public-client"
+import { assertSupabaseConfig } from "@/lib/supabase-env"
 import type { TemplateCountryRow } from "@/lib/month-end-template"
 
 export type MonthEndMasterRecord = {
@@ -44,15 +45,7 @@ function normalizeMatch(value: string) {
 }
 
 function getSupabaseClient() {
-  if (
-    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    !process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-  ) {
-    throw new Error(
-      "Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
-    )
-  }
-
+  assertSupabaseConfig()
   return createPublicClient()
 }
 
