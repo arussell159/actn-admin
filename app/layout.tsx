@@ -1,15 +1,33 @@
-import { Geist, Geist_Mono, Inter } from "next/font/google"
-
 import "./globals.css"
+import { PwaRegister } from "@/components/pwa-register"
 import { ThemeProvider } from "@/components/theme-provider"
-import { cn } from "@/lib/utils";
+import { TooltipProvider } from "@/components/ui/tooltip"
+import { cn } from "@/lib/utils"
+import type { Metadata } from "next"
+import type { Viewport } from "next"
+import { Inter } from "next/font/google";
 
-const inter = Inter({subsets:['latin'],variable:'--font-sans'})
+const inter = Inter({subsets:['latin'],variable:'--font-sans'});
 
-const fontMono = Geist_Mono({
-  subsets: ["latin"],
-  variable: "--font-mono",
-})
+export const metadata: Metadata = {
+  title: "Africa CTN Month End",
+  description: "Africa CTN month-end checklist",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Month End",
+  },
+  applicationName: "Africa CTN Month End",
+  manifest: "/manifest.webmanifest",
+}
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  colorScheme: "light",
+  themeColor: "#ffffff",
+  viewportFit: "cover",
+}
 
 export default function RootLayout({
   children,
@@ -20,10 +38,15 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={cn("antialiased", fontMono.variable, "font-sans", inter.variable)}
+      className={cn("antialiased", "font-sans", inter.variable)}
     >
       <body>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <TooltipProvider>
+            <PwaRegister />
+            {children}
+          </TooltipProvider>
+        </ThemeProvider>
       </body>
     </html>
   )
