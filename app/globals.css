@@ -158,6 +158,11 @@
 }
 
 @media (max-width: 767px) {
+  :root {
+    --mobile-top-bleed: env(safe-area-inset-top, 0px);
+    --mobile-app-height: calc(100dvh + var(--mobile-top-bleed));
+  }
+
   html,
   body {
     height: 100dvh;
@@ -171,15 +176,15 @@
   }
 
   [data-slot="sidebar-wrapper"] {
-    height: 100dvh;
-    min-height: 100dvh;
+    height: var(--mobile-app-height);
+    min-height: var(--mobile-app-height);
     overflow: hidden;
   }
 
   [data-slot="sidebar-inset"] {
     box-sizing: border-box;
-    height: 100dvh;
-    min-height: 100dvh;
+    height: var(--mobile-app-height);
+    min-height: var(--mobile-app-height);
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior-y: contain;
