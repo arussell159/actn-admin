@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/client"
+import { createPublicClient } from "@/lib/public-client"
 import type { QuoteCatalogItem } from "@/lib/quote-items-catalog"
 
 export type QuoteLineItem = QuoteCatalogItem & {
@@ -34,7 +34,7 @@ function getSupabaseClient() {
     return undefined
   }
 
-  return createClient()
+  return createPublicClient()
 }
 
 type QuoteItemRow = {

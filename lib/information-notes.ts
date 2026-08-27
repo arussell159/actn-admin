@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/client"
+import { createPublicClient } from "@/lib/public-client"
 
 export type InformationNodeType = "folder" | "note"
 
@@ -114,7 +114,7 @@ export async function getInformationNotes() {
   const localNotes = loadInformationNotes()
 
   try {
-    const supabase = createClient()
+    const supabase = createPublicClient()
     const { data, error } = await supabase
       .from(tableName)
       .select("*")
@@ -179,7 +179,7 @@ function toInformationRow(
 
 async function saveDatabaseInformationNotes(nodes: InformationNode[]) {
   try {
-    const supabase = createClient()
+    const supabase = createPublicClient()
     const rows = nodes.map((node, index) => toInformationRow(node, index))
 
     if (rows.length) {

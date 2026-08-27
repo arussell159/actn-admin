@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/client"
+import { createPublicClient } from "@/lib/public-client"
 
 const tableName = "app_settings"
 const settingId = "mobile_nav_layout"
@@ -51,7 +51,7 @@ export async function getMobileNavDockHrefs(
   maxItems: number
 ) {
   try {
-    const supabase = createClient()
+    const supabase = createPublicClient()
     const { data, error } = await supabase
       .from(tableName)
       .select("*")
@@ -78,7 +78,7 @@ export async function saveMobileNavDockHrefs(dockHrefs: string[]) {
   writeLocalDockHrefs(dockHrefs)
 
   try {
-    const supabase = createClient()
+    const supabase = createPublicClient()
     const { error } = await supabase.from(tableName).upsert(
       {
         id: settingId,

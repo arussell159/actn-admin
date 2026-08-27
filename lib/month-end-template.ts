@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/client"
+import { createPublicClient } from "@/lib/public-client"
 
 export type CloseTaskId = "invoice" | "reconcile" | "journal"
 
@@ -191,7 +191,7 @@ export async function getMonthEndTemplate() {
   const localTemplate = loadMonthEndTemplate()
 
   try {
-    const supabase = createClient()
+    const supabase = createPublicClient()
     const { data, error } = await supabase
       .from(tableName)
       .select("template")
@@ -303,7 +303,7 @@ function saveLocalTemplate(template: MonthEndTemplate) {
 async function saveDatabaseTemplate(template: MonthEndTemplate) {
   try {
     const now = new Date().toISOString()
-    const supabase = createClient()
+    const supabase = createPublicClient()
 
     await supabase.from(tableName).upsert(
       {

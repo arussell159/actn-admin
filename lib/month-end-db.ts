@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/client"
+import { createPublicClient } from "@/lib/public-client"
 
 export type MonthEndStatus = "Open" | "Closed"
 export type MonthEndValue = boolean | number | string
@@ -94,7 +94,7 @@ function getSupabaseClient() {
     )
   }
 
-  return createClient()
+  return createPublicClient()
 }
 
 function isLocalhostBrowser() {
