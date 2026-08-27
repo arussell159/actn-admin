@@ -10,7 +10,7 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Africa CTN admin tools for month end, quotes, notes, and pricing.",
     start_url: "/month-end",
     scope: "/",
-    display: "fullscreen",
+    display: "standalone",
     background_color: "#f7fafb",
     theme_color: "#ffffff",
     orientation: "portrait",
