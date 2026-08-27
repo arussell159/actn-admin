@@ -15,6 +15,32 @@ import { Input } from "@/components/ui/input"
 import { createClient } from "@/lib/client"
 import { cn } from "@/lib/utils"
 
+function getLoginErrorMessage(error: { message?: string; code?: string }) {
+  const message = error.message || "Login failed."
+  const code = error.code || ""
+
+  if (
+    code === "invalid_credentials" ||
+    /invalid login credentials/i.test(message)
+  ) {
+    return "The email or password is incorrect. Check the password saved for this user in Supabase."
+  }
+
+  if (/email not confirmed/i.test(message)) {
+    return "This email is not confirmed in Supabase yet. Open the user in Supabase Auth and confirm the email."
+  }
+
+  if (/email provider is disabled/i.test(message)) {
+    return "Email/password login is disabled in Supabase. Enable the Email provider in Authentication settings."
+  }
+
+  if (/fetch|failed to fetch|network/i.test(message)) {
+    return "Could not reach Supabase from this device. Check the deployed Supabase URL/key and try again."
+  }
+
+  return message
+}
+
 export function LoginForm({
   className,
   ...props
@@ -47,7 +73,7 @@ export function LoginForm({
       })
 
       if (signInError) {
-        setError(signInError.message)
+        setError(getLoginErrorMessage(signInError))
         return
       }
 
@@ -64,7 +90,7 @@ export function LoginForm({
     } catch (signInError) {
       setError(
         signInError instanceof Error
-          ? signInError.message
+          ? getLoginErrorMessage(signInError)
           : "Something went wrong while signing in."
       )
     } finally {

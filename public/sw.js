@@ -1,6 +1,7 @@
-const CACHE_NAME = "actn-admin-v2"
+const CACHE_NAME = "actn-admin-v3"
 const APP_SHELL = [
   "/",
+  "/login",
   "/month-end",
   "/month-end/new",
   "/previous-month-ends",
@@ -10,7 +11,10 @@ const APP_SHELL = [
   "/information",
   "/template-builder",
   "/manifest.webmanifest",
-  "/icon.svg",
+  "/actn-admin-icon.png",
+  "/actn-admin-icon-192.png",
+  "/actn-admin-icon-512.png",
+  "/login-side-image.jpg",
 ]
 
 self.addEventListener("install", (event) => {
