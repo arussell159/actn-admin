@@ -27,13 +27,23 @@ export const metadata: Metadata = {
         type: "image/png",
         sizes: "144x144",
       },
+      {
+        url: "/actn-admin-icon-192.png",
+        type: "image/png",
+        sizes: "192x192",
+      },
+      {
+        url: "/actn-admin-icon-512.png",
+        type: "image/png",
+        sizes: "512x512",
+      },
     ],
     shortcut: ["/favicon.ico"],
     apple: [
       {
         url: "/apple-icon.png",
         type: "image/png",
-        sizes: "144x144",
+        sizes: "180x180",
       },
     ],
   },

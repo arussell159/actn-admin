@@ -276,3 +276,80 @@ on public.app_settings
 for delete
 to anon
 using (true);
+
+drop policy if exists "Allow public month-end reads" on public.month_end_records;
+drop policy if exists "Allow public month-end inserts" on public.month_end_records;
+drop policy if exists "Allow public month-end updates" on public.month_end_records;
+drop policy if exists "Allow public month-end deletes" on public.month_end_records;
+drop policy if exists "Allow authenticated month-end access" on public.month_end_records;
+
+create policy "Allow authenticated month-end access"
+on public.month_end_records
+for all
+to authenticated
+using (true)
+with check (true);
+
+drop policy if exists "Allow public month-end template reads" on public.month_end_templates;
+drop policy if exists "Allow public month-end template inserts" on public.month_end_templates;
+drop policy if exists "Allow public month-end template updates" on public.month_end_templates;
+drop policy if exists "Allow authenticated month-end template access" on public.month_end_templates;
+
+create policy "Allow authenticated month-end template access"
+on public.month_end_templates
+for all
+to authenticated
+using (true)
+with check (true);
+
+drop policy if exists "Allow public information note reads" on public.information_notes;
+drop policy if exists "Allow public information note inserts" on public.information_notes;
+drop policy if exists "Allow public information note updates" on public.information_notes;
+drop policy if exists "Allow public information note deletes" on public.information_notes;
+drop policy if exists "Allow authenticated information note access" on public.information_notes;
+
+create policy "Allow authenticated information note access"
+on public.information_notes
+for all
+to authenticated
+using (true)
+with check (true);
+
+drop policy if exists "Allow public quote item reads" on public.quote_items;
+drop policy if exists "Allow public quote item inserts" on public.quote_items;
+drop policy if exists "Allow public quote item updates" on public.quote_items;
+drop policy if exists "Allow public quote item deletes" on public.quote_items;
+drop policy if exists "Allow authenticated quote item access" on public.quote_items;
+
+create policy "Allow authenticated quote item access"
+on public.quote_items
+for all
+to authenticated
+using (true)
+with check (true);
+
+drop policy if exists "Allow public quote record reads" on public.quote_records;
+drop policy if exists "Allow public quote record inserts" on public.quote_records;
+drop policy if exists "Allow public quote record updates" on public.quote_records;
+drop policy if exists "Allow public quote record deletes" on public.quote_records;
+drop policy if exists "Allow authenticated quote record access" on public.quote_records;
+
+create policy "Allow authenticated quote record access"
+on public.quote_records
+for all
+to authenticated
+using (true)
+with check (true);
+
+drop policy if exists "Allow public app setting reads" on public.app_settings;
+drop policy if exists "Allow public app setting inserts" on public.app_settings;
+drop policy if exists "Allow public app setting updates" on public.app_settings;
+drop policy if exists "Allow public app setting deletes" on public.app_settings;
+drop policy if exists "Allow authenticated app setting access" on public.app_settings;
+
+create policy "Allow authenticated app setting access"
+on public.app_settings
+for all
+to authenticated
+using (true)
+with check (true);

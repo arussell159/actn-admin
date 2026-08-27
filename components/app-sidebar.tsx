@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Image from "next/image"
 import { usePathname } from "next/navigation"
 
 import { AppLink } from "@/components/app-link"
@@ -31,7 +32,6 @@ import {
   BookOpenTextIcon,
   CalendarClockIcon,
   CalculatorIcon,
-  CommandIcon,
   FileTextIcon,
   FolderIcon,
   HistoryIcon,
@@ -171,10 +171,19 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <SidebarMenuItem>
             <SidebarMenuButton
               className="data-[slot=sidebar-menu-button]:p-1.5!"
-              render={<a href="#" />}
+              render={<AppLink href="/month-end" />}
             >
-              <CommandIcon className="size-5!" />
-              <span className="text-base font-semibold">Africa CTN</span>
+              <span className="grid size-7 shrink-0 place-items-center rounded-md bg-background">
+                <Image
+                  src="/actn-admin-icon.png"
+                  alt=""
+                  width={28}
+                  height={28}
+                  className="size-7 object-contain"
+                  priority
+                />
+              </span>
+              <span className="text-base font-semibold">ACTN Admin</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
