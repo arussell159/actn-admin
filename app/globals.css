@@ -158,11 +158,6 @@
 }
 
 @media (max-width: 767px) {
-  :root {
-    --mobile-top-bleed: env(safe-area-inset-top, 0px);
-    --mobile-app-height: calc(100dvh + var(--mobile-top-bleed));
-  }
-
   html,
   body {
     height: 100dvh;
@@ -176,19 +171,19 @@
   }
 
   [data-slot="sidebar-wrapper"] {
-    height: var(--mobile-app-height);
-    min-height: var(--mobile-app-height);
+    height: 100dvh;
+    min-height: 100dvh;
     overflow: hidden;
   }
 
   [data-slot="sidebar-inset"] {
     box-sizing: border-box;
-    height: var(--mobile-app-height);
-    min-height: var(--mobile-app-height);
+    height: 100dvh;
+    min-height: 100dvh;
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior-y: contain;
-    padding-top: 0;
+    padding-top: env(safe-area-inset-top, 0px);
     padding-bottom: 0;
     transform: translateY(var(--mobile-pull-distance, 0px));
     transition: transform 150ms ease-out;
