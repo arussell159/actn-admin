@@ -1,4 +1,4 @@
-const CACHE_NAME = "actn-admin-v3"
+const CACHE_NAME = "actn-admin-v4"
 const APP_SHELL = [
   "/",
   "/login",
