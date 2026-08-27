@@ -171,15 +171,19 @@
   }
 
   [data-slot="sidebar-wrapper"] {
-    height: 100dvh;
-    min-height: 100dvh;
+    height: 120vh;
+    height: 120dvh;
+    min-height: 120vh;
+    min-height: 120dvh;
     overflow: hidden;
   }
 
   [data-slot="sidebar-inset"] {
     box-sizing: border-box;
-    height: 100dvh;
-    min-height: 100dvh;
+    height: 120vh;
+    height: 120dvh;
+    min-height: 120vh;
+    min-height: 120dvh;
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior-y: contain;

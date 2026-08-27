@@ -57,7 +57,7 @@ export function SiteHeader({
 
   return (
     <>
-      <header className="sticky top-[env(safe-area-inset-top,0px)] z-40 flex h-10 shrink-0 items-center gap-2 bg-transparent transition-[width,height] ease-linear md:relative md:top-0 md:z-auto md:h-(--header-height) md:border-b md:bg-background group-has-data-[collapsible=icon]/sidebar-wrapper:md:h-(--header-height)">
+      <header className="sticky top-0 z-40 flex h-10 shrink-0 items-center gap-2 bg-transparent transition-[width,height] ease-linear md:relative md:z-auto md:h-(--header-height) md:border-b md:bg-background group-has-data-[collapsible=icon]/sidebar-wrapper:md:h-(--header-height)">
         <div
           className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-[linear-gradient(to_bottom,color-mix(in_oklch,var(--background)_75%,transparent),color-mix(in_oklch,var(--background)_35%,transparent)_55%,transparent)] md:hidden"
           aria-hidden="true"
