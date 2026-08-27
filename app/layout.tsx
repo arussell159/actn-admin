@@ -14,10 +14,10 @@ export const metadata: Metadata = {
   description: "Africa CTN month-end checklist",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
-    title: "Month End",
+    statusBarStyle: "black-translucent",
+    title: "ACTN Admin",
   },
-  applicationName: "Africa CTN Month End",
+  applicationName: "ACTN Admin",
   manifest: "/manifest.webmanifest",
 }
 

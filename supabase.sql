@@ -10,6 +10,15 @@ create table if not exists public.month_end_records (
 
 alter table public.month_end_records enable row level security;
 
+drop policy if exists "Allow public month-end reads" on public.month_end_records;
+drop policy if exists "Allow public month-end inserts" on public.month_end_records;
+drop policy if exists "Allow public month-end updates" on public.month_end_records;
+drop policy if exists "Allow public month-end deletes" on public.month_end_records;
+drop policy if exists "Allow active users month-end reads" on public.month_end_records;
+drop policy if exists "Allow active users month-end inserts" on public.month_end_records;
+drop policy if exists "Allow active users month-end updates" on public.month_end_records;
+drop policy if exists "Allow active users month-end deletes" on public.month_end_records;
+
 create policy "Allow public month-end reads"
 on public.month_end_records
 for select
@@ -44,6 +53,13 @@ create table if not exists public.month_end_templates (
 
 alter table public.month_end_templates enable row level security;
 
+drop policy if exists "Allow public month-end template reads" on public.month_end_templates;
+drop policy if exists "Allow public month-end template inserts" on public.month_end_templates;
+drop policy if exists "Allow public month-end template updates" on public.month_end_templates;
+drop policy if exists "Allow active users month-end template reads" on public.month_end_templates;
+drop policy if exists "Allow active users month-end template inserts" on public.month_end_templates;
+drop policy if exists "Allow active users month-end template updates" on public.month_end_templates;
+
 create policy "Allow public month-end template reads"
 on public.month_end_templates
 for select
@@ -76,6 +92,15 @@ create table if not exists public.information_notes (
 );
 
 alter table public.information_notes enable row level security;
+
+drop policy if exists "Allow public information note reads" on public.information_notes;
+drop policy if exists "Allow public information note inserts" on public.information_notes;
+drop policy if exists "Allow public information note updates" on public.information_notes;
+drop policy if exists "Allow public information note deletes" on public.information_notes;
+drop policy if exists "Allow active users information note reads" on public.information_notes;
+drop policy if exists "Allow active users information note inserts" on public.information_notes;
+drop policy if exists "Allow active users information note updates" on public.information_notes;
+drop policy if exists "Allow active users information note deletes" on public.information_notes;
 
 create policy "Allow public information note reads"
 on public.information_notes
@@ -123,6 +148,15 @@ on public.quote_items(country_name, zone);
 
 alter table public.quote_items enable row level security;
 
+drop policy if exists "Allow public quote item reads" on public.quote_items;
+drop policy if exists "Allow public quote item inserts" on public.quote_items;
+drop policy if exists "Allow public quote item updates" on public.quote_items;
+drop policy if exists "Allow public quote item deletes" on public.quote_items;
+drop policy if exists "Allow active users quote item reads" on public.quote_items;
+drop policy if exists "Allow admins quote item inserts" on public.quote_items;
+drop policy if exists "Allow admins quote item updates" on public.quote_items;
+drop policy if exists "Allow admins quote item deletes" on public.quote_items;
+
 create policy "Allow public quote item reads"
 on public.quote_items
 for select
@@ -169,6 +203,15 @@ create table if not exists public.quote_records (
 );
 
 alter table public.quote_records enable row level security;
+
+drop policy if exists "Allow public quote record reads" on public.quote_records;
+drop policy if exists "Allow public quote record inserts" on public.quote_records;
+drop policy if exists "Allow public quote record updates" on public.quote_records;
+drop policy if exists "Allow public quote record deletes" on public.quote_records;
+drop policy if exists "Allow active users quote record reads" on public.quote_records;
+drop policy if exists "Allow active users quote record inserts" on public.quote_records;
+drop policy if exists "Allow active users quote record updates" on public.quote_records;
+drop policy if exists "Allow active users quote record deletes" on public.quote_records;
 
 create policy "Allow public quote record reads"
 on public.quote_records

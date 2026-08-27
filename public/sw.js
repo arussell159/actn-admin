@@ -1,5 +1,17 @@
-const CACHE_NAME = "africa-ctn-month-end-v1"
-const APP_SHELL = ["/", "/manifest.webmanifest", "/icon.svg"]
+const CACHE_NAME = "actn-admin-v2"
+const APP_SHELL = [
+  "/",
+  "/month-end",
+  "/month-end/new",
+  "/previous-month-ends",
+  "/previous-month-ends/view",
+  "/pricing-upload",
+  "/quote-tool",
+  "/information",
+  "/template-builder",
+  "/manifest.webmanifest",
+  "/icon.svg",
+]
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
