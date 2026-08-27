@@ -3,6 +3,7 @@
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { MobileTabBar } from "@/components/mobile-tab-bar"
+import { MobilePullRefresh } from "@/components/mobile-pull-refresh"
 import { useMobileScrollLock } from "@/hooks/use-mobile-scroll-lock"
 
 export function SiteHeader({ title = "Documents" }: { title?: string }) {
@@ -20,6 +21,7 @@ export function SiteHeader({ title = "Documents" }: { title?: string }) {
           <h1 className="text-base font-medium">{title}</h1>
         </div>
       </header>
+      <MobilePullRefresh />
       <MobileTabBar />
     </>
   )

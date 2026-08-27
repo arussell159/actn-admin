@@ -23,6 +23,7 @@ import {
   BookOpenTextIcon,
   CalendarClockIcon,
   CalculatorIcon,
+  MinusIcon,
   GripIcon,
   HistoryIcon,
   MenuIcon,
@@ -153,10 +154,11 @@ function SortableDockRow({
       <span className="min-w-0 flex-1 font-medium">{item.label}</span>
       <button
         type="button"
-        className="rounded-full px-3 py-1 text-sm font-medium text-primary"
+        className="grid size-9 place-items-center rounded-full text-primary"
         onClick={() => onRemove(item.href)}
+        aria-label={`Move ${item.label} to More`}
       >
-        More
+        <MinusIcon className="size-5" />
       </button>
     </div>
   )
@@ -253,7 +255,7 @@ export function MobileTabBar() {
 
   return (
     <nav
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-5 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] md:hidden"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-5 pb-[max(env(safe-area-inset-bottom),0.15rem)] md:hidden"
       aria-label="Mobile app navigation"
     >
       <div className="pointer-events-auto relative w-full max-w-[26rem] overflow-hidden rounded-full border border-white/50 bg-background/65 px-4 py-1.5 shadow-[0_14px_40px_rgba(15,23,42,0.14),inset_0_1px_0_rgba(255,255,255,0.8),inset_0_-1px_0_rgba(15,23,42,0.05)] backdrop-blur-2xl supports-backdrop-filter:bg-background/50">
@@ -372,11 +374,12 @@ export function MobileTabBar() {
                         </span>
                         <button
                           type="button"
-                              className="rounded-full px-3 py-1 text-sm font-medium text-primary disabled:text-muted-foreground"
+                              className="grid size-9 place-items-center rounded-full text-primary disabled:text-muted-foreground"
                           disabled={!canAddToDock}
                           onClick={() => toggleDockItem(item.href)}
+                              aria-label={`Move ${item.label} to Dock`}
                         >
-                              Dock
+                              <PlusIcon className="size-5" />
                         </button>
                       </div>
                     </React.Fragment>
