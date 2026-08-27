@@ -25,6 +25,7 @@ type MonthEndRow = {
 
 const tableName = "month_end_records"
 const monthTitleKey = "__month_title"
+const localStorageKey = "actn-month-end-records-v1"
 
 export function exchangeRateKey(rowId: string) {
   return `${rowId}__exchange_rate`
@@ -96,6 +97,59 @@ function getSupabaseClient() {
   return createClient()
 }
 
+function isLocalhostBrowser() {
+  if (typeof window === "undefined") {
+    return false
+  }
+
+  return (
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1" ||
+    window.location.hostname === "[::1]" ||
+    window.location.hostname.endsWith(".localhost")
+  )
+}
+
+function getLocalRecords() {
+  if (typeof window === "undefined") {
+    return []
+  }
+
+  try {
+    const stored = window.localStorage.getItem(localStorageKey)
+    const parsed = stored ? JSON.parse(stored) : []
+
+    return Array.isArray(parsed) ? (parsed as MonthEndRecord[]) : []
+  } catch {
+    return []
+  }
+}
+
+function saveLocalRecords(records: MonthEndRecord[]) {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  window.localStorage.setItem(localStorageKey, JSON.stringify(records))
+}
+
+function saveLocalRecord(record: MonthEndRecord) {
+  const records = getLocalRecords()
+  const existingIndex = records.findIndex((item) => item.id === record.id)
+  const nextRecords =
+    existingIndex >= 0
+      ? records.map((item, index) => (index === existingIndex ? record : item))
+      : [record, ...records]
+
+  saveLocalRecords(
+    nextRecords.sort((first, second) => second.period.localeCompare(first.period))
+  )
+}
+
+function deleteLocalRecord(period: string) {
+  saveLocalRecords(getLocalRecords().filter((record) => record.period !== period))
+}
+
 function toRecord(row: MonthEndRow): MonthEndRecord {
   return {
     id: row.id,
@@ -123,52 +177,99 @@ function toRow(record: MonthEndRecord): MonthEndRow {
 }
 
 export async function getMonthEndRecord(period = getDefaultPeriod()) {
-  const supabase = getSupabaseClient()
-  const { data, error } = await supabase
-    .from(tableName)
-    .select("*")
-    .eq("period", period)
-    .maybeSingle<MonthEndRow>()
+  try {
+    const supabase = getSupabaseClient()
+    const { data, error } = await supabase
+      .from(tableName)
+      .select("*")
+      .eq("period", period)
+      .maybeSingle<MonthEndRow>()
 
-  if (error) {
+    if (error) {
+      throw error
+    }
+
+    return data ? toRecord(data) : undefined
+  } catch (error) {
+    if (isLocalhostBrowser()) {
+      return getLocalRecords().find((record) => record.period === period)
+    }
+
     throw error
   }
-
-  return data ? toRecord(data) : undefined
 }
 
 export async function saveMonthEndRecord(record: MonthEndRecord) {
-  const supabase = getSupabaseClient()
-  const { error } = await supabase.from(tableName).upsert(toRow(record), {
-    onConflict: "id",
-  })
+  try {
+    const supabase = getSupabaseClient()
+    const { error } = await supabase.from(tableName).upsert(toRow(record), {
+      onConflict: "id",
+    })
 
-  if (error) {
+    if (error) {
+      throw error
+    }
+  } catch (error) {
+    if (isLocalhostBrowser()) {
+      saveLocalRecord(record)
+      return
+    }
+
     throw error
   }
 }
 
 export async function deleteMonthEndRecord(period: string) {
-  const supabase = getSupabaseClient()
-  const { error } = await supabase.from(tableName).delete().eq("period", period)
+  try {
+    const supabase = getSupabaseClient()
+    const { error } = await supabase.from(tableName).delete().eq("period", period)
 
-  if (error) {
+    if (error) {
+      throw error
+    }
+  } catch (error) {
+    if (isLocalhostBrowser()) {
+      deleteLocalRecord(period)
+      return
+    }
+
     throw error
   }
 }
 
 export async function listMonthEndRecords() {
-  const supabase = getSupabaseClient()
-  const { data, error } = await supabase
-    .from(tableName)
-    .select("*")
-    .order("period", { ascending: false })
+  try {
+    const supabase = getSupabaseClient()
+    const { data, error } = await supabase
+      .from(tableName)
+      .select("*")
+      .order("period", { ascending: false })
 
-  if (error) {
+    if (error) {
+      throw error
+    }
+
+    const remoteRecords = (data ?? []).map((row) => toRecord(row as MonthEndRow))
+
+    if (!isLocalhostBrowser()) {
+      return remoteRecords
+    }
+
+    const remoteIds = new Set(remoteRecords.map((record) => record.id))
+    const localOnlyRecords = getLocalRecords().filter(
+      (record) => !remoteIds.has(record.id)
+    )
+
+    return [...remoteRecords, ...localOnlyRecords].sort((first, second) =>
+      second.period.localeCompare(first.period)
+    )
+  } catch (error) {
+    if (isLocalhostBrowser()) {
+      return getLocalRecords()
+    }
+
     throw error
   }
-
-  return (data ?? []).map((row) => toRecord(row as MonthEndRow))
 }
 
 export async function ensureMonthEndRecord(period = getDefaultPeriod()) {

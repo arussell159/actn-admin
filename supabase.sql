@@ -277,11 +277,32 @@ for delete
 to anon
 using (true);
 
-drop policy if exists "Allow public month-end reads" on public.month_end_records;
-drop policy if exists "Allow public month-end inserts" on public.month_end_records;
-drop policy if exists "Allow public month-end updates" on public.month_end_records;
-drop policy if exists "Allow public month-end deletes" on public.month_end_records;
 drop policy if exists "Allow authenticated month-end access" on public.month_end_records;
+
+create policy "Allow public month-end reads"
+on public.month_end_records
+for select
+to anon
+using (true);
+
+create policy "Allow public month-end inserts"
+on public.month_end_records
+for insert
+to anon
+with check (true);
+
+create policy "Allow public month-end updates"
+on public.month_end_records
+for update
+to anon
+using (true)
+with check (true);
+
+create policy "Allow public month-end deletes"
+on public.month_end_records
+for delete
+to anon
+using (true);
 
 create policy "Allow authenticated month-end access"
 on public.month_end_records

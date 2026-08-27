@@ -190,6 +190,25 @@ function parseExchangeRates(csvText: string, countries: TemplateCountryRow[]) {
   return Array.from(latestByCountry.values())
 }
 
+function getCreateErrorMessage(error: unknown) {
+  const message =
+    error instanceof Error ? error.message : "Could not create month end."
+
+  if (/row-level security|permission denied|violates row-level/i.test(message)) {
+    return "Supabase blocked this month-end write. Make sure you are signed in and the month_end_records table allows authenticated users to insert and update."
+  }
+
+  if (/JWT|auth|unauthorized|not authenticated/i.test(message)) {
+    return "You are not signed in with a valid Supabase session. Sign out, sign back in, and try again."
+  }
+
+  if (/Missing NEXT_PUBLIC_SUPABASE_URL|PUBLISHABLE_KEY/i.test(message)) {
+    return "Supabase is not configured for this app."
+  }
+
+  return message
+}
+
 export function NewMonthEndForm({
   existingRecords,
   onCancel,
@@ -262,9 +281,7 @@ export function NewMonthEndForm({
       window.dispatchEvent(new Event("month-end:records-updated"))
       onCreated(record)
     } catch (error) {
-      setCreateError(
-        error instanceof Error ? error.message : "Could not create month end."
-      )
+      setCreateError(getCreateErrorMessage(error))
     }
   }
 
