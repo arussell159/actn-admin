@@ -2,6 +2,7 @@ import "./globals.css"
 import { PwaRegister } from "@/components/pwa-register"
 import { ThemeProvider } from "@/components/theme-provider"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { appTitle } from "@/lib/page-title"
 import { cn } from "@/lib/utils"
 import type { Metadata } from "next"
 import type { Viewport } from "next"
@@ -10,15 +11,32 @@ import { Inter } from "next/font/google";
 const inter = Inter({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
-  title: "Africa CTN Month End",
-  description: "Africa CTN month-end checklist",
+  title: appTitle,
+  description: "Africa CTN admin tools for month end, quotes, notes, and pricing.",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "ACTN Admin",
+    title: appTitle,
   },
-  applicationName: "ACTN Admin",
+  applicationName: appTitle,
   manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [
+      {
+        url: "/actn-admin-icon.png",
+        type: "image/png",
+        sizes: "144x144",
+      },
+    ],
+    shortcut: ["/favicon.ico"],
+    apple: [
+      {
+        url: "/apple-icon.png",
+        type: "image/png",
+        sizes: "144x144",
+      },
+    ],
+  },
 }
 
 export const viewport: Viewport = {

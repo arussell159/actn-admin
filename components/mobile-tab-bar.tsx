@@ -253,17 +253,17 @@ export function MobileTabBar() {
 
   return (
     <nav
-      className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+1.25rem)] z-40 flex justify-center px-5 md:hidden"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-5 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] md:hidden"
       aria-label="Mobile app navigation"
     >
       <div className="pointer-events-auto relative w-full max-w-[26rem] overflow-hidden rounded-full border border-white/50 bg-background/65 px-4 py-1.5 shadow-[0_14px_40px_rgba(15,23,42,0.14),inset_0_1px_0_rgba(255,255,255,0.8),inset_0_-1px_0_rgba(15,23,42,0.05)] backdrop-blur-2xl supports-backdrop-filter:bg-background/50">
         <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.5),rgba(255,255,255,0.08)_42%,rgba(15,23,42,0.04))]" />
-        <span
-          className="absolute top-1/2 z-0 size-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-muted/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_6px_18px_rgba(15,23,42,0.08)] transition-[left] duration-300 ease-out"
-          style={{ left: `calc(${activeIndicatorIndex * 20 + 10}%)` }}
-          aria-hidden="true"
-        />
         <div className="relative z-10 grid grid-cols-5 items-center">
+          <span
+            className="absolute top-1/2 z-0 size-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-muted/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_6px_18px_rgba(15,23,42,0.08)] transition-[left] duration-300 ease-out"
+            style={{ left: `calc(${activeIndicatorIndex * 20 + 10}%)` }}
+            aria-hidden="true"
+          />
         {dockItems.map((item) => {
           const Icon = item.icon
           const isActive = isActivePath(pathname, item.match)

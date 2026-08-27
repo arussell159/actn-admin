@@ -42,15 +42,15 @@ export default function manifest(): MetadataRoute.Manifest {
     ],
     icons: [
       {
-        src: "/icon.svg",
-        sizes: "any",
-        type: "image/svg+xml",
+        src: "/actn-admin-icon.png",
+        sizes: "144x144",
+        type: "image/png",
         purpose: "any",
       },
       {
-        src: "/icon.svg",
-        sizes: "any",
-        type: "image/svg+xml",
+        src: "/actn-admin-icon.png",
+        sizes: "144x144",
+        type: "image/png",
         purpose: "maskable",
       },
     ],

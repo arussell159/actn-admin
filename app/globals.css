@@ -164,6 +164,6 @@
   }
 
   [data-slot="sidebar-inset"] {
-    padding-bottom: calc(env(safe-area-inset-bottom) + 6rem);
+    padding-bottom: calc(env(safe-area-inset-bottom) + 5.25rem);
   }
 }
