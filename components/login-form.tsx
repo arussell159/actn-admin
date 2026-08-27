@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useSearchParams } from "next/navigation"
-import { FingerprintIcon, LoaderCircleIcon } from "lucide-react"
+import { LoaderCircleIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -45,19 +45,6 @@ function getLoginErrorMessage(error: { message?: string; code?: string }) {
   return message
 }
 
-function getPasskeyErrorMessage(error?: { message?: string; code?: string } | null) {
-  const message = error?.message || ""
-  const code = error?.code || ""
-
-  if (code === "passkey_disabled" || /passkeys? .*disabled/i.test(message)) {
-    return "Face ID is not enabled in Supabase yet. Use your password for now."
-  }
-
-  return (
-    message || "Face ID sign in did not finish. Use your password to continue."
-  )
-}
-
 function browserSupportsPasskey() {
   return (
     typeof window !== "undefined" &&
@@ -74,35 +61,13 @@ export function LoginForm({
   const [email, setEmail] = React.useState("")
   const [password, setPassword] = React.useState("")
   const [isSubmitting, setIsSubmitting] = React.useState(false)
-  const [isPasskeySubmitting, setIsPasskeySubmitting] = React.useState(false)
-  const [isPasskeyAvailable, setIsPasskeyAvailable] = React.useState(false)
   const [hasSavedPasskey, setHasSavedPasskey] = React.useState(false)
   const [error, setError] = React.useState("")
-  const [passkeyMessage, setPasskeyMessage] = React.useState("")
   const nextPath = searchParams.get("next") || "/month-end"
   const safeNextPath =
     nextPath.startsWith("/") && !nextPath.startsWith("//")
       ? nextPath
       : "/month-end"
-
-  React.useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      const supportsPasskey = browserSupportsPasskey()
-      const savedPasskey =
-        window.localStorage.getItem(authPasskeyEnabledKey) === "true"
-
-      setIsPasskeyAvailable(supportsPasskey)
-      setHasSavedPasskey(savedPasskey)
-
-      if (supportsPasskey) {
-        signInWithPasskey({ automatic: true })
-      }
-    }, 0)
-
-    return () => window.clearTimeout(timeoutId)
-    // signInWithPasskey is intentionally omitted so this only runs on login mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   function finishLogin() {
     markAuthSessionStarted()
@@ -118,9 +83,6 @@ export function LoginForm({
     const { error: passkeyError } = await supabase.auth.registerPasskey()
 
     if (passkeyError) {
-      setPasskeyMessage(
-        getPasskeyErrorMessage(passkeyError)
-      )
       return
     }
 
@@ -128,21 +90,12 @@ export function LoginForm({
     setHasSavedPasskey(true)
   }
 
-  async function signInWithPasskey({
-    automatic = false,
-  }: {
-    automatic?: boolean
-  } = {}) {
+  async function signInWithPasskey() {
     if (!browserSupportsPasskey()) {
-      if (!automatic) {
-        setError("Face ID sign in is not available in this browser.")
-      }
       return
     }
 
-    setIsPasskeySubmitting(true)
     setError("")
-    setPasskeyMessage(automatic ? "Checking Face ID..." : "")
 
     try {
       const supabase = createClient()
@@ -150,34 +103,33 @@ export function LoginForm({
         await supabase.auth.signInWithPasskey()
 
       if (passkeyError || !data?.session) {
-        if (!automatic) {
-          setError(getPasskeyErrorMessage(passkeyError))
-        } else {
-          setPasskeyMessage(
-            passkeyError?.code === "passkey_disabled"
-              ? getPasskeyErrorMessage(passkeyError)
-              : "Use your password if Face ID does not appear."
-          )
-        }
         return
       }
 
       window.localStorage.setItem(authPasskeyEnabledKey, "true")
       finishLogin()
-    } catch (passkeyError) {
-      if (!automatic) {
-        setError(
-          passkeyError instanceof Error
-            ? getPasskeyErrorMessage(passkeyError)
-            : "Face ID sign in did not finish. Use your password to continue."
-        )
-      } else {
-        setPasskeyMessage("Use your password if Face ID does not appear.")
-      }
-    } finally {
-      setIsPasskeySubmitting(false)
+    } catch {
+      return
     }
   }
+
+  React.useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      const supportsPasskey = browserSupportsPasskey()
+      const savedPasskey =
+        window.localStorage.getItem(authPasskeyEnabledKey) === "true"
+
+      setHasSavedPasskey(savedPasskey)
+
+      if (supportsPasskey) {
+        signInWithPasskey()
+      }
+    }, 0)
+
+    return () => window.clearTimeout(timeoutId)
+    // signInWithPasskey is intentionally omitted so this only runs on login mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function signIn(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -275,30 +227,6 @@ export function LoginForm({
             Sign In
           </Button>
         </Field>
-        {isPasskeyAvailable ? (
-          <Field>
-            <Button
-              type="button"
-              variant="outline"
-              size="lg"
-              className="h-12 rounded-2xl text-base"
-              disabled={isPasskeySubmitting}
-              onClick={() => signInWithPasskey()}
-            >
-              {isPasskeySubmitting ? (
-                <LoaderCircleIcon className="animate-spin" />
-              ) : (
-                <FingerprintIcon />
-              )}
-              {hasSavedPasskey ? "Sign in with Face ID" : "Retry Face ID"}
-            </Button>
-          </Field>
-        ) : null}
-        {passkeyMessage ? (
-          <p className="text-center text-xs text-muted-foreground">
-            {passkeyMessage}
-          </p>
-        ) : null}
       </FieldGroup>
     </form>
   )

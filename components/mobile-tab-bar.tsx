@@ -264,7 +264,7 @@ export function MobileTabBar() {
   return createPortal(
     <nav
       className="pointer-events-none fixed inset-x-0 z-40 flex justify-center px-5 pb-0 md:hidden"
-      style={{ bottom: "0.5rem" }}
+      style={{ bottom: "1rem" }}
       aria-label="Mobile app navigation"
     >
       <div className="pointer-events-auto relative w-full max-w-[26rem] overflow-hidden rounded-full border border-white/50 bg-background/65 px-4 py-1.5 shadow-[0_14px_40px_rgba(15,23,42,0.14),inset_0_1px_0_rgba(255,255,255,0.8),inset_0_-1px_0_rgba(15,23,42,0.05)] backdrop-blur-2xl supports-backdrop-filter:bg-background/50">
