@@ -23,6 +23,7 @@ import {
 import {
   exchangeRateKey,
   formatPeriod,
+  getNextPeriod,
   listMonthEndRecords,
   saveMonthEndRecord,
   withMonthEndTitle,
@@ -57,6 +58,22 @@ function defaultPeriodParts() {
     month: String(date.getMonth() + 1).padStart(2, "0"),
     year: String(date.getFullYear()),
   }
+}
+
+function periodParts(period: string) {
+  const [year, month] = period.split("-")
+
+  return { month, year }
+}
+
+function suggestedPeriod(existingRecords: MonthEndRecord[]) {
+  const latestPeriod = existingRecords
+    .map((record) => record.period)
+    .filter((period) => /^\d{4}-\d{2}$/.test(period))
+    .sort()
+    .at(-1)
+
+  return latestPeriod ? periodParts(getNextPeriod(latestPeriod)) : defaultPeriodParts()
 }
 
 function normalizeMatch(value: string) {
@@ -182,7 +199,10 @@ export function NewMonthEndForm({
   onCancel?: () => void
   onCreated: (record: MonthEndRecord) => void
 }) {
-  const defaults = React.useMemo(defaultPeriodParts, [])
+  const defaults = React.useMemo(
+    () => suggestedPeriod(existingRecords),
+    [existingRecords]
+  )
   const currentYear = Number(defaults.year)
   const years = React.useMemo(
     () =>
