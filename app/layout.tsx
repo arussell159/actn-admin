@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   description: "Africa CTN admin tools for month end, quotes, notes, and pricing.",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
+    statusBarStyle: "black-translucent",
     title: appTitle,
   },
   applicationName: appTitle,
