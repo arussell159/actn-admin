@@ -756,7 +756,7 @@ export function QuoteToolView() {
                   section.items.length ? (
                     <div
                       key={section.id}
-                      className="overflow-hidden rounded-lg border bg-background"
+                      className="grid gap-3"
                     >
                       <QuoteSectionToggle
                         title={section.title}
@@ -765,7 +765,7 @@ export function QuoteToolView() {
                         onToggle={() => toggleItemSection(section.id)}
                       />
                       {section.open ? (
-                        <div className="grid gap-3 border-t p-3">
+                        <div className="grid gap-3">
                           {section.items.map((item) => {
                             const quantity =
                               quantities[item.internalId] ??
@@ -775,7 +775,7 @@ export function QuoteToolView() {
                             return (
                               <div
                                 key={item.internalId}
-                                className="grid gap-3 rounded-lg border bg-card p-3"
+                                className="grid gap-3 rounded-lg border bg-background p-3"
                               >
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="min-w-0">

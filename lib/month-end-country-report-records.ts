@@ -1,5 +1,5 @@
 import { createPublicClient } from "@/lib/public-client"
-import { assertSupabaseConfig } from "@/lib/supabase-env"
+import { assertSupabaseConfig, hasSupabaseConfig } from "@/lib/supabase-env"
 import {
   mergeReportValues,
   normalizeCountryReportReference,
@@ -55,7 +55,9 @@ function isLocalhostBrowser() {
   )
 }
 
-function toRecord(row: MonthEndCountryReportRecordRow): MonthEndCountryReportRecord {
+function toRecord(
+  row: MonthEndCountryReportRecordRow
+): MonthEndCountryReportRecord {
   return {
     id: row.id,
     monthEndId: row.month_end_id,
@@ -73,7 +75,9 @@ function toRecord(row: MonthEndCountryReportRecordRow): MonthEndCountryReportRec
   }
 }
 
-function toRow(record: MonthEndCountryReportRecord): MonthEndCountryReportRecordRow {
+function toRow(
+  record: MonthEndCountryReportRecord
+): MonthEndCountryReportRecordRow {
   return {
     id: record.id,
     month_end_id: record.monthEndId,
@@ -224,25 +228,43 @@ export async function replaceMonthEndCountryReportRecords({
 
   try {
     const supabase = getSupabaseClient()
-    const { error: deleteError } = await supabase
+    const { data: existingRows, error: selectError } = await supabase
       .from(tableName)
-      .delete()
+      .select("id")
       .eq("month_end_id", monthEndId)
       .eq("country_id", canonicalCountryId)
 
-    if (deleteError) {
-      throw deleteError
+    if (selectError) {
+      throw selectError
     }
 
     if (records.length) {
-      const { error } = await supabase.from(tableName).insert(records.map(toRow))
+      const { error } = await supabase
+        .from(tableName)
+        .upsert(records.map(toRow), { onConflict: "id" })
+
+      if (error) {
+        throw error
+      }
+    }
+
+    const nextIds = new Set(records.map((record) => record.id))
+    const staleIds = (existingRows ?? [])
+      .map((row) => row.id)
+      .filter((id) => !nextIds.has(id))
+
+    if (staleIds.length) {
+      const { error } = await supabase
+        .from(tableName)
+        .delete()
+        .in("id", staleIds)
 
       if (error) {
         throw error
       }
     }
   } catch (error) {
-    if (isLocalhostBrowser()) {
+    if (isLocalhostBrowser() && !hasSupabaseConfig()) {
       replaceLocalCountryReportRecords(monthEndId, countryId, records)
       return
     }
@@ -277,14 +299,16 @@ export async function listMonthEndCountryReportRecords({
       toRecord(row as MonthEndCountryReportRecordRow)
     )
   } catch (error) {
-    if (isLocalhostBrowser()) {
+    if (isLocalhostBrowser() && !hasSupabaseConfig()) {
       return getLocalRecords()
         .filter(
           (record) =>
             record.monthEndId === monthEndId &&
             getCanonicalCountryId(record.countryId) === canonicalCountryId
         )
-        .sort((first, second) => first.reference.localeCompare(second.reference))
+        .sort((first, second) =>
+          first.reference.localeCompare(second.reference)
+        )
     }
 
     throw error

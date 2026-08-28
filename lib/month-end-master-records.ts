@@ -1,6 +1,6 @@
 import { parseCsv, findCsvColumn, normalizeCsvHeader } from "@/lib/csv"
 import { createPublicClient } from "@/lib/public-client"
-import { assertSupabaseConfig } from "@/lib/supabase-env"
+import { assertSupabaseConfig, hasSupabaseConfig } from "@/lib/supabase-env"
 import {
   loadMonthEndTemplate,
   type TemplateCountryRow,
@@ -35,6 +35,7 @@ type MonthEndMasterRecordRow = {
   ctn_number: string
   status: string
   amount: number
+  transaction_date?: string
   source_class: string
   source_internal_id: string
   source_row_index: number
@@ -44,8 +45,51 @@ type MonthEndMasterRecordRow = {
 const tableName = "month_end_master_records"
 const localStorageKey = "actn-month-end-master-records-v1"
 
+export function masterTransactionDatesKey(countryId: string) {
+  return `${countryId}__master_transaction_dates`
+}
+
+export function getMasterTransactionDateCheckedValues(
+  records: MonthEndMasterRecord[]
+) {
+  const datesByCountry = new Map<string, Record<string, string>>()
+
+  for (const record of records) {
+    const transactionDate = record.transactionDate?.trim()
+
+    if (!transactionDate) {
+      continue
+    }
+
+    const countryDates = datesByCountry.get(record.countryId) ?? {}
+    countryDates[record.id] = transactionDate
+    datesByCountry.set(record.countryId, countryDates)
+  }
+
+  return Object.fromEntries(
+    Array.from(datesByCountry, ([countryId, dates]) => [
+      masterTransactionDatesKey(countryId),
+      JSON.stringify(dates),
+    ])
+  )
+}
+
 function normalizeMatch(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "")
+}
+
+function findMasterTransactionDateIndex(headers: string[]) {
+  const exactNames = new Set([
+    "date",
+    "transactiondate",
+    "trandate",
+    "invoicedate",
+  ])
+  const exactIndex = headers.findIndex((header) =>
+    exactNames.has(normalizeCsvHeader(header))
+  )
+
+  return exactIndex >= 0 ? exactIndex : findCsvColumn(headers, ["date"])
 }
 
 function getSupabaseClient() {
@@ -78,7 +122,7 @@ function toRecord(row: MonthEndMasterRecordRow): MonthEndMasterRecord {
     ctnNumber: row.ctn_number,
     status: row.status,
     amount: Number(row.amount) || 0,
-    transactionDate: "",
+    transactionDate: row.transaction_date ?? "",
     sourceClass: row.source_class,
     sourceInternalId: row.source_internal_id,
     sourceRowIndex: row.source_row_index,
@@ -127,7 +171,10 @@ function saveLocalRecords(records: MonthEndMasterRecord[]) {
   window.localStorage.setItem(localStorageKey, JSON.stringify(records))
 }
 
-function upsertLocalMasterRecords(monthEndId: string, records: MonthEndMasterRecord[]) {
+function upsertLocalMasterRecords(
+  monthEndId: string,
+  records: MonthEndMasterRecord[]
+) {
   const existing = getLocalRecords().filter(
     (record) => record.monthEndId !== monthEndId
   )
@@ -182,7 +229,9 @@ function getLinkedCountryRowsFromTemplate(
     for (const country of countries) {
       const countryLinks = country.combinedWithCountryIds ?? []
       const isLinkedCountry = linkedIds.has(country.id)
-      const isLinkedToKnownCountry = countryLinks.some((id) => linkedIds.has(id))
+      const isLinkedToKnownCountry = countryLinks.some((id) =>
+        linkedIds.has(id)
+      )
 
       if (!isLinkedCountry && !isLinkedToKnownCountry) {
         continue
@@ -211,7 +260,9 @@ export function getLinkedCountryIds(
 ) {
   const linkedRows = getLinkedCountryRowsFromTemplate(countryId, countries)
 
-  return linkedRows.length ? linkedRows.map((country) => country.id) : [countryId]
+  return linkedRows.length
+    ? linkedRows.map((country) => country.id)
+    : [countryId]
 }
 
 export function getCanonicalCountryId(
@@ -286,7 +337,8 @@ export function isMasterCsv(csvText: string) {
     normalizedHeaders.has("billoflading") &&
     normalizedHeaders.has("ctnnumber") &&
     normalizedHeaders.has("ctnstatus") &&
-    (normalizedHeaders.has("classnohierarchy") || normalizedHeaders.has("class"))
+    (normalizedHeaders.has("classnohierarchy") ||
+      normalizedHeaders.has("class"))
   )
 }
 
@@ -309,7 +361,7 @@ export function parseMonthEndMasterCsv({
   }
 
   const internalIdIndex = findCsvColumn(headers, ["internalid"])
-  const dateIndex = findCsvColumn(headers, ["date"])
+  const dateIndex = findMasterTransactionDateIndex(headers)
   const salesOrderIndex = findCsvColumn(headers, ["createdfrom"])
   const billOfLadingIndex = findCsvColumn(headers, ["billoflading"])
   const ctnIndex = findCsvColumn(headers, ["ctnnumber"])
@@ -357,7 +409,7 @@ export function parseMonthEndMasterCsv({
       ctnNumber: row[ctnIndex]?.trim() ?? "",
       status: row[statusIndex]?.trim() ?? "",
       amount: amountIndex >= 0 ? parseAmount(row[amountIndex]) : 0,
-      transactionDate: dateIndex >= 0 ? row[dateIndex]?.trim() ?? "" : "",
+      transactionDate: dateIndex >= 0 ? (row[dateIndex]?.trim() ?? "") : "",
       sourceClass,
       sourceInternalId,
       sourceRowIndex,
@@ -384,7 +436,7 @@ export function parseCountryMasterCsv({
   }
 
   const internalIdIndex = findCsvColumn(headers, ["internalid", "id"])
-  const dateIndex = findCsvColumn(headers, ["date"])
+  const dateIndex = findMasterTransactionDateIndex(headers)
   const salesOrderIndex = findCsvColumn(headers, [
     "createdfrom",
     "salesorder",
@@ -417,13 +469,14 @@ export function parseCountryMasterCsv({
     const sourceInternalId =
       internalIdIndex >= 0 ? (row[internalIdIndex]?.trim() ?? "") : ""
     const sourceRowIndex = index + 2
-    const sourceClass = classIndex >= 0 ? row[classIndex]?.trim() ?? "" : ""
+    const sourceClass = classIndex >= 0 ? (row[classIndex]?.trim() ?? "") : ""
     const matchedCountries = sourceClass
       ? findCountries(sourceClass, targetCountries)
       : targetCountries
-    const countriesToApply = sourceClass && matchedCountries.length
-      ? [matchedCountries[0]]
-      : targetCountries
+    const countriesToApply =
+      sourceClass && matchedCountries.length
+        ? [matchedCountries[0]]
+        : targetCountries
 
     return countriesToApply.map((country) => ({
       id: makeRecordId(
@@ -441,7 +494,7 @@ export function parseCountryMasterCsv({
       ctnNumber: row[ctnIndex]?.trim() ?? "",
       status: row[statusIndex]?.trim() ?? "",
       amount: amountIndex >= 0 ? parseAmount(row[amountIndex]) : 0,
-      transactionDate: dateIndex >= 0 ? row[dateIndex]?.trim() ?? "" : "",
+      transactionDate: dateIndex >= 0 ? (row[dateIndex]?.trim() ?? "") : "",
       sourceClass: sourceClass || country.name,
       sourceInternalId,
       sourceRowIndex,
@@ -455,24 +508,42 @@ export async function saveMonthEndMasterRecords(
 ) {
   try {
     const supabase = getSupabaseClient()
-    const { error: deleteError } = await supabase
+    const { data: existingRows, error: selectError } = await supabase
       .from(tableName)
-      .delete()
+      .select("id")
       .eq("month_end_id", monthEndId)
 
-    if (deleteError) {
-      throw deleteError
+    if (selectError) {
+      throw selectError
     }
 
     if (records.length) {
-      const { error } = await supabase.from(tableName).insert(records.map(toRow))
+      const { error } = await supabase
+        .from(tableName)
+        .upsert(records.map(toRow), { onConflict: "id" })
+
+      if (error) {
+        throw error
+      }
+    }
+
+    const nextIds = new Set(records.map((record) => record.id))
+    const staleIds = (existingRows ?? [])
+      .map((row) => row.id)
+      .filter((id) => !nextIds.has(id))
+
+    if (staleIds.length) {
+      const { error } = await supabase
+        .from(tableName)
+        .delete()
+        .in("id", staleIds)
 
       if (error) {
         throw error
       }
     }
   } catch (error) {
-    if (isLocalhostBrowser()) {
+    if (isLocalhostBrowser() && !hasSupabaseConfig()) {
       upsertLocalMasterRecords(monthEndId, records)
       return
     }
@@ -494,25 +565,43 @@ export async function replaceMonthEndCountryMasterRecords({
 
   try {
     const supabase = getSupabaseClient()
-    const { error: deleteError } = await supabase
+    const { data: existingRows, error: selectError } = await supabase
       .from(tableName)
-      .delete()
+      .select("id")
       .eq("month_end_id", monthEndId)
       .in("country_id", countryIds)
 
-    if (deleteError) {
-      throw deleteError
+    if (selectError) {
+      throw selectError
     }
 
     if (records.length) {
-      const { error } = await supabase.from(tableName).insert(records.map(toRow))
+      const { error } = await supabase
+        .from(tableName)
+        .upsert(records.map(toRow), { onConflict: "id" })
+
+      if (error) {
+        throw error
+      }
+    }
+
+    const nextIds = new Set(records.map((record) => record.id))
+    const staleIds = (existingRows ?? [])
+      .map((row) => row.id)
+      .filter((id) => !nextIds.has(id))
+
+    if (staleIds.length) {
+      const { error } = await supabase
+        .from(tableName)
+        .delete()
+        .in("id", staleIds)
 
       if (error) {
         throw error
       }
     }
   } catch (error) {
-    if (isLocalhostBrowser()) {
+    if (isLocalhostBrowser() && !hasSupabaseConfig()) {
       upsertLocalCountryMasterRecords(monthEndId, countryIds, records)
       return
     }
@@ -557,7 +646,7 @@ export async function listMonthEndMasterRecords({
 
     return (data ?? []).map((row) => toRecord(row as MonthEndMasterRecordRow))
   } catch (error) {
-    if (isLocalhostBrowser()) {
+    if (isLocalhostBrowser() && !hasSupabaseConfig()) {
       return getLocalRecords()
         .filter(
           (record) =>

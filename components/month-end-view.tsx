@@ -8,6 +8,7 @@ import {
   CheckIcon,
   CheckCircle2Icon,
   ClipboardCheckIcon,
+  DownloadIcon,
   FileCheck2Icon,
   FileTextIcon,
   MoreHorizontalIcon,
@@ -67,6 +68,10 @@ import {
   type TemplateCountryRow,
   type TemplateSimpleTask,
 } from "@/lib/month-end-template"
+import {
+  createRollInvoicesCsv,
+  listApprovedInternalIds,
+} from "@/lib/month-end-roll-invoices"
 import { simpleMapAfricaPaths } from "@/lib/simplemap-africa-paths"
 
 const workflowTaskIcons: Record<CloseTaskId, React.ElementType> = {
@@ -577,6 +582,26 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     window.dispatchEvent(new Event("month-end:records-updated"))
   }
 
+  const approvedRollInternalIds = listApprovedInternalIds(checked)
+
+  function downloadRollInvoicesCsv() {
+    if (!approvedRollInternalIds.length) {
+      return
+    }
+
+    const csv = createRollInvoicesCsv(approvedRollInternalIds)
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement("a")
+
+    anchor.href = url
+    anchor.download = `${record?.period ?? "month-end"}-roll-invoices.csv`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(url)
+  }
+
   function updateRowTasks(
     row: TemplateCountryRow,
     rowIndex: number,
@@ -602,23 +627,43 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     })
   }
 
-  const monthStatusAction = isClosed ? (
-    <Button
-      variant="outline"
-      className="hidden h-9 shrink-0 px-4 md:inline-flex"
-      onClick={reopenMonth}
-    >
-      <CheckCircle2Icon />
-      Reopen Month
-    </Button>
-  ) : (
-    <Button
-      className="hidden h-9 shrink-0 px-4 md:inline-flex"
-      onClick={closeMonth}
-    >
-      <FileCheck2Icon />
-      Close Month
-    </Button>
+  const monthStatusAction = (
+    <div className="hidden shrink-0 items-center gap-2 md:flex">
+      {isClosed ? (
+        <Button variant="outline" className="h-9 px-4" onClick={reopenMonth}>
+          <CheckCircle2Icon />
+          Reopen Month
+        </Button>
+      ) : (
+        <Button className="h-9 px-4" onClick={closeMonth}>
+          <FileCheck2Icon />
+          Close Month
+        </Button>
+      )}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              variant="outline"
+              size="icon-sm"
+              className="h-9 w-9"
+              aria-label="Month end actions"
+            />
+          }
+        >
+          <MoreHorizontalIcon />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-56">
+          <DropdownMenuItem
+            disabled={!approvedRollInternalIds.length}
+            onClick={downloadRollInvoicesCsv}
+          >
+            <DownloadIcon />
+            Roll Invoices CSV ({approvedRollInternalIds.length})
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   )
 
   if (!period && hasLoaded && !record) {
@@ -723,7 +768,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
               <details className="group mt-3 border-t pt-2">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium marker:hidden">
                   <span>Modules</span>
-                  <span className="text-xs tabular-nums text-muted-foreground">
+                  <span className="text-xs text-muted-foreground tabular-nums">
                     {supplementalTaskDone}/{supplementalTaskTotal}
                   </span>
                 </summary>
@@ -735,7 +780,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                         className="flex items-center justify-between gap-3 text-xs"
                       >
                         <span className="min-w-0 truncate">{module.name}</span>
-                        <span className="shrink-0 font-medium tabular-nums text-muted-foreground">
+                        <span className="shrink-0 font-medium text-muted-foreground tabular-nums">
                           {module.done}/{module.total}
                         </span>
                       </div>
@@ -932,7 +977,10 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                   <div className="truncate">{row.name}</div>
                                 ) : (
                                   <AppLink
-                                    href={countryRecordHref(activePeriod, row.id)}
+                                    href={countryRecordHref(
+                                      activePeriod,
+                                      row.id
+                                    )}
                                     className="block truncate underline-offset-4 hover:underline"
                                   >
                                     {row.name}
@@ -1163,8 +1211,8 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                               <TableCell
                                 className={
                                   isParentRow
-                                    ? "whitespace-nowrap pr-8 font-semibold"
-                                    : "whitespace-nowrap pr-8 font-medium"
+                                    ? "pr-8 font-semibold whitespace-nowrap"
+                                    : "pr-8 font-medium whitespace-nowrap"
                                 }
                               >
                                 {isParentRow ? (
@@ -1178,7 +1226,10 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                   </span>
                                 ) : (
                                   <AppLink
-                                    href={countryRecordHref(activePeriod, row.id)}
+                                    href={countryRecordHref(
+                                      activePeriod,
+                                      row.id
+                                    )}
                                     className="block underline-offset-4 hover:underline"
                                     style={{
                                       marginLeft: `${row.indent * 1.75}rem`,
@@ -1359,11 +1410,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                       {canUncheckAll ? (
                                         <DropdownMenuItem
                                           onClick={() =>
-                                            updateRowTasks(
-                                              row,
-                                              rowIndex,
-                                              false
-                                            )
+                                            updateRowTasks(row, rowIndex, false)
                                           }
                                         >
                                           <XIcon />

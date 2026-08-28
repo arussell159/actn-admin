@@ -9,6 +9,10 @@ export function getSupabasePublishableKey() {
   )
 }
 
+export function hasSupabaseConfig() {
+  return Boolean(getSupabaseUrl() && getSupabasePublishableKey())
+}
+
 export function assertSupabaseConfig() {
   const supabaseUrl = getSupabaseUrl()
   const supabaseKey = getSupabasePublishableKey()

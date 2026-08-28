@@ -32,6 +32,7 @@ import {
 } from "@/lib/month-end-db"
 import { parseCsv } from "@/lib/csv"
 import {
+  getMasterTransactionDateCheckedValues,
   isMasterCsv,
   parseMonthEndMasterCsv,
   saveMonthEndMasterRecords,
@@ -233,6 +234,15 @@ export function NewMonthEndForm({
       )
       const now = new Date().toISOString()
       const title = formatPeriod(period)
+      const masterRecords = masterFile
+        ? parseMonthEndMasterCsv({
+            csvText: masterFile.text,
+            countries: template.countries,
+            monthEndId: period,
+            period,
+          })
+        : []
+      Object.assign(checked, getMasterTransactionDateCheckedValues(masterRecords))
       const record: MonthEndRecord = {
         id: period,
         period,
@@ -243,14 +253,7 @@ export function NewMonthEndForm({
       }
 
       await saveMonthEndRecord(record)
-      if (masterFile) {
-        const masterRecords = parseMonthEndMasterCsv({
-          csvText: masterFile.text,
-          countries: template.countries,
-          monthEndId: record.id,
-          period: record.period,
-        })
-
+      if (masterRecords.length) {
         await saveMonthEndMasterRecords(record.id, masterRecords)
       }
       window.dispatchEvent(new Event("month-end:records-updated"))

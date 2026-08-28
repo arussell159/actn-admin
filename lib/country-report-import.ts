@@ -12,6 +12,13 @@ export type ParsedCountryReportRecord = {
 }
 
 function parseAmount(value: string | number | undefined) {
+  if (typeof value === "string") {
+    value = value.replace(
+      /(?:EUR|\u20ac|\u00e2\u201a\u00ac|\u00c3\u00a2\u00e2\u201a\u00ac\u00c5\u00a1\u00c3\u0082\u00c2\u00ac)/gi,
+      ""
+    )
+  }
+
   if (typeof value === "number") {
     return Number.isFinite(value) ? value : 0
   }
@@ -66,9 +73,7 @@ function rowHasCountryReportHeaders(row: string[]) {
       ].some((match) => header.includes(match))
     ) &&
     normalizedHeaders.some((header) =>
-      ["amount", "price", "costofectn"].some((match) =>
-        header.includes(match)
-      )
+      ["amount", "price", "costofectn"].some((match) => header.includes(match))
     )
   )
 }
@@ -196,6 +201,77 @@ function parseSenegalPaymentText(text: string) {
   }
 
   return records
+}
+
+function getBeninPaymentPeriod(value: string | undefined) {
+  const match = (value ?? "").match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})at\b/i)
+
+  if (!match) {
+    return ""
+  }
+
+  return `${match[1]}-${match[2].padStart(2, "0")}`
+}
+
+function parseBeninPaymentText(
+  text: string,
+  options: { period?: string } = {}
+) {
+  if (!/AfricaCTN LLC/i.test(text) || !/ECTN reference\s*:/i.test(text)) {
+    return undefined
+  }
+
+  const entries = text
+    .split(/(?=^\d{4}\/\d{2}\/\d{2}at\s+\d{2}:\d{2}:\d{2}\t)/m)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+  const grouped = new Map<string, ParsedCountryReportRecord>()
+
+  for (const entry of entries) {
+    if (
+      !/AfricaCTN LLC/i.test(entry) ||
+      !/\bApproved\b/i.test(entry) ||
+      !/\b(?:ECTN Payment|Payment of correction request)\b/i.test(entry)
+    ) {
+      continue
+    }
+
+    const transactionDate = entry.match(
+      /^(\d{4}\/\d{2}\/\d{2}at\s+\d{2}:\d{2}:\d{2})/i
+    )?.[1]
+
+    if (
+      options.period &&
+      getBeninPaymentPeriod(transactionDate) !== options.period
+    ) {
+      continue
+    }
+
+    const ctnNumber =
+      entry.match(/\bECTN reference\s*:\s*([A-Z]{2}\d{2}[A-Z0-9]+)\b/i)?.[1] ??
+      ""
+    const amountText =
+      entry.match(/[+-]\s*[\d\s.,]+(?:â‚¬|€|EUR|Ã¢â€šÂ¬)/i)?.[0] ?? ""
+    const amount = Math.abs(parseAmount(amountText))
+
+    if (!ctnNumber || !amount) {
+      continue
+    }
+
+    const existing = grouped.get(ctnNumber)
+
+    grouped.set(ctnNumber, {
+      invoiceNumber: "",
+      ctnNumber: mergeReportValues(existing?.ctnNumber ?? "", ctnNumber),
+      billOfLadingNumber: "",
+      reference: ctnNumber,
+      amount: (existing?.amount ?? 0) + amount,
+      sourceRowCount: (existing?.sourceRowCount ?? 0) + 1,
+      sourceCountryName: "Benin",
+    })
+  }
+
+  return Array.from(grouped.values())
 }
 
 function isCreditsLedger(headers: string[]) {
@@ -434,7 +510,11 @@ function isSckBalanceTransactionsExport(headers: string[]) {
 }
 
 function extractSckBalanceTransactionBillOfLading(value: string | undefined) {
-  return (value ?? "").match(/\bEntry\s+(.+?)\s+(?:submission fee|rejection refund)\b/i)?.[1] ?? ""
+  return (
+    (value ?? "").match(
+      /\bEntry\s+(.+?)\s+(?:submission fee|rejection refund)\b/i
+    )?.[1] ?? ""
+  )
 }
 
 function parseSckBalanceTransactionsCsv(
@@ -468,7 +548,9 @@ function parseSckBalanceTransactionsCsv(
   const rowsToImport =
     matchingPeriodRows.length || uniqueReportPeriods.length !== 1
       ? matchingPeriodRows
-      : reportRowsByPeriod.filter(({ period }) => period === uniqueReportPeriods[0])
+      : reportRowsByPeriod.filter(
+          ({ period }) => period === uniqueReportPeriods[0]
+        )
 
   for (const { row } of rowsToImport) {
     const reason = row[reasonIndex]?.trim().toUpperCase() ?? ""
@@ -499,7 +581,10 @@ function parseSckBalanceTransactionsCsv(
         existing?.billOfLadingNumber ?? "",
         billOfLadingNumber
       ),
-      reference: mergeReportValues(existing?.reference ?? "", billOfLadingNumber),
+      reference: mergeReportValues(
+        existing?.reference ?? "",
+        billOfLadingNumber
+      ),
       amount: (existing?.amount ?? 0) + amount,
       sourceRowCount: (existing?.sourceRowCount ?? 0) + 1,
     })
@@ -608,7 +693,10 @@ function parseForemostStatementOfAccountCsv(
   const documentIndex = findExactCsvColumn(headers, ["dnno"])
   const ectnIndex = findExactCsvColumn(headers, ["ectnno"])
   const chargeIndex = headers.findIndex((header) =>
-    header.toLowerCase().replace(/[^a-z0-9]+/g, "").includes("chargesdr")
+    header
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "")
+      .includes("chargesdr")
   )
 
   return dataRows.flatMap((row) => {
@@ -635,17 +723,17 @@ function parseForemostStatementOfAccountCsv(
     const splitAmount = ctnNumbers.length ? amount / ctnNumbers.length : amount
 
     return ctnNumbers.map((ctnNumber) => ({
-        invoiceNumber: documentNumber,
-        ctnNumber,
-        billOfLadingNumber,
-        reference: isAngolaRow
-          ? billOfLadingNumber || documentNumber
-          : ctnNumber || documentNumber,
-        amount: splitAmount,
-        sourceRowCount: 1,
-        sourceCountryName: isAngolaRow ? "Angola" : "Chad",
-        targetCountryId: isAngolaRow ? "angola" : undefined,
-      }))
+      invoiceNumber: documentNumber,
+      ctnNumber,
+      billOfLadingNumber,
+      reference: isAngolaRow
+        ? billOfLadingNumber || documentNumber
+        : ctnNumber || documentNumber,
+      amount: splitAmount,
+      sourceRowCount: 1,
+      sourceCountryName: isAngolaRow ? "Angola" : "Chad",
+      targetCountryId: isAngolaRow ? "angola" : undefined,
+    }))
   })
 }
 
@@ -765,7 +853,9 @@ function parseLiberiaInvoiceExportCsv(rows: string[][]) {
   return Array.from(grouped.values())
 }
 
-export function normalizeCountryReportReference(value: string | undefined | null) {
+export function normalizeCountryReportReference(
+  value: string | undefined | null
+) {
   const trimmed = (value ?? "").trim()
 
   return trimmed.replace(/^(\d+)[A-Z]+$/i, "$1")
@@ -802,7 +892,8 @@ function findNextNumber(lines: string[], label: string) {
 
 export function parseAntaserInvoiceText(text: string) {
   const lines = compactLines(text)
-  const invoiceNumber = findNextNumber(lines, "Our ref:") || findNextNumber(lines, "Doc. number")
+  const invoiceNumber =
+    findNextNumber(lines, "Our ref:") || findNextNumber(lines, "Doc. number")
   const startIndex = lines.findIndex((line) => line === "Price") + 1
   const endIndex = lines.findIndex((line) =>
     /^Vrijstelling|^Exemption|^VAT$|^Subtotal$/i.test(line)
@@ -820,7 +911,9 @@ export function parseAntaserInvoiceText(text: string) {
       continue
     }
 
-    const reference = normalizeCountryReportReference(itemLines[index + 1] ?? "")
+    const reference = normalizeCountryReportReference(
+      itemLines[index + 1] ?? ""
+    )
     const dateOrDescription = itemLines[index + 3] ?? ""
     const price = itemLines[index + 4] ?? ""
 
@@ -831,6 +924,10 @@ export function parseAntaserInvoiceText(text: string) {
     const key = [invoiceNumber, reference].join("__")
     const existing = grouped.get(key)
     const amount = parseAmount(price)
+    const countryCode = ctnNumber.match(/^BE\/([A-Z]{2})\//i)?.[1]
+    const sourceCountryName = countryCode
+      ? antaserCountryNameByCode[countryCode.toUpperCase()]
+      : undefined
 
     grouped.set(key, {
       invoiceNumber,
@@ -839,14 +936,153 @@ export function parseAntaserInvoiceText(text: string) {
       reference,
       amount: (existing?.amount ?? 0) + amount,
       sourceRowCount: (existing?.sourceRowCount ?? 0) + 1,
+      sourceCountryName,
     })
   }
 
   return Array.from(grouped.values())
 }
 
+const antaserCountryNameByCode: Record<string, string> = {
+  BI: "Burundi",
+  CF: "Central African Republic",
+  GQ: "Equatorial Guinea",
+  GW: "Guinea-Bissau",
+  NE: "Niger",
+  SS: "South Sudan",
+  TG: "Togo",
+}
+
+export type AntaserJournalDocumentKind =
+  "regular-invoice" | "regular-overview" | "oot-invoice" | "commission"
+
+export type AntaserJournalDocument = {
+  kind: AntaserJournalDocumentKind
+  documentNumber: string
+  countryTotals: Record<string, number>
+  sourceFileName?: string
+}
+
+function antaserDocumentNumber(lines: string[]) {
+  return (
+    findNextNumber(lines, "Our ref:") || findNextNumber(lines, "Doc. number")
+  )
+}
+
+function parseAntaserCountrySectionTotals(
+  lines: string[],
+  totalLabel: "Total:" | "Subtotal"
+) {
+  const normalizeCountryHeading = (value: string) =>
+    value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toUpperCase()
+      .replace(/[^A-Z]/g, "")
+  const countryNames = Object.values(antaserCountryNameByCode)
+  const countryNameByKey = new Map(
+    countryNames.map((countryName) => [
+      normalizeCountryHeading(countryName),
+      countryName,
+    ])
+  )
+  const totals: Record<string, number> = {}
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const countryName = countryNameByKey.get(
+      normalizeCountryHeading(lines[index] ?? "")
+    )
+
+    if (!countryName) {
+      continue
+    }
+
+    const nextCountryOffset = lines
+      .slice(index + 1)
+      .findIndex((line) => countryNameByKey.has(normalizeCountryHeading(line)))
+    const endIndex =
+      nextCountryOffset >= 0 ? index + 1 + nextCountryOffset : lines.length
+    const sectionLines = lines.slice(index + 1, endIndex)
+    const totalIndex = sectionLines.findIndex((line) => line === totalLabel)
+
+    if (totalIndex >= 0) {
+      totals[countryName] = parseAmount(sectionLines[totalIndex + 1])
+    }
+  }
+
+  return totals
+}
+
+export function parseAntaserJournalDocumentText(
+  text: string
+): AntaserJournalDocument | undefined {
+  if (!/Antaser(?: Afrique)? BV/i.test(text)) {
+    return undefined
+  }
+
+  const lines = compactLines(text)
+  const documentNumber = antaserDocumentNumber(lines)
+
+  if (/COMMISSION NOTE/i.test(text)) {
+    return {
+      kind: "commission",
+      documentNumber,
+      countryTotals: parseAntaserCountrySectionTotals(lines, "Subtotal"),
+    }
+  }
+
+  if (!/\bINVOICE\b/i.test(text)) {
+    return undefined
+  }
+
+  const invoiceRecords = parseAntaserInvoiceText(text)
+
+  if (/JACR\s*Shipping\d*/i.test(text)) {
+    const countryTotals: Record<string, number> = {}
+
+    for (const record of invoiceRecords) {
+      const countryCode = record.ctnNumber.match(/^BE\/([A-Z]{2})\//i)?.[1]
+      const countryName = countryCode
+        ? antaserCountryNameByCode[countryCode.toUpperCase()]
+        : undefined
+
+      if (countryName) {
+        countryTotals[countryName] =
+          (countryTotals[countryName] ?? 0) + record.amount
+      }
+    }
+
+    return {
+      kind: "oot-invoice",
+      documentNumber,
+      countryTotals,
+    }
+  }
+
+  if (/Commercial Intl\.? Services/i.test(text) && !invoiceRecords.length) {
+    return {
+      kind: "regular-overview",
+      documentNumber,
+      countryTotals: parseAntaserCountrySectionTotals(lines, "Total:"),
+    }
+  }
+
+  if (/Commercial Intl\.? Services/i.test(text) && invoiceRecords.length) {
+    return {
+      kind: "regular-invoice",
+      documentNumber,
+      countryTotals: {},
+    }
+  }
+
+  return undefined
+}
+
 export function parseIvoryCoastStatementText(text: string) {
-  if (!/STATEMENT OF ACCOUNT/i.test(text) || !/Processing of BSC #/i.test(text)) {
+  if (
+    !/STATEMENT OF ACCOUNT/i.test(text) ||
+    !/Processing of BSC #/i.test(text)
+  ) {
     return []
   }
 
@@ -854,8 +1090,12 @@ export function parseIvoryCoastStatementText(text: string) {
   const grouped = new Map<string, ParsedCountryReportRecord>()
 
   for (let index = 0; index < lines.length; index += 1) {
-    const processingMatch = lines[index]?.match(/^Processing of BSC #\s*(CIIMP-\d+)/i)
-    const cancellationMatch = lines[index]?.match(/^Cancel of Invoice#(CIIMP-\d+\/\d+)/i)
+    const processingMatch = lines[index]?.match(
+      /^Processing of BSC #\s*(CIIMP-\d+)/i
+    )
+    const cancellationMatch = lines[index]?.match(
+      /^Cancel of Invoice#(CIIMP-\d+\/\d+)/i
+    )
 
     if (!processingMatch && !cancellationMatch) {
       continue
@@ -865,7 +1105,8 @@ export function parseIvoryCoastStatementText(text: string) {
       cancellationMatch?.[1] ??
       lines.slice(index + 1).find((line) => /^CIIMP-\d+\/\d+$/i.test(line)) ??
       ""
-    const ctnNumber = processingMatch?.[1] ?? invoiceNumber.replace(/\/\d+$/i, "")
+    const ctnNumber =
+      processingMatch?.[1] ?? invoiceNumber.replace(/\/\d+$/i, "")
     const amountLine = lines
       .slice(index + 1, index + 6)
       .find((line) => /^[+-]\s*[\d'.,]+\s*(?:€|EUR|â‚¬)?$/i.test(line))
@@ -916,7 +1157,10 @@ export function parseCountryReportCsv(
     return certificateRecords
   }
 
-  const republicOfCongoRecords = parseRepublicOfCongoCtnExportCsv(rawRows, options)
+  const republicOfCongoRecords = parseRepublicOfCongoCtnExportCsv(
+    rawRows,
+    options
+  )
 
   if (republicOfCongoRecords) {
     return republicOfCongoRecords
@@ -998,29 +1242,36 @@ export function parseCountryReportCsv(
     findCsvColumn(headers, ["costofthepenaltycfa", "penalty"]),
   ].filter((index) => index >= 0)
   const amountIndex =
-    bescAmountIndexes[0] ??
-    findCsvColumn(headers, ["amount", "price", "total"])
+    bescAmountIndexes[0] ?? findCsvColumn(headers, ["amount", "price", "total"])
 
   if (
     ctnIndex === -1 ||
     referenceIndex === -1 ||
     (amountIndex === -1 && bescAmountIndexes.length === 0)
   ) {
-    throw new Error("The country report CSV must include CTN, reference, and amount columns.")
+    throw new Error(
+      "The country report CSV must include CTN, reference, and amount columns."
+    )
   }
 
   const grouped = new Map<string, ParsedCountryReportRecord>()
 
   for (const row of dataRows) {
-    const invoiceNumber = invoiceIndex >= 0 ? row[invoiceIndex]?.trim() ?? "" : ""
+    const invoiceNumber =
+      invoiceIndex >= 0 ? (row[invoiceIndex]?.trim() ?? "") : ""
     const ctnNumber = row[ctnIndex]?.trim() ?? ""
     const billOfLadingNumber =
-      billOfLadingIndex >= 0 ? row[billOfLadingIndex]?.trim() ?? "" : ""
+      billOfLadingIndex >= 0 ? (row[billOfLadingIndex]?.trim() ?? "") : ""
     const reference = row[referenceIndex]?.trim() ?? ""
     const amount = bescAmountIndexes.length
-      ? bescAmountIndexes.reduce((total, index) => total + parseAmount(row[index]), 0)
+      ? bescAmountIndexes.reduce(
+          (total, index) => total + parseAmount(row[index]),
+          0
+        )
       : parseAmount(row[amountIndex])
-    const key = [invoiceNumber, ctnNumber, billOfLadingNumber, reference].join("__")
+    const key = [invoiceNumber, ctnNumber, billOfLadingNumber, reference].join(
+      "__"
+    )
     const existing = grouped.get(key)
 
     grouped.set(key, {
@@ -1042,6 +1293,12 @@ export function parseCountryReportText(
   text: string,
   options: { period?: string } = {}
 ) {
+  const beninPaymentRecords = parseBeninPaymentText(text, options)
+
+  if (beninPaymentRecords) {
+    return beninPaymentRecords
+  }
+
   const senegalPaymentRecords = parseSenegalPaymentText(text)
 
   if (senegalPaymentRecords) {
@@ -1067,7 +1324,9 @@ async function extractPdfText(file: File) {
     const page = await document.getPage(pageNumber)
     const content = await page.getTextContent()
 
-    pages.push(content.items.map((item) => ("str" in item ? item.str : "")).join("\n"))
+    pages.push(
+      content.items.map((item) => ("str" in item ? item.str : "")).join("\n")
+    )
   }
 
   return pages.join("\n")
@@ -1097,18 +1356,39 @@ export async function parseCountryReportFile(
   file: File,
   options: { period?: string } = {}
 ) {
+  return (await parseCountryReportUploadFile(file, options)).records
+}
+
+export async function parseCountryReportUploadFile(
+  file: File,
+  options: { period?: string } = {}
+) {
   const extension = file.name.split(".").pop()?.toLowerCase()
 
   if (extension === "pdf" || file.type === "application/pdf") {
     const text = await extractPdfText(file)
     const ivoryCoastRecords = parseIvoryCoastStatementText(text)
+    const antaserJournalDocument = parseAntaserJournalDocumentText(text)
+    const records = ivoryCoastRecords.length
+      ? ivoryCoastRecords
+      : parseAntaserInvoiceText(text)
 
-    return ivoryCoastRecords.length ? ivoryCoastRecords : parseAntaserInvoiceText(text)
+    return {
+      records,
+      antaserJournalDocument: antaserJournalDocument
+        ? { ...antaserJournalDocument, sourceFileName: file.name }
+        : undefined,
+    }
   }
 
   if (extension === "xlsx" || extension === "xls") {
-    return parseCountryReportCsv(await extractWorkbookRows(file, options), options)
+    return {
+      records: parseCountryReportCsv(
+        await extractWorkbookRows(file, options),
+        options
+      ),
+    }
   }
 
-  return parseCountryReportText(await file.text(), options)
+  return { records: parseCountryReportText(await file.text(), options) }
 }

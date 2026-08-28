@@ -1,5 +1,5 @@
 import { createPublicClient } from "@/lib/public-client"
-import { assertSupabaseConfig } from "@/lib/supabase-env"
+import { assertSupabaseConfig, hasSupabaseConfig } from "@/lib/supabase-env"
 
 export type MonthEndStatus = "Open" | "Closed"
 export type MonthEndValue = boolean | number | string
@@ -135,12 +135,16 @@ function saveLocalRecord(record: MonthEndRecord) {
       : [record, ...records]
 
   saveLocalRecords(
-    nextRecords.sort((first, second) => second.period.localeCompare(first.period))
+    nextRecords.sort((first, second) =>
+      second.period.localeCompare(first.period)
+    )
   )
 }
 
 function deleteLocalRecord(period: string) {
-  saveLocalRecords(getLocalRecords().filter((record) => record.period !== period))
+  saveLocalRecords(
+    getLocalRecords().filter((record) => record.period !== period)
+  )
 }
 
 function toRecord(row: MonthEndRow): MonthEndRecord {
@@ -184,7 +188,7 @@ export async function getMonthEndRecord(period = getDefaultPeriod()) {
 
     return data ? toRecord(data) : undefined
   } catch (error) {
-    if (isLocalhostBrowser()) {
+    if (isLocalhostBrowser() && !hasSupabaseConfig()) {
       return getLocalRecords().find((record) => record.period === period)
     }
 
@@ -203,7 +207,7 @@ export async function saveMonthEndRecord(record: MonthEndRecord) {
       throw error
     }
   } catch (error) {
-    if (isLocalhostBrowser()) {
+    if (isLocalhostBrowser() && !hasSupabaseConfig()) {
       saveLocalRecord(record)
       return
     }
@@ -215,13 +219,16 @@ export async function saveMonthEndRecord(record: MonthEndRecord) {
 export async function deleteMonthEndRecord(period: string) {
   try {
     const supabase = getSupabaseClient()
-    const { error } = await supabase.from(tableName).delete().eq("period", period)
+    const { error } = await supabase
+      .from(tableName)
+      .delete()
+      .eq("period", period)
 
     if (error) {
       throw error
     }
   } catch (error) {
-    if (isLocalhostBrowser()) {
+    if (isLocalhostBrowser() && !hasSupabaseConfig()) {
       deleteLocalRecord(period)
       return
     }
@@ -242,7 +249,9 @@ export async function listMonthEndRecords() {
       throw error
     }
 
-    const remoteRecords = (data ?? []).map((row) => toRecord(row as MonthEndRow))
+    const remoteRecords = (data ?? []).map((row) =>
+      toRecord(row as MonthEndRow)
+    )
 
     if (!isLocalhostBrowser()) {
       return remoteRecords
@@ -257,7 +266,7 @@ export async function listMonthEndRecords() {
       second.period.localeCompare(first.period)
     )
   } catch (error) {
-    if (isLocalhostBrowser()) {
+    if (isLocalhostBrowser() && !hasSupabaseConfig()) {
       return getLocalRecords()
     }
 

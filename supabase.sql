@@ -322,6 +322,7 @@ create table if not exists public.month_end_master_records (
   ctn_number text not null default '',
   status text not null default '',
   amount numeric not null default 0,
+  transaction_date text not null default '',
   source_class text not null default '',
   source_internal_id text not null default '',
   source_row_index integer not null default 0,
@@ -330,6 +331,11 @@ create table if not exists public.month_end_master_records (
 
 alter table public.month_end_master_records
 add column if not exists amount numeric not null default 0;
+
+alter table public.month_end_master_records
+add column if not exists transaction_date text not null default '';
+
+notify pgrst, 'reload schema';
 
 create index if not exists month_end_master_records_month_country_idx
 on public.month_end_master_records(month_end_id, country_id);

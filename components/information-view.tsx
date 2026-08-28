@@ -539,15 +539,17 @@ function MobileFolderNotesScreen({
         {notes.map((note) => (
           <div
             key={note.id}
-            className="flex min-h-16 items-center gap-2 rounded-2xl bg-background px-5 py-3"
+            className="flex min-h-16 w-full min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-2xl bg-background px-5 py-3"
           >
             <button
               type="button"
-              className="min-w-0 flex-1 text-left transition-colors active:bg-muted"
+              className="min-w-0 flex-1 overflow-hidden text-left transition-colors active:bg-muted"
               onClick={() => onOpenNote(note.id)}
             >
-              <span className="block truncate font-semibold">{note.title}</span>
-              <span className="mt-1 block truncate text-sm text-muted-foreground">
+              <span className="block max-w-full truncate font-semibold">
+                {note.title}
+              </span>
+              <span className="mt-1 block max-w-full truncate text-sm text-muted-foreground">
                 {formatShortEditedDate(note.updatedAt)} {notePreview(note.content)}
               </span>
             </button>
