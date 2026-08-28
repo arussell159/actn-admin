@@ -85,6 +85,18 @@ function getDatePeriod(value: string | undefined) {
     return ""
   }
 
+  const slashDateMatch = rawValue.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/)
+
+  if (slashDateMatch) {
+    const month = Number(slashDateMatch[1])
+    const yearValue = Number(slashDateMatch[3])
+    const year = yearValue < 100 ? 2000 + yearValue : yearValue
+
+    if (month >= 1 && month <= 12) {
+      return `${year}-${String(month).padStart(2, "0")}`
+    }
+  }
+
   const excelSerial = Number(rawValue)
   const date =
     Number.isFinite(excelSerial) && excelSerial > 30000
@@ -355,22 +367,34 @@ function parseSckBalanceTransactionsCsv(
   const referenceIdIndex = findExactCsvColumn(headers, ["referenceid"])
   const descriptionIndex = findExactCsvColumn(headers, ["description"])
   const grouped = new Map<string, ParsedCountryReportRecord>()
+  const reportRowsByPeriod = dataRows.map((row) => ({
+    row,
+    period: getDatePeriod(row[dateIndex]),
+  }))
+  const matchingPeriodRows = options.period
+    ? reportRowsByPeriod.filter(({ period }) => period === options.period)
+    : reportRowsByPeriod
+  const uniqueReportPeriods = Array.from(
+    new Set(reportRowsByPeriod.map(({ period }) => period).filter(Boolean))
+  )
+  const rowsToImport =
+    matchingPeriodRows.length || uniqueReportPeriods.length !== 1
+      ? matchingPeriodRows
+      : reportRowsByPeriod.filter(({ period }) => period === uniqueReportPeriods[0])
 
-  for (const row of dataRows) {
+  for (const { row } of rowsToImport) {
     const reason = row[reasonIndex]?.trim().toUpperCase() ?? ""
     const referenceType = row[referenceTypeIndex]?.trim().toUpperCase() ?? ""
     const invoiceNumber = row[referenceIdIndex]?.trim() ?? ""
     const billOfLadingNumber = extractSckBalanceTransactionBillOfLading(
       row[descriptionIndex]
     )
-    const transactionPeriod = getDatePeriod(row[dateIndex])
 
     if (
       referenceType !== "ENTRY" ||
       (reason !== "CONSUMPTION" && reason !== "REFUND") ||
       !invoiceNumber ||
-      !billOfLadingNumber ||
-      (options.period && transactionPeriod !== options.period)
+      !billOfLadingNumber
     ) {
       continue
     }

@@ -2,9 +2,26 @@
 
 import * as React from "react"
 import {
+  closestCenter,
+  DndContext,
+  type DragEndEvent,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core"
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
+import {
   ArrowLeftIcon,
   CheckIcon,
   ChevronsUpDownIcon,
+  GripVerticalIcon,
   MoreHorizontalIcon,
   PencilIcon,
   PlusIcon,
@@ -152,6 +169,18 @@ export function TemplateEditorView() {
   )
   const activeModule = modules.find((module) => module.id === activeModuleId)
   const parentRows = template.countries
+  const countryRowIds = React.useMemo(
+    () => template.countries.map((row) => row.id),
+    [template.countries]
+  )
+  const countryRowDndSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
 
   React.useEffect(() => {
     let isMounted = true
@@ -472,6 +501,70 @@ export function TemplateEditorView() {
     setItemForm(null)
   }
 
+  function reorderCountryRow(event: DragEndEvent) {
+    const activeId = String(event.active.id)
+    const overId = event.over ? String(event.over.id) : ""
+
+    if (!overId || activeId === overId) {
+      return
+    }
+
+    const activeIndex = template.countries.findIndex(
+      (row) => row.id === activeId
+    )
+    const overIndex = template.countries.findIndex((row) => row.id === overId)
+
+    if (activeIndex < 0 || overIndex < 0) {
+      return
+    }
+
+    const activeParentId = findParentId(template, activeIndex)
+    const overParentId = findParentId(template, overIndex)
+
+    if (activeParentId !== overParentId) {
+      return
+    }
+
+    const activeEndIndex = findChildInsertIndex(template, activeIndex)
+
+    if (overIndex > activeIndex && overIndex < activeEndIndex) {
+      return
+    }
+
+    const movingRows = template.countries.slice(activeIndex, activeEndIndex)
+    const remainingRows = template.countries.filter(
+      (_row, index) => index < activeIndex || index >= activeEndIndex
+    )
+    const overEndIndex = findChildInsertIndex(template, overIndex)
+    const afterOverRow = template.countries[overEndIndex]
+    const insertIndex =
+      activeIndex < overIndex
+        ? afterOverRow
+          ? remainingRows.findIndex((row) => row.id === afterOverRow.id)
+          : remainingRows.length
+        : remainingRows.findIndex((row) => row.id === overId)
+
+    if (insertIndex < 0) {
+      return
+    }
+
+    const updatedAt = new Date().toISOString()
+    const reorderedCountries = [
+      ...remainingRows.slice(0, insertIndex),
+      ...movingRows.map((row) => ({ ...row, updatedAt })),
+      ...remainingRows.slice(insertIndex),
+    ]
+
+    persist({
+      ...template,
+      countriesModule: {
+        ...template.countriesModule,
+        updatedAt,
+      },
+      countries: reorderedCountries,
+    })
+  }
+
   function deleteTask(taskId: string) {
     if (!activeTaskGroup) {
       return
@@ -732,21 +825,32 @@ export function TemplateEditorView() {
                 </CardHeader>
                 <CardContent className="grid gap-4">
                   {itemForm ? (
-                    <ItemFormPanel
-                      form={itemForm}
-                      parentRows={parentRows}
-                      template={template}
-                      onChange={setItemForm}
-                      onCancel={() => setItemForm(null)}
-                      onSave={saveItemForm}
-                    />
+                    itemForm.mode === "edit-country" ? null : (
+                      <ItemFormPanel
+                        form={itemForm}
+                        parentRows={parentRows}
+                        template={template}
+                        onChange={setItemForm}
+                        onCancel={() => setItemForm(null)}
+                        onSave={saveItemForm}
+                      />
+                    )
                   ) : null}
 
                   {activeModuleId === countriesModuleId ? (
                     <CountriesTable
                       template={template}
+                      itemForm={
+                        itemForm?.mode === "edit-country" ? itemForm : null
+                      }
+                      rowIds={countryRowIds}
+                      sensors={countryRowDndSensors}
+                      onChangeItemForm={setItemForm}
+                      onCancelItemForm={() => setItemForm(null)}
                       onEditCountry={startEditCountry}
                       onDeleteCountry={deleteCountryRow}
+                      onDragEnd={reorderCountryRow}
+                      onSaveItemForm={saveItemForm}
                     />
                   ) : activeTaskGroup ? (
                     <TasksTable
@@ -825,99 +929,215 @@ function ModuleDetailsPanel({
   )
 }
 
-function CountriesTable({
+function SortableCountryRow({
+  row,
+  rowIndex,
   template,
+  itemForm,
+  onChangeItemForm,
+  onCancelItemForm,
   onEditCountry,
   onDeleteCountry,
+  onSaveItemForm,
 }: {
+  row: TemplateCountryRow
+  rowIndex: number
   template: MonthEndTemplate
+  itemForm: Extract<ItemForm, { mode: "edit-country" }> | null
+  onChangeItemForm: (form: ItemForm) => void
+  onCancelItemForm: () => void
   onEditCountry: (row: TemplateCountryRow, rowIndex: number) => void
   onDeleteCountry: (rowIndex: number) => void
+  onSaveItemForm: () => void
+}) {
+  const isGroup = row.checkable === false
+  const parentId = findParentId(template, rowIndex)
+  const parent = template.countries.find((item) => item.id === parentId)
+  const isEditing = itemForm?.rowId === row.id
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: row.id })
+
+  return (
+    <React.Fragment>
+      <TableRow
+        ref={setNodeRef}
+        style={{
+          transform: CSS.Transform.toString(transform),
+          transition,
+        }}
+        className={
+          (isGroup ? "bg-muted/30" : "") +
+          (isDragging ? " relative z-10 shadow-lg" : "")
+        }
+      >
+        <TableCell className="w-12">
+          <button
+            type="button"
+            className="grid size-8 touch-none place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label={`Reorder ${row.name}`}
+            {...attributes}
+            {...listeners}
+          >
+            <GripVerticalIcon className="size-4" />
+          </button>
+        </TableCell>
+        <TableCell className={isGroup ? "font-semibold" : "font-medium"}>
+          <span
+            className="block truncate"
+            style={{ marginLeft: `${row.indent * 1.5}rem` }}
+          >
+            {row.name}
+          </span>
+        </TableCell>
+        <TableCell>
+          <Badge variant={isGroup ? "outline" : "secondary"}>
+            {isGroup ? "Group" : "Country"}
+          </Badge>
+        </TableCell>
+        <TableCell>{parent?.name ?? "Top Level"}</TableCell>
+        <TableCell>
+          {isGroup ? (
+            <span className="text-muted-foreground">Blank row</span>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {row.invoiceRequired ? (
+                <Badge variant="outline">Invoice</Badge>
+              ) : null}
+              <Badge variant="outline">Reconciliation</Badge>
+              <Badge variant="outline">Journal</Badge>
+            </div>
+          )}
+        </TableCell>
+        <TableCell>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`Edit ${row.name}`}
+                />
+              }
+            >
+              <MoreHorizontalIcon />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => onEditCountry(row, rowIndex)}>
+                <PencilIcon />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={() => onDeleteCountry(rowIndex)}
+              >
+                <Trash2Icon />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </TableCell>
+      </TableRow>
+      {isEditing ? (
+        <TableRow className="bg-muted/20 hover:bg-muted/20">
+          <TableCell colSpan={6} className="p-3">
+            <div
+              role="dialog"
+              aria-label={`Edit ${row.name}`}
+              className="rounded-lg border bg-background p-4 shadow-sm"
+            >
+              <CountryFields
+                form={itemForm}
+                parentRows={template.countries}
+                template={template}
+                onChange={onChangeItemForm}
+              />
+              <div className="mt-5 flex justify-end gap-2">
+                <Button variant="outline" onClick={onCancelItemForm}>
+                  <XIcon />
+                  Cancel
+                </Button>
+                <Button onClick={onSaveItemForm}>
+                  <SaveIcon />
+                  Save
+                </Button>
+              </div>
+            </div>
+          </TableCell>
+        </TableRow>
+      ) : null}
+    </React.Fragment>
+  )
+}
+
+function CountriesTable({
+  template,
+  itemForm,
+  rowIds,
+  sensors,
+  onChangeItemForm,
+  onCancelItemForm,
+  onEditCountry,
+  onDeleteCountry,
+  onDragEnd,
+  onSaveItemForm,
+}: {
+  template: MonthEndTemplate
+  itemForm: Extract<ItemForm, { mode: "edit-country" }> | null
+  rowIds: string[]
+  sensors: React.ComponentProps<typeof DndContext>["sensors"]
+  onChangeItemForm: (form: ItemForm) => void
+  onCancelItemForm: () => void
+  onEditCountry: (row: TemplateCountryRow, rowIndex: number) => void
+  onDeleteCountry: (rowIndex: number) => void
+  onDragEnd: (event: DragEndEvent) => void
+  onSaveItemForm: () => void
 }) {
   return (
-    <Table containerClassName="rounded-lg border bg-background">
-      <TableHeader>
-        <TableRow>
-          <TableHead>Name</TableHead>
-          <TableHead>Type</TableHead>
-          <TableHead>Parent</TableHead>
-          <TableHead>Required Fields</TableHead>
-          <TableHead className="w-12" />
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {template.countries.map((row, rowIndex) => {
-          const isGroup = row.checkable === false
-          const parentId = findParentId(template, rowIndex)
-          const parent = template.countries.find((item) => item.id === parentId)
-
-          return (
-            <TableRow
-              key={row.id}
-              className={isGroup ? "bg-muted/30" : undefined}
-            >
-              <TableCell className={isGroup ? "font-semibold" : "font-medium"}>
-                <span
-                  className="block truncate"
-                  style={{ marginLeft: `${row.indent * 1.5}rem` }}
-                >
-                  {row.name}
-                </span>
-              </TableCell>
-              <TableCell>
-                <Badge variant={isGroup ? "outline" : "secondary"}>
-                  {isGroup ? "Group" : "Country"}
-                </Badge>
-              </TableCell>
-              <TableCell>{parent?.name ?? "Top Level"}</TableCell>
-              <TableCell>
-                {isGroup ? (
-                  <span className="text-muted-foreground">Blank row</span>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {row.invoiceRequired ? (
-                      <Badge variant="outline">Invoice</Badge>
-                    ) : null}
-                    <Badge variant="outline">Reconciliation</Badge>
-                    <Badge variant="outline">Journal</Badge>
-                  </div>
-                )}
-              </TableCell>
-              <TableCell>
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={`Edit ${row.name}`}
-                      />
-                    }
-                  >
-                    <MoreHorizontalIcon />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      onClick={() => onEditCountry(row, rowIndex)}
-                    >
-                      <PencilIcon />
-                      Edit
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      variant="destructive"
-                      onClick={() => onDeleteCountry(rowIndex)}
-                    >
-                      <Trash2Icon />
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </TableCell>
-            </TableRow>
-          )
-        })}
-      </TableBody>
-    </Table>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={onDragEnd}
+    >
+      <Table containerClassName="rounded-lg border bg-background">
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-12" />
+            <TableHead>Name</TableHead>
+            <TableHead>Type</TableHead>
+            <TableHead>Parent</TableHead>
+            <TableHead>Required Fields</TableHead>
+            <TableHead className="w-12" />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          <SortableContext
+            items={rowIds}
+            strategy={verticalListSortingStrategy}
+          >
+            {template.countries.map((row, rowIndex) => (
+              <SortableCountryRow
+                key={row.id}
+                row={row}
+                rowIndex={rowIndex}
+                template={template}
+                itemForm={itemForm}
+                onChangeItemForm={onChangeItemForm}
+                onCancelItemForm={onCancelItemForm}
+                onEditCountry={onEditCountry}
+                onDeleteCountry={onDeleteCountry}
+                onSaveItemForm={onSaveItemForm}
+              />
+            ))}
+          </SortableContext>
+        </TableBody>
+      </Table>
+    </DndContext>
   )
 }
 

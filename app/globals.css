@@ -198,6 +198,9 @@
 
   [data-slot="sidebar-inset"] > main {
     min-height: auto;
-    padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
+    padding-bottom: var(
+      --mobile-page-bottom-padding,
+      calc(6rem + env(safe-area-inset-bottom, 0px))
+    );
   }
 }

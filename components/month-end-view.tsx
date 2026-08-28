@@ -583,7 +583,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
         <SidebarInset>
           <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
             <SiteHeader title="New Month End" />
-            <div className="grid gap-4 px-4 pt-4 pb-[calc(8rem+env(safe-area-inset-bottom,0px))] md:py-4 lg:px-6">
+            <div className="grid gap-4 px-4 py-4 lg:px-6">
               <section>
                 <h1 className="text-2xl font-semibold">No Open Month End</h1>
               </section>
@@ -624,7 +624,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
           <SiteHeader
             title={record ? getMonthEndTitle(record) : "Current Month End"}
           />
-          <div className="@container/month-end flex flex-1 flex-col gap-4 px-4 pt-4 pb-[calc(8rem+env(safe-area-inset-bottom,0px))] md:py-4 lg:px-6">
+          <div className="@container/month-end flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
             <section className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               {shouldShowPreviousBackButton ? (
                 <Button

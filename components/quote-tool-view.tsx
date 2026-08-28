@@ -584,7 +584,7 @@ export function QuoteToolView() {
       <AppSidebar variant="inset" />
       <SidebarInset>
         <SiteHeader title="Quote Tool" />
-        <main className="flex flex-1 flex-col gap-4 px-4 pt-4 pb-[calc(8rem+env(safe-area-inset-bottom,0px))] md:p-4 lg:p-6">
+        <main className="flex flex-1 flex-col gap-4 p-4 [--mobile-page-bottom-padding:calc(10rem+env(safe-area-inset-bottom,0px))] lg:p-6">
           <Card className="rounded-lg shadow-sm">
             <CardContent className="relative">
               <Button
