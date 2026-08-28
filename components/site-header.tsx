@@ -58,9 +58,9 @@ export function SiteHeader({
 
   return (
     <>
-      <header className="sticky top-0 z-40 flex h-10 shrink-0 items-center gap-2 bg-transparent transition-[width,height] ease-linear md:relative md:z-auto md:h-(--header-height) md:border-b md:bg-background group-has-data-[collapsible=icon]/sidebar-wrapper:md:h-(--header-height)">
+      <header className="sticky top-0 z-40 flex h-[calc(2.5rem+env(safe-area-inset-top,0px))] shrink-0 items-center gap-2 bg-transparent pt-[env(safe-area-inset-top,0px)] transition-[width,height] ease-linear md:relative md:z-auto md:h-(--header-height) md:border-b md:bg-background md:pt-0 group-has-data-[collapsible=icon]/sidebar-wrapper:md:h-(--header-height)">
         <div
-          className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-[linear-gradient(to_bottom,color-mix(in_oklch,var(--background)_75%,transparent),color-mix(in_oklch,var(--background)_35%,transparent)_55%,transparent)] md:hidden"
+          className="pointer-events-none absolute inset-x-0 top-0 h-[calc(4rem+env(safe-area-inset-top,0px))] bg-[linear-gradient(to_bottom,color-mix(in_oklch,var(--background)_75%,transparent),color-mix(in_oklch,var(--background)_35%,transparent)_55%,transparent)] md:hidden"
           aria-hidden="true"
         />
         <div className="relative z-10 hidden w-full items-center gap-1 px-4 md:flex lg:gap-2 lg:px-6">

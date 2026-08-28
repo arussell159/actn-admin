@@ -187,7 +187,7 @@
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior-y: contain;
-    padding-top: env(safe-area-inset-top, 0px);
+    padding-top: 0;
     padding-bottom: 0;
     scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
     transform: translateY(var(--mobile-pull-distance, 0px));
