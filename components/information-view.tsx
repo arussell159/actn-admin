@@ -264,17 +264,27 @@ function MobileFoldersScreen({
 
 function MobileFolderNotesScreen({
   folder,
+  nodes,
   notes,
   onBack,
   onOpenNote,
   onCreateNote,
+  onCreateFolder,
+  onDelete,
+  onMove,
 }: {
   folder?: InformationNode
+  nodes: InformationNode[]
   notes: InformationNode[]
   onBack: () => void
   onOpenNote: (nodeId: string) => void
   onCreateNote: () => void
+  onCreateFolder?: () => void
+  onDelete: (nodeId: string) => void
+  onMove: (nodeId: string, parentId?: string) => void
 }) {
+  const allFolders = nodes.filter((node) => node.type === "folder")
+
   return (
     <div className="relative min-h-full bg-muted/60 px-4 pb-24 pt-[calc(env(safe-area-inset-top,0px)+1rem)] md:hidden">
       <div className="mb-5 flex items-center justify-between">
@@ -287,15 +297,41 @@ function MobileFolderNotesScreen({
         >
           <ArrowLeftIcon />
         </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="rounded-full bg-background shadow-sm"
-          aria-label="Add note"
-          onClick={onCreateNote}
-        >
-          <FilePlus2Icon />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="rounded-full bg-background shadow-sm"
+                aria-label="Create note or folder"
+              />
+            }
+          >
+            <PlusIcon />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-44">
+            <DropdownMenuItem onClick={onCreateNote}>
+              <FilePlus2Icon />
+              Add Note
+            </DropdownMenuItem>
+            {onCreateFolder ? (
+              <DropdownMenuItem onClick={onCreateFolder}>
+                <FolderPlusIcon />
+                Add Folder
+              </DropdownMenuItem>
+            ) : null}
+            {folder ? (
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={() => onDelete(folder.id)}
+              >
+                <Trash2Icon />
+                Delete Folder
+              </DropdownMenuItem>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       <h1 className="text-[30pt] font-bold leading-tight tracking-tight text-foreground md:text-3xl">
         {folder?.title ?? "Notes"}
@@ -303,17 +339,63 @@ function MobileFolderNotesScreen({
       <p className="text-muted-foreground">{notes.length} Notes</p>
       <div className="mt-5 grid gap-3">
         {notes.map((note) => (
-          <button
+          <div
             key={note.id}
-            type="button"
-            className="min-h-16 rounded-2xl bg-background px-5 py-3 text-left transition-colors active:bg-muted"
-            onClick={() => onOpenNote(note.id)}
+            className="flex min-h-16 items-center gap-2 rounded-2xl bg-background px-5 py-3"
           >
-            <span className="block truncate font-semibold">{note.title}</span>
-            <span className="mt-1 block truncate text-sm text-muted-foreground">
-              {formatShortEditedDate(note.updatedAt)} {notePreview(note.content)}
-            </span>
-          </button>
+            <button
+              type="button"
+              className="min-w-0 flex-1 text-left transition-colors active:bg-muted"
+              onClick={() => onOpenNote(note.id)}
+            >
+              <span className="block truncate font-semibold">{note.title}</span>
+              <span className="mt-1 block truncate text-sm text-muted-foreground">
+                {formatShortEditedDate(note.updatedAt)} {notePreview(note.content)}
+              </span>
+            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="rounded-full"
+                    aria-label={`Actions for ${note.title}`}
+                  />
+                }
+              >
+                <MoreHorizontalIcon />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-44">
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>Move to</DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="min-w-52">
+                    <DropdownMenuItem onClick={() => onMove(note.id)}>
+                      Notebook
+                    </DropdownMenuItem>
+                    {allFolders
+                      .filter((targetFolder) => targetFolder.id !== note.parentId)
+                      .map((targetFolder) => (
+                        <DropdownMenuItem
+                          key={targetFolder.id}
+                          onClick={() => onMove(note.id, targetFolder.id)}
+                        >
+                          <FolderIcon />
+                          {targetFolder.title}
+                        </DropdownMenuItem>
+                      ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={() => onDelete(note.id)}
+                >
+                  <Trash2Icon />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         ))}
       </div>
       <MobileSearchBar />
@@ -1273,10 +1355,16 @@ export function InformationView() {
                     <>
                       <MobileFolderNotesScreen
                         folder={activeNode}
+                        nodes={nodes}
                         notes={activeFolderNotes}
                         onBack={() => selectNode("", "replace")}
                         onOpenNote={selectNode}
                         onCreateNote={() => startCreate("note", activeNode.id)}
+                        onCreateFolder={() =>
+                          startCreate("folder", activeNode.id)
+                        }
+                        onDelete={deleteNode}
+                        onMove={moveNode}
                       />
                       <div className="hidden px-3 pt-3 pb-3 sm:px-0 sm:pt-0 sm:pb-0 md:block">
                         <FolderDashboard
@@ -1289,10 +1377,14 @@ export function InformationView() {
                   ) : activeId === mobileRootNotesId ? (
                     <>
                       <MobileFolderNotesScreen
+                        nodes={nodes}
                         notes={activeFolderNotes}
                         onBack={() => selectNode("", "replace")}
                         onOpenNote={selectNode}
                         onCreateNote={() => startCreate("note")}
+                        onCreateFolder={() => startCreate("folder")}
+                        onDelete={deleteNode}
+                        onMove={moveNode}
                       />
                       <div className="hidden px-3 pb-3 sm:px-0 sm:pb-0 md:block">
                         <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">

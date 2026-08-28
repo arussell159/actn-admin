@@ -20,6 +20,94 @@ function parseAmount(value: string | undefined) {
   return Number.isFinite(amount) ? amount : 0
 }
 
+function rowHasCountryReportHeaders(row: string[]) {
+  const normalizedHeaders = row.map((header) =>
+    header.toLowerCase().replace(/[^a-z0-9]+/g, "")
+  )
+
+  return (
+    normalizedHeaders.some((header) =>
+      ["ctnnumber", "ctn", "ectnnumber", "ectn"].some((match) =>
+        header.includes(match)
+      )
+    ) &&
+    normalizedHeaders.some((header) =>
+      [
+        "reference",
+        "salesorder",
+        "salesordernumber",
+        "blreference",
+        "billoflading",
+      ].some((match) => header.includes(match))
+    ) &&
+    normalizedHeaders.some((header) =>
+      ["amount", "price", "costofectn"].some((match) =>
+        header.includes(match)
+      )
+    )
+  )
+}
+
+function getCountryReportRows(csvText: string) {
+  const rows = parseCsv(csvText)
+  const headerIndex = rows.findIndex(rowHasCountryReportHeaders)
+
+  return headerIndex >= 0 ? rows.slice(headerIndex) : rows
+}
+
+function isCreditsLedger(headers: string[]) {
+  const descriptionIndex = findCsvColumn(headers, ["description"])
+  const transactionIndex = findCsvColumn(headers, ["transaction"])
+  const pointsIndex = findCsvColumn(headers, ["points"])
+
+  return descriptionIndex >= 0 && transactionIndex >= 0 && pointsIndex >= 0
+}
+
+function extractCreditLedgerCtn(value: string | undefined) {
+  return (value ?? "").match(/\b[A-Z]{2}\d{2}[A-Z0-9]{4,}\b/i)?.[0] ?? ""
+}
+
+function parseCreditsLedgerCsv(rows: string[][]) {
+  const [headers, ...dataRows] = rows
+
+  if (!headers || !isCreditsLedger(headers)) {
+    return undefined
+  }
+
+  const descriptionIndex = findCsvColumn(headers, ["description"])
+  const transactionIndex = findCsvColumn(headers, ["transaction"])
+  const pointsIndex = findCsvColumn(headers, ["points"])
+  const grouped = new Map<string, ParsedCountryReportRecord>()
+
+  for (const row of dataRows) {
+    const transaction = row[transactionIndex]?.trim().toLowerCase() ?? ""
+
+    if (transaction !== "ectn") {
+      continue
+    }
+
+    const ctnNumber = extractCreditLedgerCtn(row[descriptionIndex])
+
+    if (!ctnNumber) {
+      continue
+    }
+
+    const amount = Math.abs(parseAmount(row[pointsIndex]))
+    const existing = grouped.get(ctnNumber)
+
+    grouped.set(ctnNumber, {
+      invoiceNumber: "",
+      ctnNumber: mergeReportValues(existing?.ctnNumber ?? "", ctnNumber),
+      billOfLadingNumber: "",
+      reference: ctnNumber,
+      amount: (existing?.amount ?? 0) + amount,
+      sourceRowCount: (existing?.sourceRowCount ?? 0) + 1,
+    })
+  }
+
+  return Array.from(grouped.values())
+}
+
 export function normalizeCountryReportReference(value: string | undefined | null) {
   const trimmed = (value ?? "").trim()
 
@@ -101,7 +189,14 @@ export function parseAntaserInvoiceText(text: string) {
 }
 
 export function parseCountryReportCsv(csvText: string) {
-  const rows = parseCsv(csvText)
+  const rawRows = parseCsv(csvText)
+  const creditsLedgerRecords = parseCreditsLedgerCsv(rawRows)
+
+  if (creditsLedgerRecords) {
+    return creditsLedgerRecords
+  }
+
+  const rows = getCountryReportRows(csvText)
   const [headers, ...dataRows] = rows
 
   if (!headers) {
@@ -109,21 +204,40 @@ export function parseCountryReportCsv(csvText: string) {
   }
 
   const invoiceIndex = findCsvColumn(headers, ["invoice", "docnumber"])
-  const ctnIndex = findCsvColumn(headers, ["ctnnumber", "ctn"])
+  const ctnIndex = findCsvColumn(headers, [
+    "ctnnumber",
+    "ectnnumber",
+    "ctn",
+    "ectn",
+  ])
   const billOfLadingIndex = findCsvColumn(headers, [
     "billoflading",
+    "blreference",
     "bol",
     "bl",
     "blnumber",
   ])
   const referenceIndex = findCsvColumn(headers, [
     "reference",
+    "blreference",
+    "billoflading",
     "salesorder",
     "salesordernumber",
   ])
-  const amountIndex = findCsvColumn(headers, ["amount", "price", "total"])
+  const bescAmountIndexes = [
+    findCsvColumn(headers, ["costofectn"]),
+    findCsvColumn(headers, ["costofcorrections"]),
+    findCsvColumn(headers, ["costofthepenaltycfa", "penalty"]),
+  ].filter((index) => index >= 0)
+  const amountIndex =
+    bescAmountIndexes[0] ??
+    findCsvColumn(headers, ["amount", "price", "total"])
 
-  if (ctnIndex === -1 || referenceIndex === -1 || amountIndex === -1) {
+  if (
+    ctnIndex === -1 ||
+    referenceIndex === -1 ||
+    (amountIndex === -1 && bescAmountIndexes.length === 0)
+  ) {
     throw new Error("The country report CSV must include CTN, reference, and amount columns.")
   }
 
@@ -135,6 +249,9 @@ export function parseCountryReportCsv(csvText: string) {
     const billOfLadingNumber =
       billOfLadingIndex >= 0 ? row[billOfLadingIndex]?.trim() ?? "" : ""
     const reference = row[referenceIndex]?.trim() ?? ""
+    const amount = bescAmountIndexes.length
+      ? bescAmountIndexes.reduce((total, index) => total + parseAmount(row[index]), 0)
+      : parseAmount(row[amountIndex])
     const key = [invoiceNumber, ctnNumber, billOfLadingNumber, reference].join("__")
     const existing = grouped.get(key)
 
@@ -143,7 +260,7 @@ export function parseCountryReportCsv(csvText: string) {
       ctnNumber,
       billOfLadingNumber,
       reference,
-      amount: (existing?.amount ?? 0) + parseAmount(row[amountIndex]),
+      amount: (existing?.amount ?? 0) + amount,
       sourceRowCount: (existing?.sourceRowCount ?? 0) + 1,
     })
   }
