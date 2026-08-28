@@ -9,15 +9,38 @@ export type ParsedCountryReportRecord = {
   sourceRowCount: number
 }
 
-function parseAmount(value: string | undefined) {
-  const normalized = (value ?? "")
-    .replace(/\./g, "")
-    .replace(",", ".")
-    .replace(/[$€]/g, "")
-    .trim()
+function parseAmount(value: string | number | undefined) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0
+  }
+
+  const cleanValue = (value ?? "").replace(/[$€'\s]/g, "").trim()
+  const lastCommaIndex = cleanValue.lastIndexOf(",")
+  const lastPeriodIndex = cleanValue.lastIndexOf(".")
+  const normalized =
+    lastCommaIndex >= 0 && lastCommaIndex > lastPeriodIndex
+      ? cleanValue.replace(/\./g, "").replace(",", ".")
+      : cleanValue.replace(/,/g, "")
   const amount = Number(normalized)
 
   return Number.isFinite(amount) ? amount : 0
+}
+
+function findExactCsvColumn(headers: string[], matches: string[]) {
+  return headers.findIndex((header) => {
+    const normalizedHeader = header.toLowerCase().replace(/[^a-z0-9]+/g, "")
+
+    return matches.includes(normalizedHeader)
+  })
+}
+
+function getRowsFromHeader(
+  rows: string[][],
+  matchesHeader: (headers: string[]) => boolean
+) {
+  const headerIndex = rows.findIndex(matchesHeader)
+
+  return headerIndex >= 0 ? rows.slice(headerIndex) : undefined
 }
 
 function rowHasCountryReportHeaders(row: string[]) {
@@ -53,6 +76,26 @@ function getCountryReportRows(csvText: string) {
   const headerIndex = rows.findIndex(rowHasCountryReportHeaders)
 
   return headerIndex >= 0 ? rows.slice(headerIndex) : rows
+}
+
+function getDatePeriod(value: string | undefined) {
+  const rawValue = (value ?? "").trim()
+
+  if (!rawValue) {
+    return ""
+  }
+
+  const excelSerial = Number(rawValue)
+  const date =
+    Number.isFinite(excelSerial) && excelSerial > 30000
+      ? new Date(Math.round((excelSerial - 25569) * 86400 * 1000))
+      : new Date(rawValue.replace(/\s+tt\b/i, ""))
+
+  if (Number.isNaN(date.getTime())) {
+    return ""
+  }
+
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
 }
 
 function isCreditsLedger(headers: string[]) {
@@ -100,6 +143,232 @@ function parseCreditsLedgerCsv(rows: string[][]) {
       ctnNumber: mergeReportValues(existing?.ctnNumber ?? "", ctnNumber),
       billOfLadingNumber: "",
       reference: ctnNumber,
+      amount: (existing?.amount ?? 0) + amount,
+      sourceRowCount: (existing?.sourceRowCount ?? 0) + 1,
+    })
+  }
+
+  return Array.from(grouped.values())
+}
+
+function isFrabemarInvoice(headers: string[]) {
+  return (
+    findCsvColumn(headers, ["nfacture", "facture"]) >= 0 &&
+    findCsvColumn(headers, ["nferi", "feri"]) >= 0 &&
+    findCsvColumn(headers, ["nproforma", "proforma"]) >= 0 &&
+    findCsvColumn(headers, ["numerobl", "numbl", "bl"]) >= 0 &&
+    findExactCsvColumn(headers, ["totalfaceur", "totalfac"]) >= 0
+  )
+}
+
+function parseFrabemarInvoiceCsv(rows: string[][]) {
+  const [headers, ...dataRows] = rows
+
+  if (!headers || !isFrabemarInvoice(headers)) {
+    return undefined
+  }
+
+  const invoiceIndex = findCsvColumn(headers, ["nfacture", "facture"])
+  const ctnIndex = findCsvColumn(headers, ["nferi", "feri"])
+  const referenceIndex = findCsvColumn(headers, ["nproforma", "proforma"])
+  const billOfLadingIndex = findCsvColumn(headers, ["numerobl", "numbl", "bl"])
+  const totalFacIndex = findExactCsvColumn(headers, ["totalfaceur", "totalfac"])
+  const amountIndex =
+    totalFacIndex >= 0
+      ? totalFacIndex
+      : findCsvColumn(headers, ["totalfaceur", "totalfac", "total"])
+  const grouped = new Map<string, ParsedCountryReportRecord>()
+
+  for (const row of dataRows) {
+    const invoiceNumber = row[invoiceIndex]?.trim() ?? ""
+    const ctnNumber = row[ctnIndex]?.trim() ?? ""
+    const billOfLadingNumber = row[billOfLadingIndex]?.trim() ?? ""
+    const reference = row[referenceIndex]?.trim() ?? ""
+    const amount = parseAmount(row[amountIndex])
+
+    if (!ctnNumber && !reference && !billOfLadingNumber) {
+      continue
+    }
+
+    const key = [invoiceNumber, ctnNumber, billOfLadingNumber, reference].join(
+      "__"
+    )
+    const existing = grouped.get(key)
+
+    grouped.set(key, {
+      invoiceNumber,
+      ctnNumber: mergeReportValues(existing?.ctnNumber ?? "", ctnNumber),
+      billOfLadingNumber: mergeReportValues(
+        existing?.billOfLadingNumber ?? "",
+        billOfLadingNumber
+      ),
+      reference: mergeReportValues(existing?.reference ?? "", reference),
+      amount: (existing?.amount ?? 0) + amount,
+      sourceRowCount: (existing?.sourceRowCount ?? 0) + 1,
+    })
+  }
+
+  return Array.from(grouped.values())
+}
+
+function isCertificateReport(headers: string[]) {
+  return (
+    findExactCsvColumn(headers, ["besc"]) >= 0 &&
+    findExactCsvColumn(headers, ["val"]) >= 0 &&
+    findExactCsvColumn(headers, ["status"]) >= 0 &&
+    findExactCsvColumn(headers, ["bl"]) >= 0
+  )
+}
+
+function parseCertificateReportCsv(rows: string[][]) {
+  const [headers, ...dataRows] = rows
+
+  if (!headers || !isCertificateReport(headers)) {
+    return undefined
+  }
+
+  const bescIndex = findExactCsvColumn(headers, ["besc"])
+  const validationIndex = findExactCsvColumn(headers, ["val"])
+  const statusIndex = findExactCsvColumn(headers, ["status"])
+  const billOfLadingIndex = findExactCsvColumn(headers, ["bl"])
+  const grouped = new Map<string, ParsedCountryReportRecord>()
+
+  for (const row of dataRows) {
+    const ctnNumber = row[bescIndex]?.trim() ?? ""
+    const invoiceNumber = row[validationIndex]?.trim() ?? ""
+    const status = row[statusIndex]?.trim() ?? ""
+    const billOfLadingNumber = row[billOfLadingIndex]?.trim() ?? ""
+
+    if (!ctnNumber || !status || !billOfLadingNumber) {
+      continue
+    }
+
+    const key = [invoiceNumber, ctnNumber, billOfLadingNumber].join("__")
+    const existing = grouped.get(key)
+
+    grouped.set(key, {
+      invoiceNumber,
+      ctnNumber: mergeReportValues(existing?.ctnNumber ?? "", ctnNumber),
+      billOfLadingNumber: mergeReportValues(
+        existing?.billOfLadingNumber ?? "",
+        billOfLadingNumber
+      ),
+      reference: mergeReportValues(existing?.reference ?? "", ctnNumber),
+      amount: existing?.amount ?? 0,
+      sourceRowCount: (existing?.sourceRowCount ?? 0) + 1,
+    })
+  }
+
+  return Array.from(grouped.values())
+}
+
+function isRepublicOfCongoCtnExport(headers: string[]) {
+  return (
+    findExactCsvColumn(headers, ["visumreferencenumber"]) >= 0 &&
+    findExactCsvColumn(headers, ["ectnstatus"]) >= 0 &&
+    findExactCsvColumn(headers, ["blnumber"]) >= 0
+  )
+}
+
+function parseRepublicOfCongoCtnExportCsv(
+  rows: string[][],
+  options: { period?: string } = {}
+) {
+  const reportRows = getRowsFromHeader(rows, isRepublicOfCongoCtnExport)
+  const [headers, ...dataRows] = reportRows ?? []
+
+  if (!headers) {
+    return undefined
+  }
+
+  const ctnIndex = findExactCsvColumn(headers, ["visumreferencenumber"])
+  const statusIndex = findExactCsvColumn(headers, ["ectnstatus"])
+  const billOfLadingIndex = findExactCsvColumn(headers, ["blnumber"])
+  const visumDateIndex = findExactCsvColumn(headers, ["visumdate"])
+  const grouped = new Map<string, ParsedCountryReportRecord>()
+
+  for (const row of dataRows) {
+    const ctnNumber = row[ctnIndex]?.trim() ?? ""
+    const status = row[statusIndex]?.trim() ?? ""
+    const billOfLadingNumber = row[billOfLadingIndex]?.trim() ?? ""
+    const visumDatePeriod =
+      visumDateIndex >= 0 ? getDatePeriod(row[visumDateIndex]) : ""
+
+    if (
+      !ctnNumber ||
+      !status ||
+      !billOfLadingNumber ||
+      (options.period && visumDatePeriod !== options.period)
+    ) {
+      continue
+    }
+
+    const key = [ctnNumber, billOfLadingNumber].join("__")
+    const existing = grouped.get(key)
+
+    grouped.set(key, {
+      invoiceNumber: "",
+      ctnNumber: mergeReportValues(existing?.ctnNumber ?? "", ctnNumber),
+      billOfLadingNumber: mergeReportValues(
+        existing?.billOfLadingNumber ?? "",
+        billOfLadingNumber
+      ),
+      reference: mergeReportValues(existing?.reference ?? "", ctnNumber),
+      amount: existing?.amount ?? 0,
+      sourceRowCount: (existing?.sourceRowCount ?? 0) + 1,
+    })
+  }
+
+  return Array.from(grouped.values())
+}
+
+function isLiberiaInvoiceExport(headers: string[]) {
+  return (
+    findExactCsvColumn(headers, ["invoice"]) >= 0 &&
+    findExactCsvColumn(headers, ["bl"]) >= 0 &&
+    findExactCsvColumn(headers, ["booking"]) >= 0 &&
+    findExactCsvColumn(headers, ["total"]) >= 0 &&
+    findExactCsvColumn(headers, ["ctnnet"]) >= 0
+  )
+}
+
+function parseLiberiaInvoiceExportCsv(rows: string[][]) {
+  const [headers, ...dataRows] = rows
+
+  if (!headers || !isLiberiaInvoiceExport(headers)) {
+    return undefined
+  }
+
+  const invoiceIndex = findExactCsvColumn(headers, ["invoice"])
+  const billOfLadingIndex = findExactCsvColumn(headers, ["bl"])
+  const bookingIndex = findExactCsvColumn(headers, ["booking"])
+  const totalIndex = findExactCsvColumn(headers, ["total"])
+  const grouped = new Map<string, ParsedCountryReportRecord>()
+
+  for (const row of dataRows) {
+    const invoiceNumber = row[invoiceIndex]?.trim() ?? ""
+    const billOfLadingNumber = row[billOfLadingIndex]?.trim() ?? ""
+    const bookingNumber = row[bookingIndex]?.trim() ?? ""
+    const amount = parseAmount(row[totalIndex])
+
+    if (!invoiceNumber && !billOfLadingNumber && !bookingNumber) {
+      continue
+    }
+
+    const key = [invoiceNumber, billOfLadingNumber, bookingNumber].join("__")
+    const existing = grouped.get(key)
+
+    grouped.set(key, {
+      invoiceNumber,
+      ctnNumber: mergeReportValues(existing?.ctnNumber ?? "", bookingNumber),
+      billOfLadingNumber: mergeReportValues(
+        existing?.billOfLadingNumber ?? "",
+        billOfLadingNumber
+      ),
+      reference: mergeReportValues(
+        existing?.reference ?? "",
+        billOfLadingNumber || bookingNumber
+      ),
       amount: (existing?.amount ?? 0) + amount,
       sourceRowCount: (existing?.sourceRowCount ?? 0) + 1,
     })
@@ -188,12 +457,87 @@ export function parseAntaserInvoiceText(text: string) {
   return Array.from(grouped.values())
 }
 
-export function parseCountryReportCsv(csvText: string) {
+export function parseIvoryCoastStatementText(text: string) {
+  if (!/STATEMENT OF ACCOUNT/i.test(text) || !/Processing of BSC #/i.test(text)) {
+    return []
+  }
+
+  const lines = compactLines(text)
+  const grouped = new Map<string, ParsedCountryReportRecord>()
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const processingMatch = lines[index]?.match(/^Processing of BSC #\s*(CIIMP-\d+)/i)
+    const cancellationMatch = lines[index]?.match(/^Cancel of Invoice#(CIIMP-\d+\/\d+)/i)
+
+    if (!processingMatch && !cancellationMatch) {
+      continue
+    }
+
+    const invoiceNumber =
+      cancellationMatch?.[1] ??
+      lines.slice(index + 1).find((line) => /^CIIMP-\d+\/\d+$/i.test(line)) ??
+      ""
+    const ctnNumber = processingMatch?.[1] ?? invoiceNumber.replace(/\/\d+$/i, "")
+    const amountLine = lines
+      .slice(index + 1, index + 6)
+      .find((line) => /^[+-]\s*[\d'.,]+\s*(?:€|EUR|â‚¬)?$/i.test(line))
+
+    if (!invoiceNumber || !ctnNumber || !amountLine) {
+      continue
+    }
+
+    const sign = amountLine.trim().startsWith("+") ? -1 : 1
+    const amount = Math.abs(parseAmount(amountLine)) * sign
+    const existing = grouped.get(invoiceNumber)
+
+    grouped.set(invoiceNumber, {
+      invoiceNumber,
+      ctnNumber: mergeReportValues(existing?.ctnNumber ?? "", ctnNumber),
+      billOfLadingNumber: "",
+      reference: mergeReportValues(existing?.reference ?? "", ctnNumber),
+      amount: (existing?.amount ?? 0) + amount,
+      sourceRowCount: (existing?.sourceRowCount ?? 0) + 1,
+    })
+  }
+
+  return Array.from(grouped.values()).filter(
+    (record) => record.amount !== 0 || record.sourceRowCount === 1
+  )
+}
+
+export function parseCountryReportCsv(
+  csvText: string,
+  options: { period?: string } = {}
+) {
   const rawRows = parseCsv(csvText)
   const creditsLedgerRecords = parseCreditsLedgerCsv(rawRows)
 
   if (creditsLedgerRecords) {
     return creditsLedgerRecords
+  }
+
+  const frabemarInvoiceRecords = parseFrabemarInvoiceCsv(rawRows)
+
+  if (frabemarInvoiceRecords) {
+    return frabemarInvoiceRecords
+  }
+
+  const certificateRecords = parseCertificateReportCsv(rawRows)
+
+  if (certificateRecords) {
+    return certificateRecords
+  }
+
+  const republicOfCongoRecords = parseRepublicOfCongoCtnExportCsv(rawRows, options)
+
+  if (republicOfCongoRecords) {
+    return republicOfCongoRecords
+  }
+
+  const liberiaInvoiceRecords = parseLiberiaInvoiceExportCsv(rawRows)
+
+  if (liberiaInvoiceRecords) {
+    return liberiaInvoiceRecords
   }
 
   const rows = getCountryReportRows(csvText)
@@ -305,16 +649,22 @@ async function extractWorkbookRows(file: File) {
   return xlsx.utils.sheet_to_csv(sheet)
 }
 
-export async function parseCountryReportFile(file: File) {
+export async function parseCountryReportFile(
+  file: File,
+  options: { period?: string } = {}
+) {
   const extension = file.name.split(".").pop()?.toLowerCase()
 
   if (extension === "pdf" || file.type === "application/pdf") {
-    return parseAntaserInvoiceText(await extractPdfText(file))
+    const text = await extractPdfText(file)
+    const ivoryCoastRecords = parseIvoryCoastStatementText(text)
+
+    return ivoryCoastRecords.length ? ivoryCoastRecords : parseAntaserInvoiceText(text)
   }
 
   if (extension === "xlsx" || extension === "xls") {
-    return parseCountryReportCsv(await extractWorkbookRows(file))
+    return parseCountryReportCsv(await extractWorkbookRows(file), options)
   }
 
-  return parseCountryReportCsv(await file.text())
+  return parseCountryReportCsv(await file.text(), options)
 }

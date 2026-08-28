@@ -5,6 +5,7 @@ import Image from "next/image"
 import { usePathname } from "next/navigation"
 
 import { AppLink } from "@/components/app-link"
+import { openAppCommandMenuEvent } from "@/components/app-command-menu"
 import { NavDocuments } from "@/components/nav-documents"
 import { NavUser } from "@/components/nav-user"
 import {
@@ -38,6 +39,7 @@ import {
   MoreHorizontalIcon,
   PinOffIcon,
   PlusIcon,
+  SearchIcon,
   Settings2Icon,
   UploadIcon,
 } from "lucide-react"
@@ -164,6 +166,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     )
   }
 
+  function openSearch() {
+    window.dispatchEvent(new Event(openAppCommandMenuEvent))
+  }
+
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
@@ -275,6 +281,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton onClick={openSearch}>
+              <SearchIcon />
+              <span>Search</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
         <NavUser user={data.user} />
       </SidebarFooter>
     </Sidebar>

@@ -3,6 +3,7 @@
 import * as React from "react"
 import {
   CheckIcon,
+  ChevronDownIcon,
   ChevronsUpDownIcon,
   MinusIcon,
   PlusIcon,
@@ -44,6 +45,15 @@ const defaultZone = "ROW"
 const zones = ["ROW", "Zone EA"]
 const selectableSortingFields = ["Container", "Bulk", "Roro"]
 const catalogVersionKey = "quote-item-catalog-v1"
+const antaserOutOfTerritoryCountries = new Set([
+  "burundi",
+  "centralafricanrepublic",
+  "equatorialguinea",
+  "guineabissau",
+  "niger",
+  "southsudan",
+  "togo",
+])
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -61,12 +71,44 @@ function normalizedSortingField(item: QuoteCatalogItem) {
   return item.sortingField.toLowerCase()
 }
 
+function normalizeCatalogKey(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "")
+}
+
 function isFeeItem(item: QuoteCatalogItem) {
   return normalizedSortingField(item) === "fee"
 }
 
 function isOptionalItem(item: QuoteCatalogItem) {
   return normalizedSortingField(item).includes("optional")
+}
+
+function isAntaserOutOfTerritoryFee(item: QuoteCatalogItem) {
+  const sortingField = normalizeCatalogKey(item.sortingField)
+
+  return (
+    normalizeCatalogKey(item.name) === "outofterritoryfee" &&
+    (sortingField === "optionalfee" || sortingField === "optionalfield")
+  )
+}
+
+function isAntaserOutOfTerritoryCountry(countryName: string) {
+  return antaserOutOfTerritoryCountries.has(normalizeCatalogKey(countryName))
+}
+
+function quoteItemAppliesToSelection(
+  item: QuoteCatalogItem,
+  countryName: string,
+  zone: string
+) {
+  if (item.countryName === countryName && item.zone === zone) {
+    return true
+  }
+
+  return (
+    isAntaserOutOfTerritoryFee(item) &&
+    isAntaserOutOfTerritoryCountry(countryName)
+  )
 }
 
 function isSelectedSortingItem(item: QuoteCatalogItem, sortingField: string) {
@@ -113,11 +155,13 @@ function getCountries(items: QuoteCatalogItem[]) {
 function CountrySearchField({
   autoOpenOnDesktop = false,
   countries,
+  focusSignal = 0,
   value,
   onChange,
 }: {
   autoOpenOnDesktop?: boolean
   countries: string[]
+  focusSignal?: number
   value: string
   onChange: (value: string) => void
 }) {
@@ -158,6 +202,20 @@ function CountrySearchField({
 
     return () => window.cancelAnimationFrame(animationFrameId)
   }, [open])
+
+  React.useEffect(() => {
+    if (!focusSignal) {
+      return
+    }
+
+    const mql = window.matchMedia("(min-width: 768px)")
+
+    if (mql.matches) {
+      setOpen(true)
+      setQuery("")
+      setActiveIndex(0)
+    }
+  }, [focusSignal])
 
   return (
     <Popover
@@ -275,6 +333,37 @@ function QuantityControl({
   )
 }
 
+function QuoteSectionToggle({
+  title,
+  count,
+  open,
+  onToggle,
+}: {
+  title: string
+  count: number
+  open: boolean
+  onToggle: () => void
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      className="h-10 w-full justify-between rounded-lg px-3 font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+      onClick={onToggle}
+    >
+      <span>
+        {title}
+        <span className="ml-2 text-xs font-normal text-muted-foreground">
+          {count}
+        </span>
+      </span>
+      <ChevronDownIcon
+        className={`transition-transform ${open ? "rotate-180" : ""}`}
+      />
+    </Button>
+  )
+}
+
 export function QuoteToolView() {
   const [catalog, setCatalog] =
     React.useState<QuoteCatalogItem[]>(quoteItemCatalog)
@@ -285,6 +374,16 @@ export function QuoteToolView() {
   const [zone, setZone] = React.useState(defaultZone)
   const [sortingField, setSortingField] = React.useState("Container")
   const [quantities, setQuantities] = React.useState<Record<string, number>>({})
+  const [openItemSections, setOpenItemSections] = React.useState({
+    fees: false,
+  })
+  const [countrySearchFocusSignal, setCountrySearchFocusSignal] =
+    React.useState(0)
+  const [shouldFocusFirstPrimaryItem, setShouldFocusFirstPrimaryItem] =
+    React.useState(false)
+  const primaryItemRefs = React.useRef<Record<string, HTMLTableRowElement | null>>(
+    {}
+  )
   const showBulkUnits = sortingField === "Bulk"
 
   const filteredItems = React.useMemo(
@@ -292,8 +391,7 @@ export function QuoteToolView() {
       sortQuoteItems(
         catalog.filter(
           (item) =>
-            item.countryName === countryName &&
-            item.zone === zone &&
+            quoteItemAppliesToSelection(item, countryName, zone) &&
             (isFeeItem(item) ||
               isOptionalItem(item) ||
               isSelectedSortingItem(item, sortingField))
@@ -302,6 +400,29 @@ export function QuoteToolView() {
       ),
     [catalog, countryName, sortingField, zone]
   )
+
+  const primaryItems = React.useMemo(
+    () =>
+      filteredItems.filter(
+        (item) => !isFeeItem(item) && !isOptionalItem(item)
+      ),
+    [filteredItems]
+  )
+  const feeItems = React.useMemo(
+    () =>
+      filteredItems.filter(
+        (item) => isFeeItem(item) || isOptionalItem(item)
+      ),
+    [filteredItems]
+  )
+  const itemSections = [
+    {
+      id: "fees",
+      title: "Fees",
+      items: feeItems,
+      open: openItemSections.fees,
+    },
+  ] as const
 
   const quoteItems = React.useMemo<QuoteLineItem[]>(
     () =>
@@ -353,6 +474,47 @@ export function QuoteToolView() {
     return () => window.removeEventListener("quote-items:updated", loadCatalog)
   }, [])
 
+  React.useEffect(() => {
+    if (!shouldFocusFirstPrimaryItem || !primaryItems.length) {
+      return
+    }
+
+    const mql = window.matchMedia("(min-width: 768px)")
+
+    if (!mql.matches) {
+      setShouldFocusFirstPrimaryItem(false)
+      return
+    }
+
+    const animationFrameId = window.requestAnimationFrame(() => {
+      primaryItemRefs.current[primaryItems[0]?.internalId ?? ""]?.focus()
+      setShouldFocusFirstPrimaryItem(false)
+    })
+
+    return () => window.cancelAnimationFrame(animationFrameId)
+  }, [primaryItems, shouldFocusFirstPrimaryItem])
+
+  React.useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key.toLowerCase() !== "k" || (!event.ctrlKey && !event.metaKey)) {
+        return
+      }
+
+      const mql = window.matchMedia("(min-width: 768px)")
+
+      if (!mql.matches) {
+        return
+      }
+
+      event.preventDefault()
+      setCountrySearchFocusSignal((signal) => signal + 1)
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [])
+
   function updateQuantity(internalId: string, nextQuantity: number) {
     setQuantities((currentQuantities) => ({
       ...currentQuantities,
@@ -365,6 +527,49 @@ export function QuoteToolView() {
     setZone(defaultZone)
     setSortingField("Container")
     setQuantities({})
+    setOpenItemSections({
+      fees: false,
+    })
+  }
+
+  function toggleItemSection(sectionId: keyof typeof openItemSections) {
+    setOpenItemSections((currentSections) => ({
+      ...currentSections,
+      [sectionId]: !currentSections[sectionId],
+    }))
+  }
+
+  function handleDesktopItemKeyDown(
+    event: React.KeyboardEvent<HTMLTableRowElement>,
+    item: QuoteCatalogItem,
+    index: number
+  ) {
+    if (event.target !== event.currentTarget) {
+      return
+    }
+
+    if (event.key === "Tab") {
+      const nextIndex = event.shiftKey ? index - 1 : index + 1
+      const nextItem = primaryItems[nextIndex]
+
+      if (!nextItem) {
+        return
+      }
+
+      event.preventDefault()
+      primaryItemRefs.current[nextItem.internalId]?.focus()
+      return
+    }
+
+    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") {
+      return
+    }
+
+    event.preventDefault()
+    const quantity = quantities[item.internalId] ?? (isFeeItem(item) ? 1 : 0)
+    const delta = event.key === "ArrowRight" ? 1 : -1
+
+    updateQuantity(item.internalId, quantity + delta)
   }
 
   return (
@@ -381,18 +586,107 @@ export function QuoteToolView() {
         <SiteHeader title="Quote Tool" />
         <main className="flex flex-1 flex-col gap-4 p-4 lg:p-6">
           <Card className="rounded-lg shadow-sm">
-            <CardContent>
-              <FieldGroup className="grid gap-4 md:grid-cols-3">
+            <CardContent className="relative">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="absolute top-0 right-5 hidden h-7 px-1.5 text-muted-foreground hover:text-foreground md:inline-flex"
+                onClick={resetQuote}
+              >
+                <RotateCcwIcon />
+                Reset
+              </Button>
+              <div className="grid gap-3 md:hidden">
                 <Field>
-                  <FieldLabel>Country</FieldLabel>
+                  <div className="flex items-center justify-between gap-3">
+                    <FieldLabel>Country</FieldLabel>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-1.5 text-muted-foreground hover:text-foreground"
+                      onClick={resetQuote}
+                    >
+                      <RotateCcwIcon />
+                      Reset
+                    </Button>
+                  </div>
                   <CountrySearchField
-                    autoOpenOnDesktop
                     countries={countries}
                     value={countryName}
                     onChange={(value) => {
                       if (value) {
                         setCountryName(value)
                         setQuantities({})
+                      }
+                    }}
+                  />
+                </Field>
+                <div className="grid grid-cols-2 gap-2">
+                  <Field>
+                    <FieldLabel>Zone</FieldLabel>
+                    <Select
+                      value={zone}
+                      onValueChange={(value) => {
+                        if (value) {
+                          setZone(value)
+                          setQuantities({})
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-11 w-full rounded-xl px-3 text-base">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {zones.map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {option}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field>
+                    <FieldLabel>Type</FieldLabel>
+                    <Select
+                      value={sortingField}
+                      onValueChange={(value) => {
+                        if (value) {
+                          setSortingField(value)
+                          setQuantities({})
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-11 w-full rounded-xl px-3 text-base">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {selectableSortingFields.map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {option}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                </div>
+              </div>
+              <FieldGroup className="hidden gap-4 pr-20 md:grid md:grid-cols-3">
+                <Field>
+                  <FieldLabel>Country</FieldLabel>
+                  <CountrySearchField
+                    autoOpenOnDesktop
+                    countries={countries}
+                    focusSignal={countrySearchFocusSignal}
+                    value={countryName}
+                    onChange={(value) => {
+                      if (value) {
+                        setCountryName(value)
+                        setQuantities({})
+                        setShouldFocusFirstPrimaryItem(true)
                       }
                     }}
                   />
@@ -448,19 +742,73 @@ export function QuoteToolView() {
                   </Select>
                 </Field>
               </FieldGroup>
-              <div className="mt-3 flex justify-end">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground hover:text-foreground"
-                  onClick={resetQuote}
-                >
-                  <RotateCcwIcon />
-                  Reset
-                </Button>
-              </div>
               <div className="mt-6 grid gap-3 md:hidden">
-                {filteredItems.map((item) => {
+                {itemSections.map((section) =>
+                  section.items.length ? (
+                    <div
+                      key={section.id}
+                      className="overflow-hidden rounded-lg border bg-background"
+                    >
+                      <QuoteSectionToggle
+                        title={section.title}
+                        count={section.items.length}
+                        open={section.open}
+                        onToggle={() => toggleItemSection(section.id)}
+                      />
+                      {section.open ? (
+                        <div className="grid gap-3 border-t p-3">
+                          {section.items.map((item) => {
+                            const quantity =
+                              quantities[item.internalId] ??
+                              (isFeeItem(item) ? 1 : 0)
+                            const unitPrice = itemPrice(item)
+
+                            return (
+                              <div
+                                key={item.internalId}
+                                className="grid gap-3 rounded-lg border bg-card p-3"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="font-medium leading-snug">
+                                      {item.name}
+                                    </div>
+                                  </div>
+                                  <div className="shrink-0 text-right font-medium">
+                                    {formatMoney(unitPrice)}
+                                  </div>
+                                </div>
+                                <div className="flex items-center justify-between gap-3">
+                                  {showBulkUnits ? (
+                                    <div className="text-sm text-muted-foreground">
+                                      <span className="font-medium text-foreground">
+                                        Bulk Units:
+                                      </span>{" "}
+                                      {item.bulkUnits || "-"}
+                                    </div>
+                                  ) : (
+                                    <div />
+                                  )}
+                                  <QuantityControl
+                                    itemName={item.name}
+                                    quantity={quantity}
+                                    onChange={(nextQuantity) =>
+                                      updateQuantity(
+                                        item.internalId,
+                                        nextQuantity
+                                      )
+                                    }
+                                  />
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null
+                )}
+                {primaryItems.map((item) => {
                   const quantity =
                     quantities[item.internalId] ?? (isFeeItem(item) ? 1 : 0)
                   const unitPrice = itemPrice(item)
@@ -523,7 +871,69 @@ export function QuoteToolView() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredItems.map((item) => {
+                    {itemSections.map((section) =>
+                      section.items.length ? (
+                        <React.Fragment key={section.id}>
+                          <tr className="border-b bg-muted/30">
+                            <td
+                              colSpan={showBulkUnits ? 4 : 3}
+                              className="p-1"
+                            >
+                              <QuoteSectionToggle
+                                title={section.title}
+                                count={section.items.length}
+                                open={section.open}
+                                onToggle={() => toggleItemSection(section.id)}
+                              />
+                            </td>
+                          </tr>
+                          {section.open
+                            ? section.items.map((item) => {
+                                const quantity =
+                                  quantities[item.internalId] ??
+                                  (isFeeItem(item) ? 1 : 0)
+                                const unitPrice = itemPrice(item)
+
+                                return (
+                                  <tr
+                                    key={item.internalId}
+                                    className="border-b last:border-0"
+                                  >
+                                    <td className="px-3 py-3 align-top">
+                                      <div className="font-medium">
+                                        {item.name}
+                                      </div>
+                                    </td>
+                                    {showBulkUnits ? (
+                                      <td className="px-3 py-3 align-top text-muted-foreground">
+                                        {item.bulkUnits || "-"}
+                                      </td>
+                                    ) : null}
+                                    <td className="px-3 py-3 text-right align-top font-medium">
+                                      {formatMoney(unitPrice)}
+                                    </td>
+                                    <td className="px-3 py-3 align-top">
+                                      <div className="flex justify-center">
+                                        <QuantityControl
+                                          itemName={item.name}
+                                          quantity={quantity}
+                                          onChange={(nextQuantity) =>
+                                            updateQuantity(
+                                              item.internalId,
+                                              nextQuantity
+                                            )
+                                          }
+                                        />
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )
+                              })
+                            : null}
+                        </React.Fragment>
+                      ) : null
+                    )}
+                    {primaryItems.map((item, index) => {
                       const quantity =
                         quantities[item.internalId] ?? (isFeeItem(item) ? 1 : 0)
                       const unitPrice = itemPrice(item)
@@ -531,7 +941,15 @@ export function QuoteToolView() {
                       return (
                         <tr
                           key={item.internalId}
-                          className="border-b last:border-0"
+                          ref={(node) => {
+                            primaryItemRefs.current[item.internalId] = node
+                          }}
+                          tabIndex={0}
+                          aria-label={`${item.name}, quantity ${quantity}`}
+                          className="border-b outline-none transition-colors last:border-0 focus-visible:bg-accent/60"
+                          onKeyDown={(event) =>
+                            handleDesktopItemKeyDown(event, item, index)
+                          }
                         >
                           <td className="px-3 py-3 align-top">
                             <div className="font-medium">{item.name}</div>

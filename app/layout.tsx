@@ -1,5 +1,6 @@
 import "./globals.css"
 import { PwaRegister } from "@/components/pwa-register"
+import { AppCommandMenu } from "@/components/app-command-menu"
 import { AuthSessionGuard } from "@/components/auth-session-guard"
 import { ThemeProvider } from "@/components/theme-provider"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -74,6 +75,7 @@ export default function RootLayout({
           <TooltipProvider>
             <PwaRegister />
             <AuthSessionGuard />
+            <AppCommandMenu />
             {children}
           </TooltipProvider>
         </ThemeProvider>

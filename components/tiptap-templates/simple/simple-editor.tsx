@@ -185,9 +185,11 @@ function parseEditorContent(value?: string): Content {
 }
 
 export function SimpleEditor({
+  focusSignal = 0,
   value,
   onChange,
 }: {
+  focusSignal?: number
   value?: string
   onChange?: (value: string) => void
 }) {
@@ -309,6 +311,14 @@ export function SimpleEditor({
     isMobile &&
     (hasEditorFocus || isSearchAndReplaceOpen) &&
     mobileKeyboardInset > 80
+
+  useEffect(() => {
+    if (!focusSignal || !editor) {
+      return
+    }
+
+    editor.commands.focus("end")
+  }, [editor, focusSignal])
 
   return (
     <div className="simple-editor-wrapper">

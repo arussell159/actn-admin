@@ -783,7 +783,7 @@ export function MonthEndCountryReconciliationView({
 
     try {
       const parsedGroups = await Promise.all(
-        files.map((file) => parseCountryReportFile(file))
+        files.map((file) => parseCountryReportFile(file, { period: record.period }))
       )
       const parsedRecords = parsedGroups.flat()
       const reportRecords = makeCountryReportRecords({

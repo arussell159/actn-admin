@@ -4,6 +4,7 @@ import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   ArrowLeftIcon,
+  CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   FilePlus2Icon,
@@ -17,6 +18,7 @@ import {
   PlusIcon,
   SearchIcon,
   Trash2Icon,
+  XIcon,
 } from "lucide-react"
 
 import { AppSidebar } from "@/components/app-sidebar"
@@ -110,6 +112,24 @@ function folderDescendants(nodes: InformationNode[], folderId: string) {
   return nodes.filter((node) => descendantIds.has(node.id))
 }
 
+function visibleTreeNodeIds(
+  nodes: InformationNode[],
+  collapsedFolderIds: Set<string>,
+  parentId?: string
+) {
+  const ids: string[] = []
+
+  for (const node of childNodes(nodes, parentId)) {
+    ids.push(node.id)
+
+    if (node.type === "folder" && !collapsedFolderIds.has(node.id)) {
+      ids.push(...visibleTreeNodeIds(nodes, collapsedFolderIds, node.id))
+    }
+  }
+
+  return ids
+}
+
 function formatEditedDate(value?: string) {
   if (!value) {
     return "No edits yet"
@@ -186,6 +206,64 @@ function MobileSearchBar() {
   )
 }
 
+function MobileFolderTitlePrompt({
+  value,
+  onChange,
+  onConfirm,
+  onCancel,
+}: {
+  value: string
+  onChange: (value: string) => void
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-background pt-[env(safe-area-inset-top,0px)] md:hidden">
+      <header className="grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center px-4">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="justify-self-start rounded-full bg-background shadow-sm"
+          aria-label="Cancel folder"
+          onClick={onCancel}
+        >
+          <XIcon />
+        </Button>
+        <div className="text-sm font-semibold text-foreground">New Folder</div>
+        <Button
+          size="icon-sm"
+          className="justify-self-end rounded-full bg-yellow-400 text-yellow-950 shadow-sm hover:bg-yellow-300 disabled:opacity-40"
+          aria-label="Create folder"
+          disabled={!value.trim()}
+          onClick={onConfirm}
+        >
+          <CheckIcon />
+        </Button>
+      </header>
+      <div className="grid gap-3 px-4 pt-3">
+        <div className="relative">
+          <Input
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                onConfirm()
+              }
+
+              if (event.key === "Escape") {
+                onCancel()
+              }
+            }}
+            className="h-12 rounded-xl bg-background pr-10 pl-3 text-base shadow-sm"
+            aria-label="Folder title"
+            autoFocus
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function MobileFoldersScreen({
   nodes,
   onOpenFolder,
@@ -220,9 +298,7 @@ function MobileFoldersScreen({
       </h1>
       <div className="mt-5 overflow-hidden rounded-2xl bg-background">
         {rootFolders.map((folder, index) => {
-          const count = folderDescendants(nodes, folder.id).filter(
-            (node) => node.type === "note"
-          ).length
+          const count = childNodes(nodes, folder.id).length
 
           return (
             <button
@@ -262,6 +338,77 @@ function MobileFoldersScreen({
   )
 }
 
+function MobileMoveFolderMenuItems({
+  nodes,
+  movingFolder,
+  parentId,
+  blockedIds,
+  onMove,
+}: {
+  nodes: InformationNode[]
+  movingFolder: InformationNode
+  parentId?: string
+  blockedIds: Set<string>
+  onMove: (nodeId: string, parentId?: string) => void
+}) {
+  const folders = childNodes(nodes, parentId).filter(
+    (node) =>
+      node.type === "folder" &&
+      node.id !== movingFolder.id &&
+      !blockedIds.has(node.id)
+  )
+
+  return (
+    <>
+      {folders.map((targetFolder) => {
+        const childFolders = childNodes(nodes, targetFolder.id).filter(
+          (node) =>
+            node.type === "folder" &&
+            node.id !== movingFolder.id &&
+            !blockedIds.has(node.id)
+        )
+
+        if (childFolders.length) {
+          return (
+            <DropdownMenuSub key={targetFolder.id}>
+              <DropdownMenuSubTrigger>
+                <FolderIcon />
+                {targetFolder.title}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="min-w-52">
+                {targetFolder.id !== movingFolder.parentId ? (
+                  <DropdownMenuItem
+                    onClick={() => onMove(movingFolder.id, targetFolder.id)}
+                  >
+                    Move Here
+                  </DropdownMenuItem>
+                ) : null}
+                <MobileMoveFolderMenuItems
+                  nodes={nodes}
+                  movingFolder={movingFolder}
+                  parentId={targetFolder.id}
+                  blockedIds={blockedIds}
+                  onMove={onMove}
+                />
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          )
+        }
+
+        return targetFolder.id !== movingFolder.parentId ? (
+          <DropdownMenuItem
+            key={targetFolder.id}
+            onClick={() => onMove(movingFolder.id, targetFolder.id)}
+          >
+            <FolderIcon />
+            {targetFolder.title}
+          </DropdownMenuItem>
+        ) : null
+      })}
+    </>
+  )
+}
+
 function MobileFolderNotesScreen({
   folder,
   nodes,
@@ -284,6 +431,10 @@ function MobileFolderNotesScreen({
   onMove: (nodeId: string, parentId?: string) => void
 }) {
   const allFolders = nodes.filter((node) => node.type === "folder")
+  const folderBlockedMoveIds = folder ? descendantsOf(nodes, folder.id) : new Set<string>()
+  const childFolders = folder
+    ? childNodes(nodes, folder.id).filter((node) => node.type === "folder")
+    : []
 
   return (
     <div className="relative min-h-full bg-muted/60 px-4 pb-24 pt-[calc(env(safe-area-inset-top,0px)+1rem)] md:hidden">
@@ -304,11 +455,11 @@ function MobileFolderNotesScreen({
                 variant="ghost"
                 size="icon-sm"
                 className="rounded-full bg-background shadow-sm"
-                aria-label="Create note or folder"
+                aria-label="Folder actions"
               />
             }
           >
-            <PlusIcon />
+            <MoreHorizontalIcon />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-44">
             <DropdownMenuItem onClick={onCreateNote}>
@@ -330,13 +481,60 @@ function MobileFolderNotesScreen({
                 Delete Folder
               </DropdownMenuItem>
             ) : null}
+            {folder ? (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>Move Folder</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="min-w-52">
+                  {folder.parentId ? (
+                    <DropdownMenuItem onClick={() => onMove(folder.id)}>
+                      Notebook
+                    </DropdownMenuItem>
+                  ) : null}
+                  <MobileMoveFolderMenuItems
+                    nodes={nodes}
+                    movingFolder={folder}
+                    blockedIds={folderBlockedMoveIds}
+                    onMove={onMove}
+                  />
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
       <h1 className="text-[30pt] font-bold leading-tight tracking-tight text-foreground md:text-3xl">
         {folder?.title ?? "Notes"}
       </h1>
-      <p className="text-muted-foreground">{notes.length} Notes</p>
+      <p className="text-muted-foreground">
+        {notes.length} Notes
+        {childFolders.length ? `, ${childFolders.length} Folders` : ""}
+      </p>
+      {childFolders.length ? (
+        <div className="mt-5 overflow-hidden rounded-2xl bg-background">
+          {childFolders.map((childFolder, index) => {
+            const count = childNodes(nodes, childFolder.id).length
+
+            return (
+              <button
+                key={childFolder.id}
+                type="button"
+                className="relative flex min-h-14 w-full items-center gap-3 px-4 text-left transition-colors active:bg-muted"
+                onClick={() => onOpenNote(childFolder.id)}
+              >
+                <FolderIcon className="size-5 shrink-0 text-yellow-500" />
+                <span className="min-w-0 flex-1 font-medium">
+                  {childFolder.title}
+                </span>
+                <span className="text-muted-foreground">{count}</span>
+                <ChevronRightIcon className="size-5 shrink-0 text-muted-foreground" />
+                {index < childFolders.length - 1 ? (
+                  <span className="absolute left-12 right-0 h-px translate-y-7 bg-border/60" />
+                ) : null}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
       <div className="mt-5 grid gap-3">
         {notes.map((note) => (
           <div
@@ -553,6 +751,10 @@ function NoteTree({
   onTitleDraftChange,
   onCommitTitle,
   onCancelTitleEdit,
+  focusableNodeIds = [],
+  nodeRefs,
+  onFocusNode = () => undefined,
+  onOpenNoteForTyping = () => undefined,
   parentId,
   level = 0,
 }: {
@@ -571,11 +773,19 @@ function NoteTree({
   onTitleDraftChange: (value: string) => void
   onCommitTitle: (nodeId: string) => void
   onCancelTitleEdit: () => void
+  focusableNodeIds?: string[]
+  nodeRefs?: React.MutableRefObject<Record<string, HTMLDivElement | null>>
+  onFocusNode?: (nodeId: string) => void
+  onOpenNoteForTyping?: () => void
   parentId?: string
   level?: number
 }) {
   const children = childNodes(nodes, parentId)
   const allFolders = allNodes.filter((node) => node.type === "folder")
+  const fallbackNodeRefs = React.useRef<Record<string, HTMLDivElement | null>>(
+    {}
+  )
+  const treeNodeRefs = nodeRefs ?? fallbackNodeRefs
 
   if (!children.length && level === 0) {
     return (
@@ -596,12 +806,61 @@ function NoteTree({
           <div key={node.id}>
             <div
               className={cn(
-                "group flex min-h-12 items-center gap-2 rounded-lg px-1.5 py-1 transition-colors hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)] lg:min-h-0 lg:gap-1 lg:rounded-xl lg:py-0 lg:pl-0 lg:pr-1 lg:hover:bg-muted/70",
+                "group flex min-h-12 items-center gap-2 rounded-lg px-1.5 py-1 outline-none transition-colors hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)] focus-visible:bg-accent/70 lg:min-h-0 lg:gap-1 lg:rounded-xl lg:py-0 lg:pl-0 lg:pr-1 lg:hover:bg-muted/70",
                 activeId === node.id &&
                   "bg-[color-mix(in_oklch,var(--muted),var(--foreground)_10%)] lg:bg-muted"
               )}
               style={{ marginLeft: `${level * 1.25}rem` }}
               draggable
+              tabIndex={0}
+              ref={(element) => {
+                treeNodeRefs.current[node.id] = element
+              }}
+              onKeyDown={(event) => {
+                if (editingNodeId === node.id) {
+                  return
+                }
+
+                if (event.target !== event.currentTarget) {
+                  return
+                }
+
+                if (event.key === "Tab") {
+                  const currentIndex = focusableNodeIds.indexOf(node.id)
+                  const nextId =
+                    focusableNodeIds[currentIndex + (event.shiftKey ? -1 : 1)]
+
+                  if (!nextId) {
+                    return
+                  }
+
+                  event.preventDefault()
+                  onFocusNode(nextId)
+                  return
+                }
+
+                if (event.key !== "Enter") {
+                  return
+                }
+
+                event.preventDefault()
+                onSelect(node.id)
+
+                if (node.type === "folder") {
+                  if (isCollapsed) {
+                    onToggleCollapse(node.id)
+                  }
+
+                  const firstChild = childNodes(nodes, node.id)[0]
+
+                  if (firstChild) {
+                    onFocusNode(firstChild.id)
+                  }
+                  return
+                }
+
+                onOpenNoteForTyping()
+              }}
               onDragStart={(event) => {
                 event.dataTransfer.effectAllowed = "move"
                 event.dataTransfer.setData("text/plain", node.id)
@@ -633,6 +892,7 @@ function NoteTree({
                     event.stopPropagation()
                     onToggleCollapse(node.id)
                   }}
+                  tabIndex={-1}
                 >
                   {isCollapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
                 </Button>
@@ -643,6 +903,7 @@ function NoteTree({
                 variant="ghost"
                 className="h-10 min-w-0 flex-1 justify-start px-2 text-[15px] hover:bg-transparent lg:h-8 lg:px-3 lg:text-sm"
                 onClick={() => onSelect(node.id)}
+                tabIndex={-1}
               >
                 <Icon />
                 {editingNodeId === node.id ? (
@@ -676,6 +937,7 @@ function NoteTree({
                       size="icon-sm"
                       className="size-9 opacity-100 transition-opacity lg:size-7 lg:opacity-0 lg:group-focus-within:opacity-100 lg:group-hover:opacity-100"
                       aria-label={`Actions for ${node.title}`}
+                      tabIndex={-1}
                     />
                   }
                 >
@@ -753,6 +1015,10 @@ function NoteTree({
                 onTitleDraftChange={onTitleDraftChange}
                 onCommitTitle={onCommitTitle}
                 onCancelTitleEdit={onCancelTitleEdit}
+                focusableNodeIds={focusableNodeIds}
+                nodeRefs={treeNodeRefs}
+                onFocusNode={onFocusNode}
+                onOpenNoteForTyping={onOpenNoteForTyping}
                 parentId={node.id}
                 level={level + 1}
               />
@@ -776,8 +1042,19 @@ export function InformationView() {
     string | undefined
   >()
   const [treeTitleDraft, setTreeTitleDraft] = React.useState("")
+  const [folderPromptParentId, setFolderPromptParentId] = React.useState<
+    string | null
+  >(null)
+  const [folderPromptTitle, setFolderPromptTitle] = React.useState("")
   const [noteSearch, setNoteSearch] = React.useState("")
+  const nodesRef = React.useRef<InformationNode[]>([])
+  const desktopSearchInputRef = React.useRef<HTMLInputElement | null>(null)
+  const desktopNodeRefs = React.useRef<Record<string, HTMLDivElement | null>>({})
   const mobileNoteSelectorRef = React.useRef<HTMLDetailsElement | null>(null)
+  const hasInitializedCollapsedFolders = React.useRef(false)
+  const [pendingDesktopNodeFocusId, setPendingDesktopNodeFocusId] =
+    React.useState<string>()
+  const [editorFocusSignal, setEditorFocusSignal] = React.useState(0)
   const [collapsedFolderIds, setCollapsedFolderIds] = React.useState(
     () => new Set<string>()
   )
@@ -789,9 +1066,18 @@ export function InformationView() {
       const loaded = await getInformationNotes()
       const requestedNode = searchParams.get("node") ?? undefined
       const requestedView = searchParams.get("view") ?? undefined
-      const requested = requestedNode
-        ? loaded.find((node) => node.id === requestedNode)
+      const localRequested = requestedNode
+        ? nodesRef.current.find((node) => node.id === requestedNode)
         : undefined
+      const requested = requestedNode
+        ? (loaded.find((node) => node.id === requestedNode) ?? localRequested)
+        : undefined
+      const nextNodes = localRequested
+        ? [
+            ...loaded.filter((node) => node.id !== localRequested.id),
+            localRequested,
+          ]
+        : loaded
       const shouldShowMobileFolders =
         !requestedNode &&
         requestedView !== "notes" &&
@@ -804,7 +1090,17 @@ export function InformationView() {
         : (requested ?? firstNote(loaded) ?? loaded[0])
 
       if (isMounted) {
-        setNodes(loaded)
+        setNodes(nextNodes)
+        if (!hasInitializedCollapsedFolders.current) {
+          setCollapsedFolderIds(
+            new Set(
+              nextNodes
+                .filter((node) => node.type === "folder")
+                .map((node) => node.id)
+            )
+          )
+          hasInitializedCollapsedFolders.current = true
+        }
         setActiveId(requestedView === "notes" ? mobileRootNotesId : initialNode?.id)
         setContentDraft(initialNode?.content ?? "")
         setTitleDraft(requestedView === "notes" ? "Notes" : (initialNode?.title ?? ""))
@@ -818,6 +1114,10 @@ export function InformationView() {
       isMounted = false
     }
   }, [searchParams])
+
+  React.useEffect(() => {
+    nodesRef.current = nodes
+  }, [nodes])
 
   const activeNode = nodes.find((node) => node.id === activeId)
   const visibleNodes = React.useMemo(() => {
@@ -849,6 +1149,42 @@ export function InformationView() {
 
     return nodes.filter((node) => visibleIds.has(node.id))
   }, [nodes, noteSearch])
+  const desktopVisibleTreeNodeIds = React.useMemo(
+    () => visibleTreeNodeIds(visibleNodes, collapsedFolderIds),
+    [collapsedFolderIds, visibleNodes]
+  )
+
+  React.useEffect(() => {
+    const requestedNode = searchParams.get("node")
+    const requestedView = searchParams.get("view")
+
+    if (requestedNode || requestedView) {
+      return
+    }
+
+    if (!window.matchMedia("(min-width: 1024px)").matches) {
+      return
+    }
+
+    const animationFrameId = window.requestAnimationFrame(() => {
+      desktopSearchInputRef.current?.focus()
+    })
+
+    return () => window.cancelAnimationFrame(animationFrameId)
+  }, [searchParams])
+
+  React.useEffect(() => {
+    if (!pendingDesktopNodeFocusId) {
+      return
+    }
+
+    const animationFrameId = window.requestAnimationFrame(() => {
+      desktopNodeRefs.current[pendingDesktopNodeFocusId]?.focus()
+      setPendingDesktopNodeFocusId(undefined)
+    })
+
+    return () => window.cancelAnimationFrame(animationFrameId)
+  }, [desktopVisibleTreeNodeIds, pendingDesktopNodeFocusId])
 
   function emptyNoteContent() {
     return JSON.stringify({
@@ -910,8 +1246,14 @@ export function InformationView() {
     window.dispatchEvent(new Event("information-notes:navigation"))
   }
 
-  function startCreate(type: InformationNodeType, parentId = "") {
-    const title = type === "folder" ? "Untitled Folder" : "Untitled Note"
+  function startCreate(
+    type: InformationNodeType,
+    parentId = "",
+    titleOverride?: string
+  ) {
+    const title =
+      titleOverride?.trim() ||
+      (type === "folder" ? "Untitled Folder" : "Untitled Note")
     const timestamp = new Date().toISOString()
     const node: InformationNode = {
       id: createInformationId(title),
@@ -924,6 +1266,13 @@ export function InformationView() {
     }
 
     persist([...nodes, node])
+    if (type === "folder") {
+      setCollapsedFolderIds((current) => {
+        const next = new Set(current)
+        next.add(node.id)
+        return next
+      })
+    }
     if (parentId) {
       setCollapsedFolderIds((current) => {
         const next = new Set(current)
@@ -940,6 +1289,38 @@ export function InformationView() {
     setTreeTitleDraft(node.title)
     updateInformationRoute(`/information?node=${encodeURIComponent(node.id)}`)
     window.dispatchEvent(new Event("information-notes:navigation"))
+  }
+
+  function isMobileViewport() {
+    return (
+      typeof window !== "undefined" &&
+      window.matchMedia("(max-width: 767px)").matches
+    )
+  }
+
+  function requestCreateFolder(parentId = "") {
+    if (!isMobileViewport()) {
+      startCreate("folder", parentId)
+      return
+    }
+
+    setFolderPromptParentId(parentId)
+    setFolderPromptTitle("")
+  }
+
+  function confirmCreateFolder() {
+    if (!folderPromptTitle.trim()) {
+      return
+    }
+
+    startCreate("folder", folderPromptParentId ?? "", folderPromptTitle)
+    setFolderPromptParentId(null)
+    setFolderPromptTitle("")
+  }
+
+  function cancelCreateFolder() {
+    setFolderPromptParentId(null)
+    setFolderPromptTitle("")
   }
 
   function saveNodeTitle(nodeId: string, value: string) {
@@ -1050,6 +1431,31 @@ export function InformationView() {
     })
   }
 
+  function focusDesktopTreeNode(nodeId: string) {
+    setPendingDesktopNodeFocusId(nodeId)
+  }
+
+  function focusDesktopEditor() {
+    setEditorFocusSignal((signal) => signal + 1)
+  }
+
+  function handleDesktopSearchKeyDown(
+    event: React.KeyboardEvent<HTMLInputElement>
+  ) {
+    if (event.key !== "Tab" || event.shiftKey) {
+      return
+    }
+
+    const firstNodeId = desktopVisibleTreeNodeIds[0]
+
+    if (!firstNodeId) {
+      return
+    }
+
+    event.preventDefault()
+    focusDesktopTreeNode(firstNodeId)
+  }
+
   function deleteNode(nodeId: string) {
     const deleteIds = descendantsOf(nodes, nodeId)
     const nextNodes = nodes.filter((node) => !deleteIds.has(node.id))
@@ -1121,6 +1527,59 @@ export function InformationView() {
     window.addEventListener(informationUpdatedEvent, refresh)
     return () => window.removeEventListener(informationUpdatedEvent, refresh)
   }, [])
+
+  React.useEffect(() => {
+    if (activeNode?.type !== "note") {
+      return
+    }
+
+    function dismissKeyboardOnOutsideTap(event: PointerEvent) {
+      if (!window.matchMedia("(max-width: 767px)").matches) {
+        return
+      }
+
+      const activeElement = document.activeElement as HTMLElement | null
+
+      if (
+        !activeElement ||
+        (!activeElement.isContentEditable &&
+          activeElement.tagName !== "INPUT" &&
+          activeElement.tagName !== "TEXTAREA")
+      ) {
+        return
+      }
+
+      const target = event.target as HTMLElement | null
+
+      if (
+        target?.closest(
+          [
+            ".simple-editor-content .ProseMirror",
+            ".simple-editor-mobile-toolbar",
+            ".simple-editor-search-and-replace",
+            "[data-radix-popper-content-wrapper]",
+            "[role='menu']",
+            "input",
+            "textarea",
+          ].join(",")
+        )
+      ) {
+        return
+      }
+
+      activeElement.blur()
+    }
+
+    document.addEventListener("pointerdown", dismissKeyboardOnOutsideTap, true)
+
+    return () => {
+      document.removeEventListener(
+        "pointerdown",
+        dismissKeyboardOnOutsideTap,
+        true
+      )
+    }
+  }, [activeNode?.type])
 
   const noteHeaderTitle = activeNode ? (
     editingTitle ? (
@@ -1203,6 +1662,14 @@ export function InformationView() {
               }}
             />
           ) : null}
+          {folderPromptParentId !== null ? (
+            <MobileFolderTitlePrompt
+              value={folderPromptTitle}
+              onChange={setFolderPromptTitle}
+              onConfirm={confirmCreateFolder}
+              onCancel={cancelCreateFolder}
+            />
+          ) : null}
           <div className="flex min-h-0 flex-1 px-0 py-0 sm:px-4 sm:py-4 lg:px-6">
             <Card className="min-h-0 flex-1 rounded-none bg-transparent py-0 shadow-none ring-0 sm:rounded-lg sm:bg-card sm:shadow-sm sm:ring-1">
               <CardContent className="grid min-h-0 flex-1 gap-0 p-0 lg:grid-cols-[20rem_minmax(0,1fr)]">
@@ -1234,8 +1701,10 @@ export function InformationView() {
                   </div>
                   <div className="grid gap-4">
                     <Input
+                      ref={desktopSearchInputRef}
                       value={noteSearch}
                       onChange={(event) => setNoteSearch(event.target.value)}
+                      onKeyDown={handleDesktopSearchKeyDown}
                       placeholder="Search notebook"
                     />
 
@@ -1255,6 +1724,10 @@ export function InformationView() {
                       onTitleDraftChange={setTreeTitleDraft}
                       onCommitTitle={commitTreeTitle}
                       onCancelTitleEdit={cancelTreeTitleEdit}
+                      focusableNodeIds={desktopVisibleTreeNodeIds}
+                      nodeRefs={desktopNodeRefs}
+                      onFocusNode={focusDesktopTreeNode}
+                      onOpenNoteForTyping={focusDesktopEditor}
                     />
                   </div>
                 </aside>
@@ -1347,6 +1820,7 @@ export function InformationView() {
                       </div>
                       <SimpleEditor
                         key={activeNode.id}
+                        focusSignal={editorFocusSignal}
                         value={contentDraft}
                         onChange={setContentDraft}
                       />
@@ -1361,7 +1835,7 @@ export function InformationView() {
                         onOpenNote={selectNode}
                         onCreateNote={() => startCreate("note", activeNode.id)}
                         onCreateFolder={() =>
-                          startCreate("folder", activeNode.id)
+                          requestCreateFolder(activeNode.id)
                         }
                         onDelete={deleteNode}
                         onMove={moveNode}
@@ -1382,7 +1856,7 @@ export function InformationView() {
                         onBack={() => selectNode("", "replace")}
                         onOpenNote={selectNode}
                         onCreateNote={() => startCreate("note")}
-                        onCreateFolder={() => startCreate("folder")}
+                        onCreateFolder={() => requestCreateFolder()}
                         onDelete={deleteNode}
                         onMove={moveNode}
                       />
@@ -1399,7 +1873,11 @@ export function InformationView() {
                         nodes={nodes}
                         onOpenFolder={selectNode}
                         onOpenRootNotes={selectRootNotes}
-                        onCreate={startCreate}
+                        onCreate={(type, parentId) =>
+                          type === "folder"
+                            ? requestCreateFolder(parentId)
+                            : startCreate(type, parentId)
+                        }
                       />
                       <div className="hidden px-3 pb-3 sm:px-0 sm:pb-0 md:block">
                         <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
