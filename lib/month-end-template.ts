@@ -8,6 +8,8 @@ export type TemplateCountryRow = {
   indent: number
   checkable?: boolean
   invoiceRequired?: boolean
+  requiresPasteReport?: boolean
+  combinedWithCountryIds?: string[]
   updatedAt?: string
 }
 
@@ -61,15 +63,40 @@ export const defaultTemplate: MonthEndTemplate = {
   },
   countries: [
     { id: "angola", name: "Angola", indent: 0, invoiceRequired: true },
-    { id: "antaser", name: "Antaser", indent: 0 },
-    { id: "antaser-oot", name: "Antaser OOT", indent: 1 },
-    { id: "antaser-afrique", name: "Antaser Afrique", indent: 0 },
-    { id: "antaser-afrique-oot", name: "Antaser Afrique OOT", indent: 1 },
+    {
+      id: "antaser",
+      name: "Antaser",
+      indent: 0,
+      combinedWithCountryIds: ["antaser-oot"],
+    },
+    {
+      id: "antaser-oot",
+      name: "Antaser OOT",
+      indent: 1,
+      combinedWithCountryIds: ["antaser"],
+    },
+    {
+      id: "antaser-afrique",
+      name: "Antaser Afrique",
+      indent: 0,
+      combinedWithCountryIds: ["antaser-afrique-oot"],
+    },
+    {
+      id: "antaser-afrique-oot",
+      name: "Antaser Afrique OOT",
+      indent: 1,
+      combinedWithCountryIds: ["antaser-afrique"],
+    },
     { id: "benin", name: "Benin", indent: 0 },
     { id: "burkina-faso", name: "Burkina Faso", indent: 0 },
     { id: "cameroon", name: "Cameroon", indent: 0 },
     { id: "foremost", name: "Foremost", indent: 0, checkable: false },
-    { id: "foremost-chad", name: "Chad", indent: 1, invoiceRequired: true },
+    {
+      id: "foremost-chad",
+      name: "Chad",
+      indent: 1,
+      invoiceRequired: true,
+    },
     { id: "frabemar", name: "Frabemar", indent: 0, checkable: false },
     {
       id: "frabemar-dr-congo",
@@ -106,13 +133,24 @@ export const defaultTemplate: MonthEndTemplate = {
       invoiceRequired: true,
     },
     { id: "sck", name: "SCK", indent: 0, checkable: false },
+    {
+      id: "sck-chad",
+      name: "Chad",
+      indent: 1,
+      combinedWithCountryIds: ["sck-sierra-leone"],
+    },
     { id: "sck-kenya", name: "Kenya", indent: 1 },
     { id: "sck-djibouti", name: "Djibouti", indent: 1 },
     { id: "sck-somalia", name: "Somalia", indent: 1 },
     { id: "sck-sudan", name: "Sudan", indent: 1 },
     { id: "sck-yemen", name: "Yemen", indent: 1 },
-    { id: "sck-sierra-leone", name: "Sierra Leone", indent: 1 },
-    { id: "senegal", name: "Senegal", indent: 0 },
+    {
+      id: "sck-sierra-leone",
+      name: "Sierra Leone",
+      indent: 1,
+      combinedWithCountryIds: ["sck-chad"],
+    },
+    { id: "senegal", name: "Senegal", indent: 0, requiresPasteReport: true },
   ],
   taskGroups: [
     {
@@ -249,16 +287,24 @@ function normalizeTemplate(template: MonthEndTemplate): MonthEndTemplate {
         defaultUpdatedAt,
     },
     countries: template.countries?.length
-      ? template.countries.map((row) => {
-          const defaultRow = defaultCountriesById.get(row.id)
+      ? normalizeChadSierraLeoneSplit(
+          mergeDefaultCountryRows(template.countries).map((row) => {
+            const defaultRow = defaultCountriesById.get(row.id)
 
-          return {
-            ...row,
+            return {
+              ...row,
             checkable: row.checkable ?? defaultRow?.checkable,
             invoiceRequired: row.invoiceRequired ?? defaultRow?.invoiceRequired,
-            updatedAt: row.updatedAt ?? defaultRow?.updatedAt,
-          }
-        })
+            requiresPasteReport:
+              row.requiresPasteReport ?? defaultRow?.requiresPasteReport,
+            combinedWithCountryIds:
+                row.combinedWithCountryIds ??
+                defaultRow?.combinedWithCountryIds ??
+                [],
+              updatedAt: row.updatedAt ?? defaultRow?.updatedAt,
+            }
+          })
+        )
       : defaultTemplate.countries,
     taskGroups: template.taskGroups?.length
       ? template.taskGroups.map((group) => {
@@ -281,6 +327,63 @@ function normalizeTemplate(template: MonthEndTemplate): MonthEndTemplate {
         })
       : defaultTemplate.taskGroups,
   }
+}
+
+function normalizeChadSierraLeoneSplit(countries: TemplateCountryRow[]) {
+  return countries.map((country) => {
+    if (country.id === "foremost-chad") {
+      return {
+        ...country,
+        combinedWithCountryIds: (country.combinedWithCountryIds ?? []).filter(
+          (id) => id !== "sck-chad" && id !== "sck-sierra-leone"
+        ),
+      }
+    }
+
+    if (country.id === "sck-chad") {
+      return {
+        ...country,
+        combinedWithCountryIds: ["sck-sierra-leone"],
+      }
+    }
+
+    if (country.id === "sck-sierra-leone") {
+      return {
+        ...country,
+        combinedWithCountryIds: ["sck-chad"],
+      }
+    }
+
+    return country
+  })
+}
+
+function mergeDefaultCountryRows(countries: TemplateCountryRow[]) {
+  return defaultTemplate.countries.reduce((mergedCountries, defaultRow) => {
+    if (mergedCountries.some((country) => country.id === defaultRow.id)) {
+      return mergedCountries
+    }
+
+    const defaultRowIndex = defaultTemplate.countries.findIndex(
+      (country) => country.id === defaultRow.id
+    )
+    const previousDefaultRowIds = defaultTemplate.countries
+      .slice(0, defaultRowIndex)
+      .map((country) => country.id)
+    const insertAfterIndex = previousDefaultRowIds.reduce(
+      (latestIndex, rowId) => {
+        const rowIndex = mergedCountries.findIndex((country) => country.id === rowId)
+
+        return rowIndex >= 0 ? rowIndex : latestIndex
+      },
+      -1
+    )
+    const nextCountries = [...mergedCountries]
+
+    nextCountries.splice(insertAfterIndex + 1, 0, defaultRow)
+
+    return nextCountries
+  }, countries)
 }
 
 export function saveMonthEndTemplate(template: MonthEndTemplate) {

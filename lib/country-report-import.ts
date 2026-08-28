@@ -7,6 +7,8 @@ export type ParsedCountryReportRecord = {
   reference: string
   amount: number
   sourceRowCount: number
+  sourceCountryName?: string
+  targetCountryId?: string
 }
 
 function parseAmount(value: string | number | undefined) {
@@ -108,6 +110,92 @@ function getDatePeriod(value: string | undefined) {
   }
 
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+}
+
+function periodSheetName(period: string | undefined) {
+  if (!period || !/^\d{4}-\d{2}$/.test(period)) {
+    return ""
+  }
+
+  const [year, month] = period.split("-")
+
+  return `${month}.${year}`
+}
+
+function splitStatementCtns(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .split(/[\s,]+/)
+        .map((item) => item.trim())
+        .filter((item) => /^[A-Z0-9]+$/i.test(item))
+    )
+  )
+}
+
+function cleanSalesOrder(value: string) {
+  return value.replace(/^Sales\s*Order\s*#\s*/i, "").trim()
+}
+
+function parseSenegalAmount(value: string | undefined) {
+  const normalized = (value ?? "").replace(/\s+/g, "")
+  const amount = Number(normalized)
+
+  return Number.isFinite(amount) ? amount : 0
+}
+
+function parseSenegalPaymentText(text: string) {
+  if (!/Règlement\s*-/i.test(text) && !/Reglement\s*-/i.test(text)) {
+    return undefined
+  }
+
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const records: ParsedCountryReportRecord[] = []
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const description = lines[index]
+    const paymentMatch = description.match(
+      /^(?:Règlement|Reglement)\s*-\s*([^-]+?)\s*-\s*(.+)$/i
+    )
+
+    if (!paymentMatch) {
+      continue
+    }
+
+    const date = lines[index + 1] ?? ""
+    let amountLine = lines[index + 2] ?? ""
+
+    if (!/^\d{1,2}\/\d{1,2}\/\d{4}/.test(date)) {
+      continue
+    }
+
+    if (!/^[\d\s.,]+$/.test(amountLine) && /^[A-Z ]+$/i.test(amountLine)) {
+      amountLine = lines[index + 3] ?? ""
+    }
+
+    const ctnNumber = paymentMatch[1]?.trim() ?? ""
+    const billOfLadingNumber = paymentMatch[2]?.trim() ?? ""
+    const amount = parseSenegalAmount(amountLine)
+
+    if (!ctnNumber || !billOfLadingNumber || !amount) {
+      continue
+    }
+
+    records.push({
+      invoiceNumber: "",
+      ctnNumber,
+      billOfLadingNumber,
+      reference: billOfLadingNumber,
+      amount,
+      sourceRowCount: 1,
+      sourceCountryName: "Senegal",
+    })
+  }
+
+  return records
 }
 
 function isCreditsLedger(headers: string[]) {
@@ -422,6 +510,206 @@ function parseSckBalanceTransactionsCsv(
   )
 }
 
+function parseSckStatementOfAccountCsv(
+  rows: string[][],
+  options: { period?: string } = {}
+) {
+  const reportRows = getRowsFromHeader(rows, (headers) => {
+    const countryIndex = findExactCsvColumn(headers, ["country"])
+    const billOfLadingIndex = findExactCsvColumn(headers, [
+      "blno",
+      "billoflading",
+      "blnumber",
+    ])
+    const bescIndex = findExactCsvColumn(headers, ["besc", "ctnnumber", "ctn"])
+    const amountIndex = findExactCsvColumn(headers, ["amount"])
+    const invoiceIndex = findExactCsvColumn(headers, [
+      "invoicenumber",
+      "invoice",
+    ])
+    const dateIndex = findExactCsvColumn(headers, ["date"])
+
+    return (
+      countryIndex >= 0 &&
+      billOfLadingIndex >= 0 &&
+      bescIndex >= 0 &&
+      amountIndex >= 0 &&
+      invoiceIndex >= 0 &&
+      dateIndex >= 0
+    )
+  })
+  const [headers, ...dataRows] = reportRows ?? []
+
+  if (!headers) {
+    return undefined
+  }
+
+  const countryIndex = findExactCsvColumn(headers, ["country"])
+  const billOfLadingIndex = findExactCsvColumn(headers, [
+    "blno",
+    "billoflading",
+    "blnumber",
+  ])
+  const bescIndex = findExactCsvColumn(headers, ["besc", "ctnnumber", "ctn"])
+  const amountIndex = findExactCsvColumn(headers, ["amount"])
+  const invoiceIndex = findExactCsvColumn(headers, ["invoicenumber", "invoice"])
+  const dateIndex = findExactCsvColumn(headers, ["date"])
+  const rowsToImport = options.period
+    ? dataRows.filter((row) => getDatePeriod(row[dateIndex]) === options.period)
+    : dataRows
+
+  return rowsToImport.flatMap((row) => {
+    const invoiceNumber = row[invoiceIndex]?.trim() ?? ""
+    const ctnNumber = row[bescIndex]?.trim() ?? ""
+    const billOfLadingNumber = row[billOfLadingIndex]?.trim() ?? ""
+    const sourceCountryName = row[countryIndex]?.trim() ?? ""
+
+    if (!invoiceNumber && !ctnNumber && !billOfLadingNumber) {
+      return []
+    }
+
+    return [
+      {
+        invoiceNumber,
+        ctnNumber,
+        billOfLadingNumber,
+        reference: billOfLadingNumber || ctnNumber || invoiceNumber,
+        amount: parseAmount(row[amountIndex]),
+        sourceRowCount: 1,
+        sourceCountryName,
+      },
+    ]
+  })
+}
+
+function parseForemostStatementOfAccountCsv(
+  rows: string[][],
+  options: { period?: string } = {}
+) {
+  const reportRows = getRowsFromHeader(rows, (headers) => {
+    const normalizedHeaders = headers.map((header) =>
+      header.toLowerCase().replace(/[^a-z0-9]+/g, "")
+    )
+
+    return (
+      normalizedHeaders.includes("date") &&
+      normalizedHeaders.includes("dnno") &&
+      normalizedHeaders.includes("ectnno") &&
+      normalizedHeaders.some((header) => header.includes("chargesdr"))
+    )
+  })
+  const [headers, ...dataRows] = reportRows ?? []
+
+  if (!headers) {
+    return undefined
+  }
+
+  const dateIndex = findExactCsvColumn(headers, ["date"])
+  const documentIndex = findExactCsvColumn(headers, ["dnno"])
+  const ectnIndex = findExactCsvColumn(headers, ["ectnno"])
+  const chargeIndex = headers.findIndex((header) =>
+    header.toLowerCase().replace(/[^a-z0-9]+/g, "").includes("chargesdr")
+  )
+
+  return dataRows.flatMap((row) => {
+    const transactionDate = row[dateIndex]?.trim() ?? ""
+    const documentNumber = row[documentIndex]?.trim() ?? ""
+    const ectnValue = row[ectnIndex]?.trim() ?? ""
+    const amount = parseAmount(row[chargeIndex])
+
+    if (
+      !transactionDate ||
+      getDatePeriod(transactionDate) !== options.period ||
+      !documentNumber ||
+      !amount ||
+      /^(balance|total amount)$/i.test(transactionDate) ||
+      /received payment|bank charges|balance/i.test(ectnValue)
+    ) {
+      return []
+    }
+
+    const isAngolaRow = /^ARCCLA\b/i.test(documentNumber)
+    const billOfLadingNumber =
+      ectnValue.match(/\bBL\s*-\s*(.+?)(?:\s+CANCELLED)?$/i)?.[1]?.trim() ?? ""
+    const ctnNumbers = isAngolaRow ? [""] : splitStatementCtns(ectnValue)
+    const splitAmount = ctnNumbers.length ? amount / ctnNumbers.length : amount
+
+    return ctnNumbers.map((ctnNumber) => ({
+        invoiceNumber: documentNumber,
+        ctnNumber,
+        billOfLadingNumber,
+        reference: isAngolaRow
+          ? billOfLadingNumber || documentNumber
+          : ctnNumber || documentNumber,
+        amount: splitAmount,
+        sourceRowCount: 1,
+        sourceCountryName: isAngolaRow ? "Angola" : "Chad",
+        targetCountryId: isAngolaRow ? "angola" : undefined,
+      }))
+  })
+}
+
+function parseNetsuiteCountryReportCsv(
+  rows: string[][],
+  options: { period?: string } = {}
+) {
+  const [headers, ...dataRows] = rows
+
+  if (!headers) {
+    return undefined
+  }
+
+  const dateIndex = findExactCsvColumn(headers, ["date"])
+  const billOfLadingIndex = findExactCsvColumn(headers, ["billoflading"])
+  const ctnIndex = findExactCsvColumn(headers, ["ctnnumber"])
+  const statusIndex = findExactCsvColumn(headers, ["ctnstatus"])
+  const salesOrderIndex = findExactCsvColumn(headers, ["createdfrom"])
+  const classIndex = findExactCsvColumn(headers, ["classnohierarchy", "class"])
+  const amountIndex = findExactCsvColumn(headers, ["amount"])
+
+  if (
+    dateIndex === -1 ||
+    billOfLadingIndex === -1 ||
+    ctnIndex === -1 ||
+    statusIndex === -1 ||
+    salesOrderIndex === -1 ||
+    classIndex === -1 ||
+    amountIndex === -1
+  ) {
+    return undefined
+  }
+
+  return dataRows.flatMap((row) => {
+    const date = row[dateIndex]?.trim() ?? ""
+
+    if (options.period && getDatePeriod(date) !== options.period) {
+      return []
+    }
+
+    const invoiceNumber = cleanSalesOrder(row[salesOrderIndex]?.trim() ?? "")
+    const ctnNumber = row[ctnIndex]?.trim() ?? ""
+    const billOfLadingNumber = row[billOfLadingIndex]?.trim() ?? ""
+    const amount = parseAmount(row[amountIndex])
+    const sourceCountryName = row[classIndex]?.trim() ?? ""
+
+    if (!invoiceNumber && !ctnNumber && !billOfLadingNumber) {
+      return []
+    }
+
+    return [
+      {
+        invoiceNumber,
+        ctnNumber,
+        billOfLadingNumber,
+        reference: billOfLadingNumber || ctnNumber || invoiceNumber,
+        amount,
+        sourceRowCount: 1,
+        sourceCountryName,
+      },
+    ]
+  })
+}
+
 function isLiberiaInvoiceExport(headers: string[]) {
   return (
     findExactCsvColumn(headers, ["invoice"]) >= 0 &&
@@ -643,6 +931,33 @@ export function parseCountryReportCsv(
     return sckBalanceTransactionRecords
   }
 
+  const sckStatementOfAccountRecords = parseSckStatementOfAccountCsv(
+    rawRows,
+    options
+  )
+
+  if (sckStatementOfAccountRecords) {
+    return sckStatementOfAccountRecords
+  }
+
+  const foremostStatementRecords = parseForemostStatementOfAccountCsv(
+    rawRows,
+    options
+  )
+
+  if (foremostStatementRecords) {
+    return foremostStatementRecords
+  }
+
+  const netsuiteCountryReportRecords = parseNetsuiteCountryReportCsv(
+    rawRows,
+    options
+  )
+
+  if (netsuiteCountryReportRecords) {
+    return netsuiteCountryReportRecords
+  }
+
   const liberiaInvoiceRecords = parseLiberiaInvoiceExportCsv(rawRows)
 
   if (liberiaInvoiceRecords) {
@@ -723,6 +1038,19 @@ export function parseCountryReportCsv(
   )
 }
 
+export function parseCountryReportText(
+  text: string,
+  options: { period?: string } = {}
+) {
+  const senegalPaymentRecords = parseSenegalPaymentText(text)
+
+  if (senegalPaymentRecords) {
+    return senegalPaymentRecords
+  }
+
+  return parseCountryReportCsv(text, options)
+}
+
 async function extractPdfText(file: File) {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs")
 
@@ -745,10 +1073,17 @@ async function extractPdfText(file: File) {
   return pages.join("\n")
 }
 
-async function extractWorkbookRows(file: File) {
+async function extractWorkbookRows(
+  file: File,
+  options: { period?: string } = {}
+) {
   const xlsx = await import("xlsx")
   const workbook = xlsx.read(await file.arrayBuffer(), { type: "array" })
-  const sheetName = workbook.SheetNames[0]
+  const targetSheetName = periodSheetName(options.period)
+  const sheetName =
+    workbook.SheetNames.find(
+      (name) => name.trim().toLowerCase() === targetSheetName.toLowerCase()
+    ) ?? workbook.SheetNames[0]
   const sheet = sheetName ? workbook.Sheets[sheetName] : undefined
 
   if (!sheet) {
@@ -772,8 +1107,8 @@ export async function parseCountryReportFile(
   }
 
   if (extension === "xlsx" || extension === "xls") {
-    return parseCountryReportCsv(await extractWorkbookRows(file), options)
+    return parseCountryReportCsv(await extractWorkbookRows(file, options), options)
   }
 
-  return parseCountryReportCsv(await file.text(), options)
+  return parseCountryReportText(await file.text(), options)
 }

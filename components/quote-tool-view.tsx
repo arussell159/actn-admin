@@ -381,7 +381,7 @@ export function QuoteToolView() {
     React.useState(0)
   const [shouldFocusFirstPrimaryItem, setShouldFocusFirstPrimaryItem] =
     React.useState(false)
-  const primaryItemRefs = React.useRef<Record<string, HTMLTableRowElement | null>>(
+  const desktopItemRefs = React.useRef<Record<string, HTMLTableRowElement | null>>(
     {}
   )
   const showBulkUnits = sortingField === "Bulk"
@@ -423,6 +423,13 @@ export function QuoteToolView() {
       open: openItemSections.fees,
     },
   ] as const
+  const desktopFocusableItems = React.useMemo(
+    () => [
+      ...(openItemSections.fees ? feeItems : []),
+      ...primaryItems,
+    ],
+    [feeItems, openItemSections.fees, primaryItems]
+  )
 
   const quoteItems = React.useMemo<QuoteLineItem[]>(
     () =>
@@ -487,7 +494,7 @@ export function QuoteToolView() {
     }
 
     const animationFrameId = window.requestAnimationFrame(() => {
-      primaryItemRefs.current[primaryItems[0]?.internalId ?? ""]?.focus()
+      desktopItemRefs.current[primaryItems[0]?.internalId ?? ""]?.focus()
       setShouldFocusFirstPrimaryItem(false)
     })
 
@@ -541,23 +548,25 @@ export function QuoteToolView() {
 
   function handleDesktopItemKeyDown(
     event: React.KeyboardEvent<HTMLTableRowElement>,
-    item: QuoteCatalogItem,
-    index: number
+    item: QuoteCatalogItem
   ) {
     if (event.target !== event.currentTarget) {
       return
     }
 
     if (event.key === "Tab") {
+      const index = desktopFocusableItems.findIndex(
+        (focusableItem) => focusableItem.internalId === item.internalId
+      )
       const nextIndex = event.shiftKey ? index - 1 : index + 1
-      const nextItem = primaryItems[nextIndex]
+      const nextItem = desktopFocusableItems[nextIndex]
 
       if (!nextItem) {
         return
       }
 
       event.preventDefault()
-      primaryItemRefs.current[nextItem.internalId]?.focus()
+      desktopItemRefs.current[nextItem.internalId]?.focus()
       return
     }
 
@@ -897,7 +906,16 @@ export function QuoteToolView() {
                                 return (
                                   <tr
                                     key={item.internalId}
-                                    className="border-b last:border-0"
+                                    ref={(node) => {
+                                      desktopItemRefs.current[item.internalId] =
+                                        node
+                                    }}
+                                    tabIndex={0}
+                                    aria-label={`${item.name}, quantity ${quantity}`}
+                                    className="border-b outline-none transition-colors last:border-0 focus-visible:bg-accent/60"
+                                    onKeyDown={(event) =>
+                                      handleDesktopItemKeyDown(event, item)
+                                    }
                                   >
                                     <td className="px-3 py-3 align-top">
                                       <div className="font-medium">
@@ -933,7 +951,7 @@ export function QuoteToolView() {
                         </React.Fragment>
                       ) : null
                     )}
-                    {primaryItems.map((item, index) => {
+                    {primaryItems.map((item) => {
                       const quantity =
                         quantities[item.internalId] ?? (isFeeItem(item) ? 1 : 0)
                       const unitPrice = itemPrice(item)
@@ -942,13 +960,13 @@ export function QuoteToolView() {
                         <tr
                           key={item.internalId}
                           ref={(node) => {
-                            primaryItemRefs.current[item.internalId] = node
+                            desktopItemRefs.current[item.internalId] = node
                           }}
                           tabIndex={0}
                           aria-label={`${item.name}, quantity ${quantity}`}
                           className="border-b outline-none transition-colors last:border-0 focus-visible:bg-accent/60"
                           onKeyDown={(event) =>
-                            handleDesktopItemKeyDown(event, item, index)
+                            handleDesktopItemKeyDown(event, item)
                           }
                         >
                           <td className="px-3 py-3 align-top">

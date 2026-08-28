@@ -1,7 +1,10 @@
 import { parseCsv, findCsvColumn, normalizeCsvHeader } from "@/lib/csv"
 import { createPublicClient } from "@/lib/public-client"
 import { assertSupabaseConfig } from "@/lib/supabase-env"
-import type { TemplateCountryRow } from "@/lib/month-end-template"
+import {
+  loadMonthEndTemplate,
+  type TemplateCountryRow,
+} from "@/lib/month-end-template"
 
 export type MonthEndMasterRecord = {
   id: string
@@ -14,6 +17,7 @@ export type MonthEndMasterRecord = {
   ctnNumber: string
   status: string
   amount: number
+  transactionDate?: string
   sourceClass: string
   sourceInternalId: string
   sourceRowIndex: number
@@ -74,6 +78,7 @@ function toRecord(row: MonthEndMasterRecordRow): MonthEndMasterRecord {
     ctnNumber: row.ctn_number,
     status: row.status,
     amount: Number(row.amount) || 0,
+    transactionDate: "",
     sourceClass: row.source_class,
     sourceInternalId: row.source_internal_id,
     sourceRowIndex: row.source_row_index,
@@ -156,23 +161,64 @@ const groupedCountryRoutes: Record<string, string[]> = {
   equatorialguinea: ["antaser-afrique", "antaser-afrique-oot"],
   southsudan: ["antaser-afrique", "antaser-afrique-oot"],
   togo: ["antaser-afrique", "antaser-afrique-oot"],
+  foremost: ["foremost-chad"],
+  foremostchad: ["foremost-chad"],
+  sckchad: ["sck-chad"],
+  scksierraleone: ["sck-sierra-leone"],
+  chad: ["foremost-chad"],
+  sierraleone: ["sck-sierra-leone"],
 }
 
-const linkedCountryRecordIds = [
-  ["antaser", "antaser-oot"],
-  ["antaser-afrique", "antaser-afrique-oot"],
-]
+function getLinkedCountryRowsFromTemplate(
+  countryId: string,
+  countries: TemplateCountryRow[]
+) {
+  const linkedIds = new Set([countryId])
+  let changed = true
 
-export function getLinkedCountryIds(countryId: string) {
-  return (
-    linkedCountryRecordIds.find((group) => group.includes(countryId)) ?? [
-      countryId,
-    ]
-  )
+  while (changed) {
+    changed = false
+
+    for (const country of countries) {
+      const countryLinks = country.combinedWithCountryIds ?? []
+      const isLinkedCountry = linkedIds.has(country.id)
+      const isLinkedToKnownCountry = countryLinks.some((id) => linkedIds.has(id))
+
+      if (!isLinkedCountry && !isLinkedToKnownCountry) {
+        continue
+      }
+
+      if (!linkedIds.has(country.id)) {
+        linkedIds.add(country.id)
+        changed = true
+      }
+
+      for (const linkedId of countryLinks) {
+        if (!linkedIds.has(linkedId)) {
+          linkedIds.add(linkedId)
+          changed = true
+        }
+      }
+    }
+  }
+
+  return countries.filter((country) => linkedIds.has(country.id))
 }
 
-export function getCanonicalCountryId(countryId: string) {
-  return getLinkedCountryIds(countryId)[0] ?? countryId
+export function getLinkedCountryIds(
+  countryId: string,
+  countries: TemplateCountryRow[] = loadMonthEndTemplate().countries
+) {
+  const linkedRows = getLinkedCountryRowsFromTemplate(countryId, countries)
+
+  return linkedRows.length ? linkedRows.map((country) => country.id) : [countryId]
+}
+
+export function getCanonicalCountryId(
+  countryId: string,
+  countries: TemplateCountryRow[] = loadMonthEndTemplate().countries
+) {
+  return getLinkedCountryIds(countryId, countries)[0] ?? countryId
 }
 
 function findCountries(sourceClass: string, countries: TemplateCountryRow[]) {
@@ -240,7 +286,7 @@ export function isMasterCsv(csvText: string) {
     normalizedHeaders.has("billoflading") &&
     normalizedHeaders.has("ctnnumber") &&
     normalizedHeaders.has("ctnstatus") &&
-    normalizedHeaders.has("classnohierarchy")
+    (normalizedHeaders.has("classnohierarchy") || normalizedHeaders.has("class"))
   )
 }
 
@@ -263,11 +309,12 @@ export function parseMonthEndMasterCsv({
   }
 
   const internalIdIndex = findCsvColumn(headers, ["internalid"])
+  const dateIndex = findCsvColumn(headers, ["date"])
   const salesOrderIndex = findCsvColumn(headers, ["createdfrom"])
   const billOfLadingIndex = findCsvColumn(headers, ["billoflading"])
   const ctnIndex = findCsvColumn(headers, ["ctnnumber"])
   const statusIndex = findCsvColumn(headers, ["ctnstatus"])
-  const classIndex = findCsvColumn(headers, ["classnohierarchy"])
+  const classIndex = findCsvColumn(headers, ["classnohierarchy", "class"])
   const amountIndex = findCsvColumn(headers, ["amount"])
 
   if (
@@ -310,6 +357,7 @@ export function parseMonthEndMasterCsv({
       ctnNumber: row[ctnIndex]?.trim() ?? "",
       status: row[statusIndex]?.trim() ?? "",
       amount: amountIndex >= 0 ? parseAmount(row[amountIndex]) : 0,
+      transactionDate: dateIndex >= 0 ? row[dateIndex]?.trim() ?? "" : "",
       sourceClass,
       sourceInternalId,
       sourceRowIndex,
@@ -336,6 +384,7 @@ export function parseCountryMasterCsv({
   }
 
   const internalIdIndex = findCsvColumn(headers, ["internalid", "id"])
+  const dateIndex = findCsvColumn(headers, ["date"])
   const salesOrderIndex = findCsvColumn(headers, [
     "createdfrom",
     "salesorder",
@@ -351,6 +400,7 @@ export function parseCountryMasterCsv({
   const ctnIndex = findCsvColumn(headers, ["ctnnumber", "ctn"])
   const statusIndex = findCsvColumn(headers, ["ctnstatus", "status"])
   const amountIndex = findCsvColumn(headers, ["amount", "total"])
+  const classIndex = findCsvColumn(headers, ["classnohierarchy", "class"])
 
   if (
     salesOrderIndex === -1 ||
@@ -367,8 +417,15 @@ export function parseCountryMasterCsv({
     const sourceInternalId =
       internalIdIndex >= 0 ? (row[internalIdIndex]?.trim() ?? "") : ""
     const sourceRowIndex = index + 2
+    const sourceClass = classIndex >= 0 ? row[classIndex]?.trim() ?? "" : ""
+    const matchedCountries = sourceClass
+      ? findCountries(sourceClass, targetCountries)
+      : targetCountries
+    const countriesToApply = sourceClass && matchedCountries.length
+      ? [matchedCountries[0]]
+      : targetCountries
 
-    return targetCountries.map((country) => ({
+    return countriesToApply.map((country) => ({
       id: makeRecordId(
         monthEndId,
         country.id,
@@ -384,7 +441,8 @@ export function parseCountryMasterCsv({
       ctnNumber: row[ctnIndex]?.trim() ?? "",
       status: row[statusIndex]?.trim() ?? "",
       amount: amountIndex >= 0 ? parseAmount(row[amountIndex]) : 0,
-      sourceClass: country.name,
+      transactionDate: dateIndex >= 0 ? row[dateIndex]?.trim() ?? "" : "",
+      sourceClass: sourceClass || country.name,
       sourceInternalId,
       sourceRowIndex,
     })) satisfies MonthEndMasterRecord[]
@@ -467,9 +525,7 @@ export function getLinkedCountryRows(
   countryId: string,
   countries: TemplateCountryRow[]
 ) {
-  const rowIds = getLinkedCountryIds(countryId)
-
-  return countries.filter((country) => rowIds.includes(country.id))
+  return getLinkedCountryRowsFromTemplate(countryId, countries)
 }
 
 export async function listMonthEndMasterRecords({
@@ -479,6 +535,8 @@ export async function listMonthEndMasterRecords({
   monthEndId: string
   countryId?: string
 }) {
+  const countryIds = countryId ? getLinkedCountryIds(countryId) : []
+
   try {
     const supabase = getSupabaseClient()
     let query = supabase
@@ -488,7 +546,7 @@ export async function listMonthEndMasterRecords({
       .order("sales_order_number", { ascending: true })
 
     if (countryId) {
-      query = query.eq("country_id", countryId)
+      query = query.in("country_id", countryIds)
     }
 
     const { data, error } = await query
@@ -504,7 +562,7 @@ export async function listMonthEndMasterRecords({
         .filter(
           (record) =>
             record.monthEndId === monthEndId &&
-            (!countryId || record.countryId === countryId)
+            (!countryId || countryIds.includes(record.countryId))
         )
         .sort((first, second) =>
           first.salesOrderNumber.localeCompare(second.salesOrderNumber)

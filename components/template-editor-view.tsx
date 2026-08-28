@@ -35,6 +35,7 @@ import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Card,
   CardContent,
@@ -111,6 +112,8 @@ type CountryDraft = {
   type: "country" | "group"
   parentId: string
   invoiceRequired: boolean
+  requiresPasteReport: boolean
+  combinedWithCountryIds: string[]
 }
 
 type TaskDraft = {
@@ -301,6 +304,8 @@ export function TemplateEditorView() {
           type: "country",
           parentId: "",
           invoiceRequired: false,
+          requiresPasteReport: false,
+          combinedWithCountryIds: [],
         },
       })
       return
@@ -318,6 +323,8 @@ export function TemplateEditorView() {
         type: row.checkable === false ? "group" : "country",
         parentId: findParentId(template, rowIndex),
         invoiceRequired: row.invoiceRequired === true,
+        requiresPasteReport: row.requiresPasteReport === true,
+        combinedWithCountryIds: getCombinedCountryIds(template, row.id),
       },
     })
   }
@@ -356,12 +363,19 @@ export function TemplateEditorView() {
     const selectedParent = template.countries.find(
       (row) => row.id === form.draft.parentId
     )
+    const combinedWithCountryIds =
+      form.draft.type === "country"
+        ? Array.from(new Set(form.draft.combinedWithCountryIds))
+        : []
     const rowShape = {
       name: cleanName,
       indent: selectedParent ? selectedParent.indent + 1 : 0,
       checkable: form.draft.type === "group" ? false : undefined,
       invoiceRequired:
         form.draft.type === "country" ? form.draft.invoiceRequired : undefined,
+      requiresPasteReport:
+        form.draft.type === "country" ? form.draft.requiresPasteReport : undefined,
+      combinedWithCountryIds,
       updatedAt,
     }
 
@@ -380,7 +394,8 @@ export function TemplateEditorView() {
           ...template.countriesModule,
           updatedAt,
         },
-        countries: template.countries.map((row, index) => {
+        countries: updateCombinedCountryLinks(
+          template.countries.map((row, index) => {
           if (row.id === form.rowId) {
             return { ...row, ...rowShape }
           }
@@ -394,7 +409,11 @@ export function TemplateEditorView() {
           }
 
           return row
-        }),
+          }),
+          form.rowId,
+          combinedWithCountryIds,
+          updatedAt
+        ),
       })
       setItemForm(null)
       return
@@ -421,7 +440,12 @@ export function TemplateEditorView() {
         ...template.countriesModule,
         updatedAt,
       },
-      countries,
+      countries: updateCombinedCountryLinks(
+        countries,
+        id,
+        combinedWithCountryIds,
+        updatedAt
+      ),
     })
     setItemForm(null)
   }
@@ -1009,10 +1033,16 @@ function SortableCountryRow({
               {row.invoiceRequired ? (
                 <Badge variant="outline">Invoice</Badge>
               ) : null}
+              {row.requiresPasteReport ? (
+                <Badge variant="outline">Paste Report</Badge>
+              ) : null}
               <Badge variant="outline">Reconciliation</Badge>
               <Badge variant="outline">Journal</Badge>
             </div>
           )}
+        </TableCell>
+        <TableCell>
+          <CombinedCountryBadges row={row} template={template} />
         </TableCell>
         <TableCell>
           <DropdownMenu>
@@ -1045,7 +1075,7 @@ function SortableCountryRow({
       </TableRow>
       {isEditing ? (
         <TableRow className="bg-muted/20 hover:bg-muted/20">
-          <TableCell colSpan={6} className="p-3">
+          <TableCell colSpan={7} className="p-3">
             <div
               role="dialog"
               aria-label={`Edit ${row.name}`}
@@ -1112,6 +1142,7 @@ function CountriesTable({
             <TableHead>Type</TableHead>
             <TableHead>Parent</TableHead>
             <TableHead>Required Fields</TableHead>
+            <TableHead>Combined</TableHead>
             <TableHead className="w-12" />
           </TableRow>
         </TableHeader>
@@ -1284,6 +1315,12 @@ function CountryFields({
           (row) => row.id !== form.rowId && !descendantIds.has(row.id)
         )
       : parentRows
+  const possibleCombinedCountries = template.countries.filter(
+    (row) =>
+      row.checkable !== false &&
+      (form.mode !== "edit-country" || row.id !== form.rowId) &&
+      !descendantIds.has(row.id)
+  )
 
   function updateDraft(updates: Partial<CountryDraft>) {
     onChange({ ...form, draft: { ...form.draft, ...updates } })
@@ -1363,8 +1400,137 @@ function CountryFields({
             </SelectContent>
           </Select>
         </Field>
+        <Field>
+          <FieldLabel htmlFor="country-row-paste-report">
+            Paste Report
+          </FieldLabel>
+          <Select
+            value={form.draft.requiresPasteReport ? "yes" : "no"}
+            onValueChange={(value) => {
+              if (value) {
+                updateDraft({ requiresPasteReport: value === "yes" })
+              }
+            }}
+          >
+            <SelectTrigger
+              id="country-row-paste-report"
+              className="w-full cursor-pointer"
+              disabled={form.draft.type === "group"}
+            >
+              {form.draft.requiresPasteReport ? "Yes" : "No"}
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="yes">Yes</SelectItem>
+                <SelectItem value="no">No</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field className="md:col-span-2">
+          <FieldLabel htmlFor="country-row-combined">Combined With</FieldLabel>
+          <CombinedCountrySearchField
+            countries={possibleCombinedCountries}
+            value={form.draft.combinedWithCountryIds}
+            disabled={form.draft.type === "group"}
+            onChange={(combinedWithCountryIds) =>
+              updateDraft({ combinedWithCountryIds })
+            }
+          />
+        </Field>
       </FieldGroup>
     </FieldSet>
+  )
+}
+
+function CombinedCountrySearchField({
+  countries,
+  value,
+  disabled,
+  onChange,
+}: {
+  countries: TemplateCountryRow[]
+  value: string[]
+  disabled: boolean
+  onChange: (value: string[]) => void
+}) {
+  const [open, setOpen] = React.useState(false)
+  const [query, setQuery] = React.useState("")
+  const selectedIds = new Set(value)
+  const selectedCountries = countries.filter((row) => selectedIds.has(row.id))
+  const filteredCountries = countries.filter((row) =>
+    row.name.toLowerCase().includes(query.trim().toLowerCase())
+  )
+
+  function toggleCountry(countryId: string) {
+    if (selectedIds.has(countryId)) {
+      onChange(value.filter((id) => id !== countryId))
+      return
+    }
+
+    onChange([...value, countryId])
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={
+          <Button
+            id="country-row-combined"
+            variant="outline"
+            className="min-h-10 w-full cursor-pointer justify-between"
+            disabled={disabled}
+          />
+        }
+      >
+        <span className="flex min-w-0 flex-1 flex-wrap gap-1 text-left">
+          {selectedCountries.length ? (
+            selectedCountries.map((country) => (
+              <Badge key={country.id} variant="secondary">
+                {country.name}
+              </Badge>
+            ))
+          ) : (
+            <span className="truncate text-muted-foreground">None</span>
+          )}
+        </span>
+        <ChevronsUpDownIcon />
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-96 gap-2 p-2">
+        <div className="relative">
+          <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search countries"
+            className="pl-9"
+          />
+        </div>
+        <div className="max-h-72 overflow-y-auto">
+          {filteredCountries.map((row) => (
+            <button
+              key={row.id}
+              type="button"
+              className="flex min-h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm hover:bg-muted"
+              style={{ paddingLeft: `${row.indent * 1.25 + 0.75}rem` }}
+              onClick={() => toggleCountry(row.id)}
+            >
+              <Checkbox
+                checked={selectedIds.has(row.id)}
+                aria-label={`Combine with ${row.name}`}
+                className="pointer-events-none"
+              />
+              <span className="min-w-0 flex-1 truncate">{row.name}</span>
+            </button>
+          ))}
+          {filteredCountries.length === 0 ? (
+            <div className="px-3 py-2 text-sm text-muted-foreground">
+              No countries found.
+            </div>
+          ) : null}
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -1526,6 +1692,88 @@ function formatModuleLevel(level: TemplateModuleLevel) {
 
 function formatCountryType(type: CountryDraft["type"]) {
   return type === "country" ? "Country" : "Group"
+}
+
+function getCombinedCountryIds(template: MonthEndTemplate, countryId: string) {
+  const linkedIds = new Set<string>()
+  const row = template.countries.find((country) => country.id === countryId)
+
+  for (const linkedId of row?.combinedWithCountryIds ?? []) {
+    linkedIds.add(linkedId)
+  }
+
+  for (const country of template.countries) {
+    if (country.combinedWithCountryIds?.includes(countryId)) {
+      linkedIds.add(country.id)
+    }
+  }
+
+  linkedIds.delete(countryId)
+
+  return Array.from(linkedIds)
+}
+
+function updateCombinedCountryLinks(
+  countries: TemplateCountryRow[],
+  countryId: string,
+  combinedWithCountryIds: string[],
+  updatedAt: string
+) {
+  const combinedIds = new Set(combinedWithCountryIds)
+
+  return countries.map((country) => {
+    const currentLinks = new Set(country.combinedWithCountryIds ?? [])
+
+    if (country.id === countryId) {
+      return {
+        ...country,
+        combinedWithCountryIds: Array.from(combinedIds),
+        updatedAt,
+      }
+    }
+
+    if (combinedIds.has(country.id)) {
+      currentLinks.add(countryId)
+    } else {
+      currentLinks.delete(countryId)
+    }
+
+    return {
+      ...country,
+      combinedWithCountryIds: Array.from(currentLinks),
+      updatedAt: currentLinks.has(countryId) ? updatedAt : country.updatedAt,
+    }
+  })
+}
+
+function CombinedCountryBadges({
+  row,
+  template,
+}: {
+  row: TemplateCountryRow
+  template: MonthEndTemplate
+}) {
+  const combinedCountries = getCombinedCountryIds(template, row.id)
+    .map((id) => template.countries.find((country) => country.id === id))
+    .filter((country): country is TemplateCountryRow => Boolean(country))
+
+  if (row.checkable === false) {
+    return <span className="text-muted-foreground">-</span>
+  }
+
+  if (!combinedCountries.length) {
+    return <span className="text-muted-foreground">None</span>
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {combinedCountries.map((country) => (
+        <Badge key={country.id} variant="outline">
+          {country.name}
+        </Badge>
+      ))}
+    </div>
+  )
 }
 
 function findChildInsertIndex(template: MonthEndTemplate, parentIndex: number) {

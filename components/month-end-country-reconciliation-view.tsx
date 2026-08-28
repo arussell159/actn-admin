@@ -10,6 +10,7 @@ import {
   ListChecksIcon,
   ListXIcon,
   SearchIcon,
+  ClipboardPasteIcon,
   UploadIcon,
 } from "lucide-react"
 
@@ -30,17 +31,21 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Textarea } from "@/components/ui/textarea"
 import {
+  exchangeRateKey,
   getMonthEndRecord,
   getMonthEndTitle,
   type MonthEndRecord,
 } from "@/lib/month-end-db"
 import {
   getCanonicalCountryId,
+  getLinkedCountryIds,
   getLinkedCountryRows,
   listMonthEndMasterRecords,
   parseCountryMasterCsv,
@@ -52,7 +57,11 @@ import {
   loadMonthEndTemplate,
   type TemplateCountryRow,
 } from "@/lib/month-end-template"
-import { parseCountryReportFile } from "@/lib/country-report-import"
+import {
+  parseCountryReportText,
+  parseCountryReportFile,
+  type ParsedCountryReportRecord,
+} from "@/lib/country-report-import"
 import {
   antaserInvoiceParserKey,
   listMonthEndCountryReportRecords,
@@ -111,6 +120,39 @@ function formatAmount(amount: number) {
   }).format(amount)
 }
 
+function formatDate(value: string | undefined) {
+  const rawValue = (value ?? "").trim()
+
+  return rawValue || "-"
+}
+
+function parseExchangeRate(value: unknown) {
+  const amount =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value)
+        : undefined
+
+  return amount && Number.isFinite(amount) && amount > 0 ? amount : undefined
+}
+
+function lineItemCountryName(value: string | undefined) {
+  const countryName = (value ?? "").trim()
+
+  return countryName && !countryName.includes("/") ? countryName : "-"
+}
+
+function mergeCountryReportRecords(records: MonthEndCountryReportRecord[]) {
+  const recordsById = new Map<string, MonthEndCountryReportRecord>()
+
+  for (const record of records) {
+    recordsById.set(record.id, record)
+  }
+
+  return Array.from(recordsById.values())
+}
+
 function hasField<T>(records: T[], getValue: (record: T) => string | undefined | null) {
   return records.some((record) => (getValue(record) ?? "").trim())
 }
@@ -150,6 +192,7 @@ function matchesCountryReportQuery(
     record.ctnNumber,
     record.billOfLadingNumber,
     record.reference,
+    record.sourceCountryName,
     String(record.amount),
   ].some((value) => (value ?? "").toLowerCase().includes(normalizedQuery))
 }
@@ -158,29 +201,66 @@ function normalizeMatchKey(value: string | undefined | null) {
   return (value ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "")
 }
 
-function masterMatchKeys(record: MonthEndMasterRecord) {
-  return [
-    record.ctnNumber,
-    record.billOfLadingNumber,
-    record.salesOrderNumber,
-  ]
-    .map(normalizeMatchKey)
-    .filter(Boolean)
-}
-
-function countryMatchKeys(record: MonthEndCountryReportRecord) {
-  return [record.ctnNumber, record.billOfLadingNumber, record.reference]
-    .map(normalizeMatchKey)
-    .filter(Boolean)
-}
-
-function sharedMatchKey(
+function matchCandidates(
   masterRecord: MonthEndMasterRecord,
   countryRecord: MonthEndCountryReportRecord
 ) {
-  const countryKeys = new Set(countryMatchKeys(countryRecord))
+  return [
+    {
+      label: "BL",
+      masterValue: masterRecord.billOfLadingNumber,
+      countryValues: [countryRecord.billOfLadingNumber, countryRecord.reference],
+    },
+    {
+      label: "CTN",
+      masterValue: masterRecord.ctnNumber,
+      countryValues: [countryRecord.ctnNumber, countryRecord.reference],
+    },
+    {
+      label: "Invoice",
+      masterValue: masterRecord.salesOrderNumber,
+      countryValues: [countryRecord.invoiceNumber, countryRecord.reference],
+    },
+  ]
+}
 
-  return masterMatchKeys(masterRecord).find((key) => countryKeys.has(key))
+function formatCombinedCountryName(countries: TemplateCountryRow[]) {
+  const countryNames = Array.from(
+    new Set(
+      countries
+        .filter((country) => country.checkable !== false)
+        .map((country) => country.name.trim())
+        .filter(Boolean)
+    )
+  )
+
+  return countryNames.join(" / ")
+}
+
+function matchDetail(
+  masterRecord: MonthEndMasterRecord,
+  countryRecord: MonthEndCountryReportRecord
+) {
+  for (const candidate of matchCandidates(masterRecord, countryRecord)) {
+    const masterKey = normalizeMatchKey(candidate.masterValue)
+
+    if (!masterKey) {
+      continue
+    }
+
+    const countryValue = candidate.countryValues.find(
+      (value) => normalizeMatchKey(value) === masterKey
+    )
+
+    if (countryValue) {
+      return {
+        label: candidate.label,
+        value: candidate.masterValue || countryValue,
+      }
+    }
+  }
+
+  return undefined
 }
 
 function reconcileRecords({
@@ -198,12 +278,14 @@ function reconcileRecords({
         return false
       }
 
-      return Boolean(sharedMatchKey(item, countryRecord))
+      return Boolean(matchDetail(item, countryRecord))
     })
 
     if (!masterRecord) {
       return []
     }
+
+    const matchedOn = matchDetail(masterRecord, countryRecord)
 
     matchedMasterIds.add(masterRecord.id)
     matchedCountryIds.add(countryRecord.id)
@@ -213,7 +295,7 @@ function reconcileRecords({
         id: `${masterRecord.id}__${countryRecord.id}`,
         masterRecord,
         countryRecord,
-        matchKey: sharedMatchKey(masterRecord, countryRecord) ?? "",
+        matchedOn,
       },
     ]
   })
@@ -250,11 +332,13 @@ function MasterRecordCards({
   sortKey,
   sortDirection,
   onSort,
+  showCountryColumn,
 }: {
   records: MonthEndMasterRecord[]
   sortKey: SortKey
   sortDirection: SortDirection
   onSort: (key: SortKey) => void
+  showCountryColumn: boolean
 }) {
   return (
     <div className="grid gap-3 md:hidden">
@@ -294,6 +378,14 @@ function MasterRecordCards({
               </span>
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
+              {showCountryColumn ? (
+                <div>
+                  <div className="text-xs text-muted-foreground">Country</div>
+                  <div className="mt-1 font-medium">
+                    {record.countryName || "-"}
+                  </div>
+                </div>
+              ) : null}
               <div>
                 <div className="text-xs text-muted-foreground">CTN</div>
                 <div className="mt-1 font-medium">{record.ctnNumber || "-"}</div>
@@ -347,17 +439,22 @@ function MasterRecordTable({
   sortKey,
   sortDirection,
   onSort,
+  showCountryColumn,
 }: {
   records: MonthEndMasterRecord[]
   sortKey: SortKey
   sortDirection: SortDirection
   onSort: (key: SortKey) => void
+  showCountryColumn: boolean
 }) {
+  const total = records.reduce((sum, record) => sum + record.amount, 0)
+
   return (
     <div className="hidden overflow-x-auto md:block">
-      <Table className="min-w-[840px]">
+      <Table className={showCountryColumn ? "min-w-[940px]" : "min-w-[840px]"}>
         <TableHeader>
           <TableRow>
+            {showCountryColumn ? <TableHead>Country</TableHead> : null}
             {(Object.keys(sortLabels) as SortKey[]).map((column) => (
               <SortableHead
                 key={column}
@@ -372,6 +469,9 @@ function MasterRecordTable({
         <TableBody>
           {records.map((record) => (
             <TableRow key={record.id}>
+              {showCountryColumn ? (
+                <TableCell>{record.countryName}</TableCell>
+              ) : null}
               <TableCell className="font-medium">
                 {record.salesOrderNumber}
               </TableCell>
@@ -384,6 +484,14 @@ function MasterRecordTable({
             </TableRow>
           ))}
         </TableBody>
+        <TableFooter>
+          <TableRow>
+            <TableCell colSpan={showCountryColumn ? 5 : 4}>Total</TableCell>
+            <TableCell className="text-right tabular-nums">
+              {formatAmount(total)}
+            </TableCell>
+          </TableRow>
+        </TableFooter>
       </Table>
     </div>
   )
@@ -391,10 +499,14 @@ function MasterRecordTable({
 
 function CountryReportCards({
   records,
+  showCountryColumn,
 }: {
   records: MonthEndCountryReportRecord[]
+  showCountryColumn: boolean
 }) {
   const showBillOfLading = hasField(records, (record) => record.billOfLadingNumber)
+  const showSourceCountry =
+    showCountryColumn || hasField(records, (record) => record.sourceCountryName)
 
   return (
     <div className="grid gap-3 md:hidden">
@@ -412,6 +524,15 @@ function CountryReportCards({
                 {record.billOfLadingNumber}
               </div>
             ) : null}
+            {showSourceCountry && record.sourceCountryName ? (
+              <div className="text-sm text-muted-foreground">
+                {record.sourceCountryName}
+              </div>
+            ) : showSourceCountry ? (
+              <div className="text-sm text-muted-foreground">
+                {lineItemCountryName(record.countryName)}
+              </div>
+            ) : null}
             <div className="text-sm font-medium">
               {formatAmount(record.amount)}
             </div>
@@ -424,14 +545,22 @@ function CountryReportCards({
 
 function CountryReportTable({
   records,
+  showCountryColumn,
 }: {
   records: MonthEndCountryReportRecord[]
+  showCountryColumn: boolean
 }) {
   const showInvoice =
     hasField(records, (record) => record.invoiceNumber) &&
     !records.every(isAntaserReportRecord)
   const showBillOfLading = hasField(records, (record) => record.billOfLadingNumber)
-  const tableWidth = showInvoice || showBillOfLading ? "min-w-[640px]" : "min-w-[420px]"
+  const showSourceCountry =
+    showCountryColumn || hasField(records, (record) => record.sourceCountryName)
+  const tableWidth =
+    showInvoice || showBillOfLading || showSourceCountry
+      ? "min-w-[720px]"
+      : "min-w-[420px]"
+  const total = records.reduce((sum, record) => sum + record.amount, 0)
 
   return (
     <div className="hidden overflow-x-auto md:block">
@@ -442,6 +571,7 @@ function CountryReportTable({
             <TableHead>Reference</TableHead>
             <TableHead>CTN</TableHead>
             {showBillOfLading ? <TableHead>Bill of Lading</TableHead> : null}
+            {showSourceCountry ? <TableHead>Country</TableHead> : null}
             <TableHead className="text-right">Amount</TableHead>
           </TableRow>
         </TableHeader>
@@ -458,12 +588,35 @@ function CountryReportTable({
               {showBillOfLading ? (
                 <TableCell>{record.billOfLadingNumber}</TableCell>
               ) : null}
+              {showSourceCountry ? (
+                <TableCell>
+                  {record.sourceCountryName ||
+                    lineItemCountryName(record.countryName)}
+                </TableCell>
+              ) : null}
               <TableCell className="text-right tabular-nums">
                 {formatAmount(record.amount)}
               </TableCell>
             </TableRow>
           ))}
         </TableBody>
+        <TableFooter>
+          <TableRow>
+            <TableCell
+              colSpan={
+                2 +
+                (showInvoice ? 1 : 0) +
+                (showBillOfLading ? 1 : 0) +
+                (showSourceCountry ? 1 : 0)
+              }
+            >
+              Total
+            </TableCell>
+            <TableCell className="text-right tabular-nums">
+              {formatAmount(total)}
+            </TableCell>
+          </TableRow>
+        </TableFooter>
       </Table>
     </div>
   )
@@ -471,61 +624,69 @@ function CountryReportTable({
 
 function MatchedRecordTable({
   records,
+  exchangeRate,
+  showCountryColumn,
 }: {
   records: ReturnType<typeof reconcileRecords>["matched"]
+  exchangeRate?: number
+  showCountryColumn: boolean
 }) {
-  const showCountryBillOfLading = records.some(({ countryRecord }) =>
-    (countryRecord.billOfLadingNumber ?? "").trim()
-  )
-  const tableWidth = showCountryBillOfLading ? "min-w-[940px]" : "min-w-[820px]"
+  const tableWidth = showCountryColumn ? "min-w-[720px]" : "min-w-[620px]"
   const netsuiteTotal = records.reduce(
     (total, { masterRecord }) => total + masterRecord.amount,
     0
   )
+  const countryAmount = (amount: number) =>
+    exchangeRate ? amount * exchangeRate : amount
   const countryTotal = records.reduce(
-    (total, { countryRecord }) => total + countryRecord.amount,
+    (total, { countryRecord }) => total + countryAmount(countryRecord.amount),
     0
   )
-  const labelColumnSpan = showCountryBillOfLading ? 6 : 5
 
   return (
     <div className="overflow-x-auto">
       <Table className={tableWidth}>
         <TableHeader>
           <TableRow>
-            <TableHead>NetSuite SO</TableHead>
-            <TableHead>Country Ref</TableHead>
-            <TableHead>NetSuite CTN</TableHead>
-            <TableHead>Country CTN</TableHead>
-            <TableHead>NetSuite BL</TableHead>
-            {showCountryBillOfLading ? <TableHead>Country BL</TableHead> : null}
+            {showCountryColumn ? <TableHead>Country</TableHead> : null}
+            <TableHead>Date</TableHead>
+            <TableHead>Matching Column</TableHead>
             <TableHead className="text-right">NetSuite Amount</TableHead>
-            <TableHead className="text-right">Country Amount</TableHead>
+            <TableHead className="text-right">
+              {exchangeRate ? "Country Amount USD" : "Country Amount"}
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {records.map(({ id, masterRecord, countryRecord }) => (
+          {records.map(({ id, masterRecord, countryRecord, matchedOn }) => (
             <TableRow key={id}>
-              <TableCell className="font-medium">
-                {masterRecord.salesOrderNumber}
-              </TableCell>
-              <TableCell>{countryRecord.reference}</TableCell>
-              <TableCell>{masterRecord.ctnNumber}</TableCell>
-              <TableCell>{countryRecord.ctnNumber}</TableCell>
-              <TableCell>{masterRecord.billOfLadingNumber}</TableCell>
-              {showCountryBillOfLading ? (
-                <TableCell>{countryRecord.billOfLadingNumber}</TableCell>
+              {showCountryColumn ? (
+                <TableCell>
+                  {countryRecord.sourceCountryName ||
+                    lineItemCountryName(masterRecord.countryName)}
+                </TableCell>
               ) : null}
+              <TableCell className="font-medium">
+                {formatDate(masterRecord.transactionDate)}
+              </TableCell>
+              <TableCell>
+                <div className="font-medium">{matchedOn?.value ?? "-"}</div>
+                <div className="text-xs text-muted-foreground">
+                  {matchedOn?.label ?? "Matched"}
+                </div>
+              </TableCell>
               <TableCell className="text-right tabular-nums">
                 {formatAmount(masterRecord.amount)}
               </TableCell>
               <TableCell className="text-right tabular-nums">
-                {formatAmount(countryRecord.amount)}
+                {formatAmount(countryAmount(countryRecord.amount))}
               </TableCell>
             </TableRow>
           ))}
-          <TableRow className="border-t bg-muted/40 font-semibold">
-            <TableCell colSpan={labelColumnSpan}>Matched Total</TableCell>
+        </TableBody>
+        <TableFooter>
+          <TableRow>
+            <TableCell colSpan={showCountryColumn ? 3 : 2}>Matched Total</TableCell>
             <TableCell className="text-right tabular-nums">
               {formatAmount(netsuiteTotal)}
             </TableCell>
@@ -533,7 +694,7 @@ function MatchedRecordTable({
               {formatAmount(countryTotal)}
             </TableCell>
           </TableRow>
-        </TableBody>
+        </TableFooter>
       </Table>
     </div>
   )
@@ -576,6 +737,9 @@ export function MonthEndCountryReconciliationView({
 }) {
   const [record, setRecord] = React.useState<MonthEndRecord>()
   const [country, setCountry] = React.useState<TemplateCountryRow>()
+  const [countryDisplayName, setCountryDisplayName] = React.useState("")
+  const [linkedCountryIds, setLinkedCountryIds] = React.useState<string[]>([])
+  const [canPasteReport, setCanPasteReport] = React.useState(false)
   const [records, setRecords] = React.useState<MonthEndMasterRecord[]>([])
   const [countryReportRecords, setCountryReportRecords] = React.useState<
     MonthEndCountryReportRecord[]
@@ -591,6 +755,8 @@ export function MonthEndCountryReconciliationView({
   const [loadError, setLoadError] = React.useState("")
   const [masterFileName, setMasterFileName] = React.useState("")
   const [countryReportFileName, setCountryReportFileName] = React.useState("")
+  const [isPasteReportOpen, setIsPasteReportOpen] = React.useState(false)
+  const [pastedReportText, setPastedReportText] = React.useState("")
   const [uploadError, setUploadError] = React.useState("")
   const [isUploadingMaster, setIsUploadingMaster] = React.useState(false)
   const [isUploadingCountryReport, setIsUploadingCountryReport] =
@@ -615,11 +781,24 @@ export function MonthEndCountryReconciliationView({
           getMonthEndRecord(period),
           getMonthEndTemplate(),
         ])
+        const linkedCountryRows = getLinkedCountryRows(
+          activeCountryId,
+          template.countries
+        )
+        const linkedIds = linkedCountryRows.map((item) => item.id)
         const matchedCountry =
+          linkedCountryRows[0] ??
           template.countries.find((item) => item.id === activeCountryId) ??
           loadMonthEndTemplate().countries.find(
             (item) => item.id === activeCountryId
           )
+        const displayName =
+          formatCombinedCountryName(linkedCountryRows) ||
+          matchedCountry?.name ||
+          ""
+        const supportsPasteReport = linkedCountryRows.some(
+          (item) => item.requiresPasteReport
+        )
 
         const [masterRecords, reportRecords] = monthEndRecord
           ? await Promise.all([
@@ -640,6 +819,9 @@ export function MonthEndCountryReconciliationView({
 
         setRecord(monthEndRecord)
         setCountry(matchedCountry)
+        setCountryDisplayName(displayName)
+        setLinkedCountryIds(linkedIds)
+        setCanPasteReport(supportsPasteReport)
         setRecords(masterRecords)
         setCountryReportRecords(reportRecords)
       } catch {
@@ -659,6 +841,13 @@ export function MonthEndCountryReconciliationView({
       isMounted = false
     }
   }, [activeCountryId, countryId, period])
+
+  React.useEffect(() => {
+    if (!canPasteReport) {
+      setIsPasteReportOpen(false)
+      setPastedReportText("")
+    }
+  }, [canPasteReport])
 
   const sortedRecords = React.useMemo(
     () =>
@@ -707,6 +896,20 @@ export function MonthEndCountryReconciliationView({
       ),
     [query, reconciliation.missingFromCountry]
   )
+  const exchangeRate = React.useMemo(() => {
+    for (const linkedCountryId of linkedCountryIds) {
+      const rate = parseExchangeRate(
+        record?.checked[exchangeRateKey(linkedCountryId)]
+      )
+
+      if (rate) {
+        return rate
+      }
+    }
+
+    return undefined
+  }, [linkedCountryIds, record])
+  const showCountryColumn = linkedCountryIds.length > 1
   const activeViewCount =
     activeView === "master"
       ? records.length
@@ -757,8 +960,10 @@ export function MonthEndCountryReconciliationView({
         records: parsedRecords,
       })
 
+      const linkedCountryIds = getLinkedCountryIds(activeCountryId)
+
       setRecords(
-        parsedRecords.filter((item) => item.countryId === activeCountryId)
+        parsedRecords.filter((item) => linkedCountryIds.includes(item.countryId))
       )
     } catch (error) {
       setUploadError(
@@ -771,37 +976,101 @@ export function MonthEndCountryReconciliationView({
     }
   }
 
-  async function uploadCountryReports(files: File[]) {
+  async function saveParsedCountryReportRecords({
+    parsedRecords,
+    sourceLabel,
+  }: {
+    parsedRecords: ParsedCountryReportRecord[]
+    sourceLabel: string
+  }) {
     if (!record || !country || !activeCountryId) {
       setUploadError("Open a valid country record before uploading.")
       return
     }
 
+    const template = await getMonthEndTemplate()
+    const linkedCountryNames = new Set(
+      getLinkedCountryRows(activeCountryId, template.countries).map((item) =>
+        normalizeMatchKey(item.name)
+      )
+    )
+    const filteredRecords = parsedRecords.filter((item) => {
+      const sourceCountryName = normalizeMatchKey(item.sourceCountryName)
+
+      return (
+        Boolean(item.targetCountryId) ||
+        !sourceCountryName ||
+        linkedCountryNames.has(sourceCountryName)
+      )
+    })
+    const recordsByCountryId = filteredRecords.reduce(
+      (groups, parsedRecord) => {
+        const targetCountryId = parsedRecord.targetCountryId || activeCountryId
+        const records = groups.get(targetCountryId) ?? []
+
+        groups.set(targetCountryId, [...records, parsedRecord])
+
+        return groups
+      },
+      new Map<string, ParsedCountryReportRecord[]>()
+    )
+    const savedRecordGroups = await Promise.all(
+      Array.from(recordsByCountryId.entries()).map(
+        async ([targetCountryId, countryParsedRecords]) => {
+          const targetCountry =
+            template.countries.find((item) => item.id === targetCountryId) ??
+            country
+          const reportRecords = makeCountryReportRecords({
+            parsedRecords: countryParsedRecords,
+            monthEndId: record.id,
+            period: record.period,
+            countryId: targetCountryId,
+            countryName: targetCountry.name,
+          })
+          const recordsToSave =
+            targetCountryId === activeCountryId
+              ? reportRecords
+              : mergeCountryReportRecords([
+                  ...(await listMonthEndCountryReportRecords({
+                    monthEndId: record.id,
+                    countryId: targetCountryId,
+                  })),
+                  ...reportRecords,
+                ])
+
+          await replaceMonthEndCountryReportRecords({
+            monthEndId: record.id,
+            countryId: targetCountryId,
+            records: recordsToSave,
+          })
+
+          return reportRecords
+        }
+      )
+    )
+    const reportRecords = savedRecordGroups.flat()
+
+    setCountryReportFileName(sourceLabel)
+    setCountryReportRecords(
+      reportRecords.filter((item) => item.countryId === activeCountryId)
+    )
+    setActiveView("country")
+  }
+
+  async function uploadCountryReports(files: File[]) {
     setIsUploadingCountryReport(true)
     setCountryReportFileName(files.map((file) => file.name).join(", "))
     setUploadError("")
 
     try {
       const parsedGroups = await Promise.all(
-        files.map((file) => parseCountryReportFile(file, { period: record.period }))
+        files.map((file) => parseCountryReportFile(file, { period: record?.period }))
       )
-      const parsedRecords = parsedGroups.flat()
-      const reportRecords = makeCountryReportRecords({
-        parsedRecords,
-        monthEndId: record.id,
-        period: record.period,
-        countryId: activeCountryId,
-        countryName: country.name,
-      })
 
-      await replaceMonthEndCountryReportRecords({
-        monthEndId: record.id,
-        countryId: activeCountryId,
-        records: reportRecords,
+      await saveParsedCountryReportRecords({
+        parsedRecords: parsedGroups.flat() as ParsedCountryReportRecord[],
+        sourceLabel: files.map((file) => file.name).join(", "),
       })
-
-      setCountryReportRecords(reportRecords)
-      setActiveView("country")
     } catch (error) {
       setUploadError(
         error instanceof Error
@@ -813,13 +1082,44 @@ export function MonthEndCountryReconciliationView({
     }
   }
 
+  async function uploadPastedCountryReport() {
+    if (!record) {
+      setUploadError("Open a valid country record before uploading.")
+      return
+    }
+
+    setIsUploadingCountryReport(true)
+    setUploadError("")
+
+    try {
+      await saveParsedCountryReportRecords({
+        parsedRecords: parseCountryReportText(pastedReportText, {
+          period: record.period,
+        }),
+        sourceLabel: "Pasted report",
+      })
+      setPastedReportText("")
+      setIsPasteReportOpen(false)
+    } catch (error) {
+      setUploadError(
+        error instanceof Error
+          ? error.message
+          : "Could not upload that pasted report."
+      )
+    } finally {
+      setIsUploadingCountryReport(false)
+    }
+  }
+
   const title = country
-    ? `${country.name} - ${record ? getMonthEndTitle(record) : "Month End"}`
+    ? `${countryDisplayName || country.name} - ${record ? getMonthEndTitle(record) : "Month End"}`
     : "Country Records"
-  const countryReportLabel = country ? `${country.name} Report` : "Country Report"
+  const countryReportLabel = country
+    ? `${countryDisplayName || country.name} Report`
+    : "Country Report"
   const viewLabels: Record<ReconciliationView, string> = {
     master: "NetSuite",
-    country: country?.name ?? "Country",
+    country: countryDisplayName || country?.name || "Country",
     matched: "Matched",
     "missing-netsuite": "Missing from NetSuite",
     "missing-country": "Missing from Country",
@@ -877,9 +1177,46 @@ export function MonthEndCountryReconciliationView({
                       ? `Uploading ${countryReportLabel}`
                       : countryReportLabel}
                   </DropdownMenuItem>
+                  {canPasteReport ? (
+                    <DropdownMenuItem onClick={() => setIsPasteReportOpen(true)}>
+                      <ClipboardPasteIcon />
+                      Paste Report
+                    </DropdownMenuItem>
+                  ) : null}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
+
+            {isPasteReportOpen ? (
+              <Card className="rounded-lg py-0 shadow-sm">
+                <CardContent className="grid gap-3 p-3">
+                  <Textarea
+                    value={pastedReportText}
+                    onChange={(event) => setPastedReportText(event.target.value)}
+                    placeholder="Paste report data"
+                    className="min-h-48 resize-y font-mono text-sm"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setIsPasteReportOpen(false)
+                        setPastedReportText("")
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={uploadPastedCountryReport}
+                      disabled={!pastedReportText.trim() || isUploadingCountryReport}
+                    >
+                      <ClipboardPasteIcon />
+                      Import Paste
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
 
             <div className="relative">
               <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -954,16 +1291,32 @@ export function MonthEndCountryReconciliationView({
               <div className="text-sm text-muted-foreground">Loading...</div>
             ) : activeView === "country" && filteredCountryReportRecords.length ? (
               <>
-                <CountryReportCards records={filteredCountryReportRecords} />
-                <CountryReportTable records={filteredCountryReportRecords} />
+                <CountryReportCards
+                  records={filteredCountryReportRecords}
+                  showCountryColumn={showCountryColumn}
+                />
+                <CountryReportTable
+                  records={filteredCountryReportRecords}
+                  showCountryColumn={showCountryColumn}
+                />
               </>
             ) : activeView === "matched" && filteredMatchedRecords.length ? (
-              <MatchedRecordTable records={filteredMatchedRecords} />
+              <MatchedRecordTable
+                records={filteredMatchedRecords}
+                exchangeRate={exchangeRate}
+                showCountryColumn={showCountryColumn}
+              />
             ) : activeView === "missing-netsuite" &&
               filteredMissingFromNetSuite.length ? (
               <>
-                <CountryReportCards records={filteredMissingFromNetSuite} />
-                <CountryReportTable records={filteredMissingFromNetSuite} />
+                <CountryReportCards
+                  records={filteredMissingFromNetSuite}
+                  showCountryColumn={showCountryColumn}
+                />
+                <CountryReportTable
+                  records={filteredMissingFromNetSuite}
+                  showCountryColumn={showCountryColumn}
+                />
               </>
             ) : activeView === "missing-country" &&
               filteredMissingFromCountry.length ? (
@@ -973,12 +1326,14 @@ export function MonthEndCountryReconciliationView({
                   sortKey={sortKey}
                   sortDirection={sortDirection}
                   onSort={handleSort}
+                  showCountryColumn={showCountryColumn}
                 />
                 <MasterRecordTable
                   records={filteredMissingFromCountry}
                   sortKey={sortKey}
                   sortDirection={sortDirection}
                   onSort={handleSort}
+                  showCountryColumn={showCountryColumn}
                 />
               </>
             ) : activeView !== "master" ? (
@@ -994,12 +1349,14 @@ export function MonthEndCountryReconciliationView({
                   sortKey={sortKey}
                   sortDirection={sortDirection}
                   onSort={handleSort}
+                  showCountryColumn={showCountryColumn}
                 />
                 <MasterRecordTable
                   records={sortedRecords}
                   sortKey={sortKey}
                   sortDirection={sortDirection}
                   onSort={handleSort}
+                  showCountryColumn={showCountryColumn}
                 />
               </>
             ) : (

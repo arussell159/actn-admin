@@ -146,6 +146,8 @@ function countryReportGroupKey(
     record.ctnNumber,
     record.billOfLadingNumber,
     record.reference,
+    record.sourceCountryName ?? "",
+    record.targetCountryId ?? "",
   ].join("__")
 }
 
@@ -184,6 +186,10 @@ export function makeCountryReportRecords({
           : record.reference,
       amount: (existing?.amount ?? 0) + record.amount,
       sourceRowCount: (existing?.sourceRowCount ?? 0) + record.sourceRowCount,
+      sourceCountryName: mergeReportValues(
+        existing?.sourceCountryName ?? "",
+        record.sourceCountryName ?? ""
+      ),
     })
   }
 
@@ -199,7 +205,7 @@ export function makeCountryReportRecords({
     monthEndId,
     period,
     countryId: canonicalCountryId,
-    countryName,
+    countryName: record.sourceCountryName || countryName,
     parserKey,
     ...record,
   }))

@@ -54,7 +54,10 @@ import {
   type MonthEndValue,
   type MonthEndRecord,
 } from "@/lib/month-end-db"
-import { getCanonicalCountryId } from "@/lib/month-end-master-records"
+import {
+  getCanonicalCountryId,
+  getLinkedCountryIds,
+} from "@/lib/month-end-master-records"
 import {
   getMonthEndTemplate,
   loadMonthEndTemplate,
@@ -186,35 +189,25 @@ const monthEndRowIdByCountryCode: Record<string, string | undefined> = {
   SS: "antaser-afrique",
 }
 
-const monthEndGroupRowIdsByCountryCode: Record<string, string[] | undefined> = {
-  NE: ["antaser", "antaser-oot"],
-  CF: ["antaser", "antaser-oot"],
-  GW: ["antaser", "antaser-oot"],
-  TG: ["antaser-afrique", "antaser-afrique-oot"],
-  BI: ["antaser-afrique", "antaser-afrique-oot"],
-  GQ: ["antaser-afrique", "antaser-afrique-oot"],
-  SS: ["antaser-afrique", "antaser-afrique-oot"],
-}
-
 function isMapCountryIncomplete(
   countryCode: string,
-  completedByCountryId: Record<string, boolean>
+  completedByCountryId: Record<string, boolean>,
+  template: MonthEndTemplate
 ) {
-  const groupRowIds = monthEndGroupRowIdsByCountryCode[countryCode]
-
-  if (groupRowIds) {
-    return !groupRowIds.every((rowId) => completedByCountryId[rowId])
-  }
-
   const rowId = monthEndRowIdByCountryCode[countryCode]
+  const rowIds = rowId ? getLinkedCountryIds(rowId, template.countries) : []
 
-  return rowId ? !completedByCountryId[rowId] : false
+  return rowIds.length
+    ? !rowIds.every((linkedRowId) => completedByCountryId[linkedRowId])
+    : false
 }
 
 function AfricaStatusMap({
   completedByCountryId,
+  template,
 }: {
   completedByCountryId: Record<string, boolean>
+  template: MonthEndTemplate
 }) {
   return (
     <div className="absolute top-2 right-3 z-10 shrink-0">
@@ -227,7 +220,8 @@ function AfricaStatusMap({
         {simpleMapAfricaPaths.map((country) => {
           const isIncomplete = isMapCountryIncomplete(
             country.code,
-            completedByCountryId
+            completedByCountryId,
+            template
           )
 
           return (
@@ -261,6 +255,9 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     null
   )
   const [noteDraft, setNoteDraft] = React.useState("")
+  const [editingExchangeRateRowId, setEditingExchangeRateRowId] =
+    React.useState<string | null>(null)
+  const [exchangeRateDraft, setExchangeRateDraft] = React.useState("")
   const [hasLoaded, setHasLoaded] = React.useState(false)
 
   React.useEffect(() => {
@@ -496,6 +493,42 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     }
   }
 
+  function startEditExchangeRate(rowId: string) {
+    const exchangeRate = asNumber(checked[exchangeRateKey(rowId)])
+
+    setEditingExchangeRateRowId(rowId)
+    setExchangeRateDraft(exchangeRate === undefined ? "" : String(exchangeRate))
+  }
+
+  function cancelEditExchangeRate() {
+    setEditingExchangeRateRowId(null)
+    setExchangeRateDraft("")
+  }
+
+  function saveExchangeRate(rowId: string) {
+    const trimmedValue = exchangeRateDraft.trim()
+    const nextValue = Number(trimmedValue)
+
+    if (trimmedValue && (!Number.isFinite(nextValue) || nextValue <= 0)) {
+      return
+    }
+
+    setChecked((current) => {
+      const nextChecked = { ...current }
+
+      if (!trimmedValue) {
+        delete nextChecked[exchangeRateKey(rowId)]
+        return nextChecked
+      }
+
+      nextChecked[exchangeRateKey(rowId)] = nextValue
+
+      return nextChecked
+    })
+
+    cancelEditExchangeRate()
+  }
+
   async function closeMonth() {
     const activeRecord = recordRef.current
 
@@ -569,6 +602,25 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     })
   }
 
+  const monthStatusAction = isClosed ? (
+    <Button
+      variant="outline"
+      className="hidden h-9 shrink-0 px-4 md:inline-flex"
+      onClick={reopenMonth}
+    >
+      <CheckCircle2Icon />
+      Reopen Month
+    </Button>
+  ) : (
+    <Button
+      className="hidden h-9 shrink-0 px-4 md:inline-flex"
+      onClick={closeMonth}
+    >
+      <FileCheck2Icon />
+      Close Month
+    </Button>
+  )
+
   if (!period && hasLoaded && !record) {
     return (
       <SidebarProvider
@@ -638,21 +690,6 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                 </Button>
               ) : (
                 <span className="hidden md:block" aria-hidden="true" />
-              )}
-              {isClosed ? (
-                <Button
-                  variant="outline"
-                  className="w-full sm:w-fit"
-                  onClick={reopenMonth}
-                >
-                  <CheckCircle2Icon />
-                  Reopen Month
-                </Button>
-              ) : (
-                <Button className="w-full sm:w-fit" onClick={closeMonth}>
-                  <FileCheck2Icon />
-                  Close Month
-                </Button>
               )}
             </section>
 
@@ -735,6 +772,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                   </div>
                   <AfricaStatusMap
                     completedByCountryId={completedByCountryId}
+                    template={template}
                   />
                 </CardHeader>
               </Card>
@@ -792,24 +830,27 @@ export function MonthEndView({ period }: { period?: string } = {}) {
             </section>
 
             <Tabs defaultValue="countries" className="min-h-0 flex-1 gap-4">
-              <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
-                <TabsList className="h-auto min-h-11 w-max min-w-full flex-nowrap items-center gap-1 rounded-[1.375rem] p-1 md:min-w-0">
-                  <TabsTrigger
-                    value="countries"
-                    className="h-9 flex-none rounded-[1.05rem] px-4 py-2 leading-none"
-                  >
-                    {countriesModule.tab}
-                  </TabsTrigger>
-                  {orderedTaskGroups.map((group) => (
+              <div className="flex items-center gap-3">
+                <div className="-mx-4 min-w-0 flex-1 overflow-x-auto px-4 md:mx-0 md:px-0">
+                  <TabsList className="h-auto min-h-11 w-max min-w-full flex-nowrap items-center gap-1 rounded-[1.375rem] p-1 md:min-w-0">
                     <TabsTrigger
-                      key={group.id}
-                      value={group.id}
+                      value="countries"
                       className="h-9 flex-none rounded-[1.05rem] px-4 py-2 leading-none"
                     >
-                      {group.tab}
+                      {countriesModule.tab}
                     </TabsTrigger>
-                  ))}
-                </TabsList>
+                    {orderedTaskGroups.map((group) => (
+                      <TabsTrigger
+                        key={group.id}
+                        value={group.id}
+                        className="h-9 flex-none rounded-[1.05rem] px-4 py-2 leading-none"
+                      >
+                        {group.tab}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </div>
+                {monthStatusAction}
               </div>
 
               <TabsContent value="countries" className="min-h-0">
@@ -1081,6 +1122,8 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                             checked[exchangeRateKey(row.id)]
                           )
                           const isEditingNote = editingNoteRowId === row.id
+                          const isEditingExchangeRate =
+                            editingExchangeRateRowId === row.id
                           const actionRows = isParentRow ? childRows : [row]
                           const actionTaskCount = actionRows.reduce(
                             (sum, actionRow) =>
@@ -1197,9 +1240,70 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                 )}
                               </TableCell>
                               <TableCell className="text-muted-foreground">
-                                {isParentRow || exchangeRate === undefined
-                                  ? null
-                                  : exchangeRate.toFixed(2)}
+                                {isParentRow ? null : (
+                                  <>
+                                    {isEditingExchangeRate ? (
+                                      <div className="flex min-h-8 items-center gap-2">
+                                        <Input
+                                          type="text"
+                                          inputMode="decimal"
+                                          value={exchangeRateDraft}
+                                          onChange={(event) =>
+                                            setExchangeRateDraft(
+                                              event.target.value
+                                            )
+                                          }
+                                          onKeyDown={(event) => {
+                                            if (event.key === "Enter") {
+                                              saveExchangeRate(row.id)
+                                            }
+
+                                            if (event.key === "Escape") {
+                                              cancelEditExchangeRate()
+                                            }
+                                          }}
+                                          className="h-8 w-28 text-foreground"
+                                          autoFocus
+                                          aria-label={`Exchange rate for ${row.name}`}
+                                        />
+                                        <ButtonGroup className="shrink-0">
+                                          <Button
+                                            size="icon"
+                                            className="size-8"
+                                            onClick={() =>
+                                              saveExchangeRate(row.id)
+                                            }
+                                            aria-label={`Save exchange rate for ${row.name}`}
+                                          >
+                                            <CheckIcon />
+                                          </Button>
+                                          <Button
+                                            variant="outline"
+                                            size="icon"
+                                            className="size-8"
+                                            onClick={cancelEditExchangeRate}
+                                            aria-label={`Cancel exchange rate for ${row.name}`}
+                                          >
+                                            <XIcon />
+                                          </Button>
+                                        </ButtonGroup>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="block min-h-8 w-28 cursor-text truncate rounded-md px-2 py-1 text-left hover:bg-muted/70"
+                                        onClick={() =>
+                                          startEditExchangeRate(row.id)
+                                        }
+                                        aria-label={`Edit exchange rate for ${row.name}`}
+                                      >
+                                        {exchangeRate === undefined
+                                          ? ""
+                                          : exchangeRate.toFixed(4)}
+                                      </button>
+                                    )}
+                                  </>
+                                )}
                               </TableCell>
                               {workflowTasks.map((task) => {
                                 const key = taskKey(row.id, task.id)
