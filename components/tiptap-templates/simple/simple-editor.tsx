@@ -308,7 +308,7 @@ export function SimpleEditor({
   const mobileToolbarVisible =
     isMobile &&
     (hasEditorFocus || isSearchAndReplaceOpen) &&
-    (mobileKeyboardInset > 80 || hasEditorFocus)
+    mobileKeyboardInset > 80
 
   return (
     <div className="simple-editor-wrapper">

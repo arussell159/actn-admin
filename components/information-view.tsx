@@ -706,22 +706,26 @@ export function InformationView() {
     async function loadNotes() {
       const loaded = await getInformationNotes()
       const requestedNode = searchParams.get("node") ?? undefined
+      const requestedView = searchParams.get("view") ?? undefined
       const requested = requestedNode
         ? loaded.find((node) => node.id === requestedNode)
         : undefined
       const shouldShowMobileFolders =
         !requestedNode &&
+        requestedView !== "notes" &&
         typeof window !== "undefined" &&
         window.matchMedia("(max-width: 767px)").matches
       const initialNode = shouldShowMobileFolders
         ? undefined
+        : requestedView === "notes"
+          ? undefined
         : (requested ?? firstNote(loaded) ?? loaded[0])
 
       if (isMounted) {
         setNodes(loaded)
-        setActiveId(initialNode?.id)
+        setActiveId(requestedView === "notes" ? mobileRootNotesId : initialNode?.id)
         setContentDraft(initialNode?.content ?? "")
-        setTitleDraft(initialNode?.title ?? "")
+        setTitleDraft(requestedView === "notes" ? "Notes" : (initialNode?.title ?? ""))
         setEditingTitle(false)
       }
     }
@@ -776,14 +780,29 @@ export function InformationView() {
     saveInformationNotes(nextNodes)
   }
 
-  function selectNode(nodeId: string) {
+  function updateInformationRoute(
+    href: string,
+    mode: "push" | "replace" = "push"
+  ) {
+    if (mode === "replace") {
+      router.replace(href)
+      return
+    }
+
+    router.push(href)
+  }
+
+  function selectNode(
+    nodeId: string,
+    mode: "push" | "replace" = "push"
+  ) {
     if (!nodeId) {
       setActiveId(undefined)
       setContentDraft("")
       setTitleDraft("")
       setEditingTitle(false)
       mobileNoteSelectorRef.current?.removeAttribute("open")
-      router.replace("/information")
+      updateInformationRoute("/information", mode)
       window.dispatchEvent(new Event("information-notes:navigation"))
       return
     }
@@ -795,16 +814,18 @@ export function InformationView() {
     setTitleDraft(node?.title ?? "")
     setEditingTitle(false)
     mobileNoteSelectorRef.current?.removeAttribute("open")
-    router.replace(`/information?node=${encodeURIComponent(nodeId)}`)
+    updateInformationRoute(`/information?node=${encodeURIComponent(nodeId)}`, mode)
     window.dispatchEvent(new Event("information-notes:navigation"))
   }
 
-  function selectRootNotes() {
+  function selectRootNotes(mode: "push" | "replace" = "push") {
     setActiveId(mobileRootNotesId)
     setContentDraft("")
     setTitleDraft("Notes")
     setEditingTitle(false)
     mobileNoteSelectorRef.current?.removeAttribute("open")
+    updateInformationRoute("/information?view=notes", mode)
+    window.dispatchEvent(new Event("information-notes:navigation"))
   }
 
   function startCreate(type: InformationNodeType, parentId = "") {
@@ -835,7 +856,7 @@ export function InformationView() {
     setEditingTitle(false)
     setEditingTreeNodeId(node.id)
     setTreeTitleDraft(node.title)
-    router.replace(`/information?node=${encodeURIComponent(node.id)}`)
+    updateInformationRoute(`/information?node=${encodeURIComponent(node.id)}`)
     window.dispatchEvent(new Event("information-notes:navigation"))
   }
 
@@ -901,15 +922,11 @@ export function InformationView() {
 
   function closeMobileNote() {
     if (activeNode?.parentId) {
-      selectNode(activeNode.parentId)
+      selectNode(activeNode.parentId, "replace")
       return
     }
 
-    const firstFolder = childNodes(nodes).find((node) => node.type === "folder")
-
-    if (firstFolder) {
-      selectNode(firstFolder.id)
-    }
+    selectNode("", "replace")
   }
 
   function commitTreeTitle(nodeId: string) {
@@ -1064,6 +1081,10 @@ export function InformationView() {
 
   return (
     <SidebarProvider
+      className={cn(
+        "min-h-[calc(100dvh+env(safe-area-inset-top,0px)+env(safe-area-inset-bottom,0px))] md:min-h-svh md:bg-sidebar",
+        activeNode?.type === "note" ? "bg-background" : "bg-muted/60"
+      )}
       style={
         {
           "--sidebar-width": "calc(var(--spacing) * 72)",
@@ -1072,10 +1093,15 @@ export function InformationView() {
       }
     >
       <AppSidebar variant="inset" />
-      <SidebarInset>
+      <SidebarInset
+        className={cn(
+          "min-h-[calc(100dvh+env(safe-area-inset-top,0px)+env(safe-area-inset-bottom,0px))] md:min-h-0 md:bg-background",
+          activeNode?.type === "note" ? "bg-background" : "bg-muted/60"
+        )}
+      >
         <main
           className={cn(
-            "flex min-h-0 flex-1 flex-col md:min-h-[calc(100svh-1rem)] md:bg-background",
+            "flex min-h-[calc(100dvh+env(safe-area-inset-top,0px)+env(safe-area-inset-bottom,0px))] flex-1 flex-col md:min-h-[calc(100svh-1rem)] md:bg-background",
             activeNode?.type === "note" ? "bg-background" : "bg-muted/60"
           )}
         >
@@ -1233,7 +1259,7 @@ export function InformationView() {
                               event.currentTarget.blur()
                             }
                           }}
-                          className="h-auto rounded-none border-0 bg-transparent px-0 py-1 text-[30pt] font-bold leading-tight tracking-tight shadow-none focus-visible:ring-0 md:text-3xl"
+                          className="h-auto rounded-none border-0 bg-transparent px-0 py-1 !text-[24pt] font-bold leading-tight tracking-tight shadow-none focus-visible:ring-0 md:!text-3xl"
                           aria-label="Note title"
                         />
                       </div>
@@ -1248,7 +1274,7 @@ export function InformationView() {
                       <MobileFolderNotesScreen
                         folder={activeNode}
                         notes={activeFolderNotes}
-                        onBack={() => selectNode("")}
+                        onBack={() => selectNode("", "replace")}
                         onOpenNote={selectNode}
                         onCreateNote={() => startCreate("note", activeNode.id)}
                       />
@@ -1264,7 +1290,7 @@ export function InformationView() {
                     <>
                       <MobileFolderNotesScreen
                         notes={activeFolderNotes}
-                        onBack={() => selectNode("")}
+                        onBack={() => selectNode("", "replace")}
                         onOpenNote={selectNode}
                         onCreateNote={() => startCreate("note")}
                       />
