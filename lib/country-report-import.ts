@@ -322,6 +322,82 @@ function parseRepublicOfCongoCtnExportCsv(
   return Array.from(grouped.values())
 }
 
+function isSckBalanceTransactionsExport(headers: string[]) {
+  return (
+    findExactCsvColumn(headers, ["date"]) >= 0 &&
+    findExactCsvColumn(headers, ["reason"]) >= 0 &&
+    findExactCsvColumn(headers, ["amount"]) >= 0 &&
+    findExactCsvColumn(headers, ["referencetype"]) >= 0 &&
+    findExactCsvColumn(headers, ["referenceid"]) >= 0 &&
+    findExactCsvColumn(headers, ["description"]) >= 0
+  )
+}
+
+function extractSckBalanceTransactionBillOfLading(value: string | undefined) {
+  return (value ?? "").match(/\bEntry\s+(.+?)\s+(?:submission fee|rejection refund)\b/i)?.[1] ?? ""
+}
+
+function parseSckBalanceTransactionsCsv(
+  rows: string[][],
+  options: { period?: string } = {}
+) {
+  const reportRows = getRowsFromHeader(rows, isSckBalanceTransactionsExport)
+  const [headers, ...dataRows] = reportRows ?? []
+
+  if (!headers) {
+    return undefined
+  }
+
+  const dateIndex = findExactCsvColumn(headers, ["date"])
+  const reasonIndex = findExactCsvColumn(headers, ["reason"])
+  const amountIndex = findExactCsvColumn(headers, ["amount"])
+  const referenceTypeIndex = findExactCsvColumn(headers, ["referencetype"])
+  const referenceIdIndex = findExactCsvColumn(headers, ["referenceid"])
+  const descriptionIndex = findExactCsvColumn(headers, ["description"])
+  const grouped = new Map<string, ParsedCountryReportRecord>()
+
+  for (const row of dataRows) {
+    const reason = row[reasonIndex]?.trim().toUpperCase() ?? ""
+    const referenceType = row[referenceTypeIndex]?.trim().toUpperCase() ?? ""
+    const invoiceNumber = row[referenceIdIndex]?.trim() ?? ""
+    const billOfLadingNumber = extractSckBalanceTransactionBillOfLading(
+      row[descriptionIndex]
+    )
+    const transactionPeriod = getDatePeriod(row[dateIndex])
+
+    if (
+      referenceType !== "ENTRY" ||
+      (reason !== "CONSUMPTION" && reason !== "REFUND") ||
+      !invoiceNumber ||
+      !billOfLadingNumber ||
+      (options.period && transactionPeriod !== options.period)
+    ) {
+      continue
+    }
+
+    const sign = reason === "REFUND" ? -1 : 1
+    const amount = Math.abs(parseAmount(row[amountIndex])) * sign
+    const key = [invoiceNumber, billOfLadingNumber].join("__")
+    const existing = grouped.get(key)
+
+    grouped.set(key, {
+      invoiceNumber,
+      ctnNumber: "",
+      billOfLadingNumber: mergeReportValues(
+        existing?.billOfLadingNumber ?? "",
+        billOfLadingNumber
+      ),
+      reference: mergeReportValues(existing?.reference ?? "", billOfLadingNumber),
+      amount: (existing?.amount ?? 0) + amount,
+      sourceRowCount: (existing?.sourceRowCount ?? 0) + 1,
+    })
+  }
+
+  return Array.from(grouped.values()).filter(
+    (record) => record.amount !== 0 || record.sourceRowCount === 1
+  )
+}
+
 function isLiberiaInvoiceExport(headers: string[]) {
   return (
     findExactCsvColumn(headers, ["invoice"]) >= 0 &&
@@ -532,6 +608,15 @@ export function parseCountryReportCsv(
 
   if (republicOfCongoRecords) {
     return republicOfCongoRecords
+  }
+
+  const sckBalanceTransactionRecords = parseSckBalanceTransactionsCsv(
+    rawRows,
+    options
+  )
+
+  if (sckBalanceTransactionRecords) {
+    return sckBalanceTransactionRecords
   }
 
   const liberiaInvoiceRecords = parseLiberiaInvoiceExportCsv(rawRows)
