@@ -50,6 +50,8 @@ import {
 import { cn } from "@/lib/utils"
 
 const maxDockItems = 4
+const activeIndicatorStorageKey = "actn-mobile-nav-active-index-v1"
+const activeIndicatorPendingStorageKey = "actn-mobile-nav-transition-pending-v1"
 
 const allModuleItems = [
   {
@@ -197,6 +199,25 @@ export function MobileTabBar() {
     isActivePath(pathname, item.match)
   )
   const activeIndicatorIndex = activeDockIndex >= 0 ? activeDockIndex : 4
+  const [displayedActiveIndicatorIndex, setDisplayedActiveIndicatorIndex] =
+    React.useState(() => {
+      if (typeof window === "undefined") {
+        return activeIndicatorIndex
+      }
+
+      const shouldAnimateFromStoredIndex =
+        window.sessionStorage.getItem(activeIndicatorPendingStorageKey) === "true"
+      const storedIndex = Number(
+        window.sessionStorage.getItem(activeIndicatorStorageKey)
+      )
+
+      return shouldAnimateFromStoredIndex &&
+        Number.isInteger(storedIndex) &&
+        storedIndex >= 0 &&
+        storedIndex <= 4
+        ? storedIndex
+        : activeIndicatorIndex
+    })
   const isMounted = React.useSyncExternalStore(
     subscribeToClientMount,
     () => true,
@@ -224,6 +245,19 @@ export function MobileTabBar() {
       isMounted = false
     }
   }, [])
+
+  React.useEffect(() => {
+    const animationFrameId = window.requestAnimationFrame(() => {
+      setDisplayedActiveIndicatorIndex(activeIndicatorIndex)
+      window.sessionStorage.setItem(
+        activeIndicatorStorageKey,
+        String(activeIndicatorIndex)
+      )
+      window.sessionStorage.removeItem(activeIndicatorPendingStorageKey)
+    })
+
+    return () => window.cancelAnimationFrame(animationFrameId)
+  }, [activeIndicatorIndex])
 
   function handleMoreOpenChange(open: boolean) {
     setIsMoreOpen(open)
@@ -266,6 +300,14 @@ export function MobileTabBar() {
     }
   }
 
+  function prepareActiveIndicatorTransition() {
+    window.sessionStorage.setItem(
+      activeIndicatorStorageKey,
+      String(displayedActiveIndicatorIndex)
+    )
+    window.sessionStorage.setItem(activeIndicatorPendingStorageKey, "true")
+  }
+
   if (!portalTarget) {
     return null
   }
@@ -276,15 +318,18 @@ export function MobileTabBar() {
       style={{ bottom: "1rem" }}
       aria-label="Mobile app navigation"
     >
-      <div className="pointer-events-auto relative w-full max-w-[26rem] overflow-hidden rounded-full border border-white/50 bg-background/65 px-4 py-1.5 shadow-[0_14px_40px_rgba(15,23,42,0.14),inset_0_1px_0_rgba(255,255,255,0.8),inset_0_-1px_0_rgba(15,23,42,0.05)] backdrop-blur-2xl supports-backdrop-filter:bg-background/50">
+      <div className="pointer-events-auto relative w-full max-w-[28rem] overflow-hidden rounded-full border border-white/50 bg-background/65 px-1.5 py-2 shadow-[0_14px_40px_rgba(15,23,42,0.14),inset_0_1px_0_rgba(255,255,255,0.8),inset_0_-1px_0_rgba(15,23,42,0.05)] backdrop-blur-2xl supports-backdrop-filter:bg-background/50">
         <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.5),rgba(255,255,255,0.08)_42%,rgba(15,23,42,0.04))]" />
         <div className="relative z-10 grid grid-cols-5 items-center">
           <span
             className={cn(
-              "pointer-events-none absolute top-1/2 z-0 h-10 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full bg-muted/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_6px_18px_rgba(15,23,42,0.08)] transition-[left,background-color] duration-300 ease-out",
-              isActiveIndicatorPressed && "bg-muted-foreground/20"
+              "pointer-events-none absolute top-1/2 z-0 h-12 w-[calc(20%-0.25rem)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[color-mix(in_oklch,var(--muted),var(--foreground)_12%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.65),0_6px_18px_rgba(15,23,42,0.08)] transition-[left,background-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[left]",
+              isActiveIndicatorPressed &&
+                "bg-[color-mix(in_oklch,var(--muted),var(--foreground)_18%)]"
             )}
-            style={{ left: `calc(${activeIndicatorIndex * 20 + 10}%)` }}
+            style={{
+              left: `calc(${displayedActiveIndicatorIndex * 20 + 10}%)`,
+            }}
             aria-hidden="true"
           />
         {dockItems.map((item) => {
@@ -297,6 +342,7 @@ export function MobileTabBar() {
               href={item.href}
               aria-current={isActive ? "page" : undefined}
               title={item.label}
+              onClick={prepareActiveIndicatorTransition}
               onPointerEnter={() => {
                 if (isActive) {
                   setIsActiveIndicatorPressed(true)
@@ -310,12 +356,12 @@ export function MobileTabBar() {
               }}
               onPointerUp={() => setIsActiveIndicatorPressed(false)}
               className={cn(
-                "relative z-10 mx-auto grid size-11 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted/70 active:bg-muted-foreground/20 active:text-muted-foreground",
+                "relative z-10 mx-auto grid h-12 w-[calc(100%-0.25rem)] place-items-center rounded-full text-muted-foreground transition-colors hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_8%)] active:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_14%)] active:text-muted-foreground",
                 isActive &&
                   "bg-transparent text-foreground hover:bg-transparent active:bg-transparent active:text-foreground"
               )}
             >
-              <Icon className="size-5.5 shrink-0" />
+              <Icon className="size-6 shrink-0" />
               <span className="sr-only">{item.label}</span>
             </AppLink>
           )
@@ -324,7 +370,7 @@ export function MobileTabBar() {
         <Sheet open={isMoreOpen} onOpenChange={handleMoreOpenChange}>
           <SheetTrigger
             className={cn(
-              "relative z-10 mx-auto grid size-11 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted/70 active:bg-muted-foreground/20 active:text-muted-foreground",
+              "relative z-10 mx-auto grid h-12 w-[calc(100%-0.25rem)] place-items-center rounded-full text-muted-foreground transition-colors hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_8%)] active:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_14%)] active:text-muted-foreground",
               isMoreActive &&
                 "bg-transparent text-foreground hover:bg-transparent active:bg-transparent active:text-foreground"
             )}
@@ -343,7 +389,7 @@ export function MobileTabBar() {
             aria-label="Open more navigation"
             title="More"
           >
-            <MenuIcon className="size-5.5 shrink-0" />
+            <MenuIcon className="size-6 shrink-0" />
             <span className="sr-only">More</span>
           </SheetTrigger>
           <SheetContent
@@ -445,7 +491,12 @@ export function MobileTabBar() {
                     <React.Fragment key={item.href}>
                       {index > 0 ? <Separator /> : null}
                       <SheetClose
-                        render={<AppLink href={item.href} />}
+                        render={
+                          <AppLink
+                            href={item.href}
+                            onClick={prepareActiveIndicatorTransition}
+                          />
+                        }
                       >
                         <span
                           className={cn(

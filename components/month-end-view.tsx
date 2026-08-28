@@ -1026,7 +1026,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                     onClick={() => startEditNote(row.id)}
                                     aria-label={`Edit notes for ${row.name}`}
                                   >
-                                    {rowNote || "Add note"}
+                                    {rowNote}
                                   </button>
                                 )}
                               </div>

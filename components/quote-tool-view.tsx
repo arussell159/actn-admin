@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
-  CardHeader,
 } from "@/components/ui/card"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -112,10 +111,12 @@ function getCountries(items: QuoteCatalogItem[]) {
 }
 
 function CountrySearchField({
+  autoOpenOnDesktop = false,
   countries,
   value,
   onChange,
 }: {
+  autoOpenOnDesktop?: boolean
   countries: string[]
   value: string
   onChange: (value: string) => void
@@ -123,6 +124,7 @@ function CountrySearchField({
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState("")
   const [activeIndex, setActiveIndex] = React.useState(0)
+  const searchInputRef = React.useRef<HTMLInputElement | null>(null)
   const filteredCountries = countries.filter((country) =>
     country.toLowerCase().includes(query.trim().toLowerCase())
   )
@@ -132,6 +134,30 @@ function CountrySearchField({
     setOpen(false)
     setQuery("")
   }
+
+  React.useEffect(() => {
+    if (!autoOpenOnDesktop) {
+      return
+    }
+
+    const mql = window.matchMedia("(min-width: 768px)")
+
+    if (mql.matches) {
+      setOpen(true)
+    }
+  }, [autoOpenOnDesktop])
+
+  React.useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    const animationFrameId = window.requestAnimationFrame(() => {
+      searchInputRef.current?.focus()
+    })
+
+    return () => window.cancelAnimationFrame(animationFrameId)
+  }, [open])
 
   return (
     <Popover
@@ -159,6 +185,7 @@ function CountrySearchField({
         <div className="relative">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
+            ref={searchInputRef}
             value={query}
             onChange={(event) => {
               setQuery(event.target.value)
@@ -334,6 +361,7 @@ export function QuoteToolView() {
   }
 
   function resetQuote() {
+    setCountryName("")
     setZone(defaultZone)
     setSortingField("Container")
     setQuantities({})
@@ -353,17 +381,12 @@ export function QuoteToolView() {
         <SiteHeader title="Quote Tool" />
         <main className="flex flex-1 flex-col gap-4 p-4 lg:p-6">
           <Card className="rounded-lg shadow-sm">
-            <CardHeader className="items-end pb-2">
-              <Button variant="outline" onClick={resetQuote}>
-                <RotateCcwIcon />
-                Reset
-              </Button>
-            </CardHeader>
             <CardContent>
               <FieldGroup className="grid gap-4 md:grid-cols-3">
                 <Field>
                   <FieldLabel>Country</FieldLabel>
                   <CountrySearchField
+                    autoOpenOnDesktop
                     countries={countries}
                     value={countryName}
                     onChange={(value) => {
@@ -425,6 +448,17 @@ export function QuoteToolView() {
                   </Select>
                 </Field>
               </FieldGroup>
+              <div className="mt-3 flex justify-end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={resetQuote}
+                >
+                  <RotateCcwIcon />
+                  Reset
+                </Button>
+              </div>
               <div className="mt-6 grid gap-3 md:hidden">
                 {filteredItems.map((item) => {
                   const quantity =

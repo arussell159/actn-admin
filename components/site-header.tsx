@@ -19,11 +19,12 @@ import { CircleUserRoundIcon, LogOutIcon } from "lucide-react"
 function MobileProfileMenu() {
   const router = useRouter()
 
-  async function signOut() {
+  function signOut() {
     const supabase = createClient()
-    await supabase.auth.signOut()
     router.replace("/login")
-    router.refresh()
+    void supabase.auth.signOut().finally(() => {
+      router.refresh()
+    })
   }
 
   return (

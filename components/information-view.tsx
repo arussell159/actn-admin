@@ -265,7 +265,7 @@ function NoteTree({
   }
 
   return (
-    <div className={level === 0 ? "grid gap-1" : "grid gap-1"}>
+    <div className="grid gap-2 lg:gap-1">
       {children.map((node) => {
         const Icon = node.type === "folder" ? FolderIcon : FileTextIcon
         const isFolder = node.type === "folder"
@@ -275,8 +275,9 @@ function NoteTree({
           <div key={node.id}>
             <div
               className={cn(
-                "group flex items-center gap-1 rounded-xl pr-1 transition-colors hover:bg-muted/70",
-                activeId === node.id && "bg-muted"
+                "group flex min-h-12 items-center gap-2 rounded-lg px-1.5 py-1 transition-colors hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)] lg:min-h-0 lg:gap-1 lg:rounded-xl lg:py-0 lg:pl-0 lg:pr-1 lg:hover:bg-muted/70",
+                activeId === node.id &&
+                  "bg-[color-mix(in_oklch,var(--muted),var(--foreground)_10%)] lg:bg-muted"
               )}
               style={{ marginLeft: `${level * 1.25}rem` }}
               draggable
@@ -303,7 +304,7 @@ function NoteTree({
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  className="shrink-0 hover:bg-transparent"
+                  className="size-9 shrink-0 hover:bg-transparent lg:size-7"
                   aria-label={
                     isCollapsed ? `Expand ${node.title}` : `Collapse ${node.title}`
                   }
@@ -315,11 +316,11 @@ function NoteTree({
                   {isCollapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
                 </Button>
               ) : (
-                <span className="size-7 shrink-0" aria-hidden="true" />
+                <span className="size-9 shrink-0 lg:size-7" aria-hidden="true" />
               )}
               <Button
                 variant="ghost"
-                className="min-w-0 flex-1 justify-start hover:bg-transparent"
+                className="h-10 min-w-0 flex-1 justify-start px-2 text-[15px] hover:bg-transparent lg:h-8 lg:px-3 lg:text-sm"
                 onClick={() => onSelect(node.id)}
               >
                 <Icon />
@@ -352,14 +353,14 @@ function NoteTree({
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      className="opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
+                      className="size-9 opacity-100 transition-opacity lg:size-7 lg:opacity-0 lg:group-focus-within:opacity-100 lg:group-hover:opacity-100"
                       aria-label={`Actions for ${node.title}`}
                     />
                   }
                 >
                   <MoreHorizontalIcon />
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-44">
+                <DropdownMenuContent align="end" className="min-w-52 lg:min-w-44">
                   {node.type === "folder" ? (
                     <>
                       <DropdownMenuItem
@@ -382,7 +383,7 @@ function NoteTree({
                   </DropdownMenuItem>
                   <DropdownMenuSub>
                     <DropdownMenuSubTrigger>Move to</DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent className="min-w-44">
+                    <DropdownMenuSubContent className="min-w-52 lg:min-w-44">
                       <DropdownMenuItem onClick={() => onMove(node.id)}>
                         Notebook
                       </DropdownMenuItem>
@@ -832,13 +833,13 @@ export function InformationView() {
                         ref={mobileNoteSelectorRef}
                         className="group min-w-0 flex-1"
                       >
-                        <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 rounded-lg border bg-background px-3 text-sm font-medium marker:hidden">
+                        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg border bg-background px-4 text-base font-medium marker:hidden">
                           <span className="min-w-0 truncate">
                             {activeNode?.title ?? "Notebook"}
                           </span>
                           <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
                         </summary>
-                        <div className="mt-2 max-h-[45svh] overflow-auto rounded-lg border bg-background p-3 shadow-sm">
+                        <div className="mt-3 max-h-[52svh] overflow-auto rounded-lg border bg-background p-4 shadow-md">
                           <Input
                             value={noteSearch}
                             onChange={(event) =>
@@ -871,6 +872,7 @@ export function InformationView() {
                           render={
                             <Button
                               size="icon-sm"
+                              className="size-10"
                               aria-label="Create note or folder"
                             />
                           }
@@ -902,7 +904,7 @@ export function InformationView() {
                       />
                     </div>
                   ) : activeNode?.type === "folder" ? (
-                    <div className="px-3 pb-3 sm:px-0 sm:pb-0">
+                    <div className="px-3 pt-3 pb-3 sm:px-0 sm:pt-0 sm:pb-0">
                       <FolderDashboard
                         folder={activeNode}
                         nodes={nodes}
