@@ -13,6 +13,7 @@ import {
   FileTextIcon,
   MoreHorizontalIcon,
   Trash2Icon,
+  UploadIcon,
   XIcon,
 } from "lucide-react"
 
@@ -57,7 +58,12 @@ import {
 } from "@/lib/month-end-db"
 import {
   getCanonicalCountryId,
+  getMasterTransactionDateCheckedValues,
   getLinkedCountryIds,
+  masterTransactionDatesKey,
+  parseCountryMasterCsv,
+  saveMonthEndMasterRecords,
+  type MonthEndMasterRecord,
 } from "@/lib/month-end-master-records"
 import {
   getMonthEndTemplate,
@@ -86,6 +92,10 @@ function taskKey(scope: string, taskId: string) {
 
 function noteKey(rowId: string) {
   return `${rowId}__note`
+}
+
+function masterSourceFileNameKey(rowId: string) {
+  return `${rowId}__master_source_file`
 }
 
 function countryRecordHref(period: string, countryId: string) {
@@ -263,7 +273,11 @@ export function MonthEndView({ period }: { period?: string } = {}) {
   const [editingExchangeRateRowId, setEditingExchangeRateRowId] =
     React.useState<string | null>(null)
   const [exchangeRateDraft, setExchangeRateDraft] = React.useState("")
+  const [masterUploadMessage, setMasterUploadMessage] = React.useState("")
+  const [isUploadingMasterSheet, setIsUploadingMasterSheet] =
+    React.useState(false)
   const [hasLoaded, setHasLoaded] = React.useState(false)
+  const masterUploadInputRef = React.useRef<HTMLInputElement>(null)
 
   React.useEffect(() => {
     let isMounted = true
@@ -602,6 +616,81 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     URL.revokeObjectURL(url)
   }
 
+  function openMasterSheetUpload() {
+    window.setTimeout(() => masterUploadInputRef.current?.click(), 0)
+  }
+
+  async function reuploadMasterSheet(file: File) {
+    const activeRecord = recordRef.current
+
+    if (!activeRecord) {
+      return
+    }
+
+    setIsUploadingMasterSheet(true)
+    setMasterUploadMessage("")
+
+    try {
+      const activeTemplate = await getMonthEndTemplate()
+      const targetCountries = activeTemplate.countries.filter(
+        (country) => country.checkable !== false
+      )
+      const csvText = await file.text()
+      const masterRecords = await parseCountryMasterCsv({
+        csvText,
+        monthEndId: activeRecord.id,
+        period: activeRecord.period,
+        targetCountries,
+      })
+
+      await saveMonthEndMasterRecords(activeRecord.id, masterRecords)
+
+      const nextChecked = { ...checked }
+      const countryIdsWithMasterRecords = new Set(
+        masterRecords.map((masterRecord) => masterRecord.countryId)
+      )
+
+      for (const country of targetCountries) {
+        delete nextChecked[masterTransactionDatesKey(country.id)]
+        delete nextChecked[masterSourceFileNameKey(country.id)]
+      }
+
+      for (const countryId of countryIdsWithMasterRecords) {
+        nextChecked[masterSourceFileNameKey(countryId)] = file.name
+      }
+
+      Object.assign(
+        nextChecked,
+        getMasterTransactionDateCheckedValues(masterRecords)
+      )
+
+      const updatedRecord: MonthEndRecord = {
+        ...activeRecord,
+        checked: nextChecked,
+        updatedAt: new Date().toISOString(),
+      }
+
+      await saveMonthEndRecord(updatedRecord)
+      recordRef.current = updatedRecord
+      setRecord(updatedRecord)
+      setChecked(nextChecked)
+      setMasterUploadMessage(
+        `Master sheet reuploaded with ${masterRecords.length} NetSuite record${
+          masterRecords.length === 1 ? "" : "s"
+        }.`
+      )
+      window.dispatchEvent(new Event("month-end:records-updated"))
+    } catch (error) {
+      setMasterUploadMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not reupload the master sheet."
+      )
+    } finally {
+      setIsUploadingMasterSheet(false)
+    }
+  }
+
   function updateRowTasks(
     row: TemplateCountryRow,
     rowIndex: number,
@@ -655,6 +744,13 @@ export function MonthEndView({ period }: { period?: string } = {}) {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-56">
           <DropdownMenuItem
+            disabled={!record || isUploadingMasterSheet}
+            onClick={openMasterSheetUpload}
+          >
+            <UploadIcon />
+            Reupload Master Sheet
+          </DropdownMenuItem>
+          <DropdownMenuItem
             disabled={!approvedRollInternalIds.length}
             onClick={downloadRollInvoicesCsv}
           >
@@ -663,6 +759,21 @@ export function MonthEndView({ period }: { period?: string } = {}) {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <input
+        ref={masterUploadInputRef}
+        type="file"
+        accept=".csv,text/csv"
+        className="sr-only"
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+
+          if (file) {
+            reuploadMasterSheet(file)
+          }
+
+          event.currentTarget.value = ""
+        }}
+      />
     </div>
   )
 
@@ -737,6 +848,12 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                 <span className="hidden md:block" aria-hidden="true" />
               )}
             </section>
+
+            {masterUploadMessage ? (
+              <p className="text-sm text-muted-foreground">
+                {masterUploadMessage}
+              </p>
+            ) : null}
 
             <section className="rounded-lg border bg-background p-3 md:hidden">
               <div className="grid grid-cols-3 divide-x">

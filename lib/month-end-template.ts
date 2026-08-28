@@ -63,6 +63,7 @@ export const defaultTemplate: MonthEndTemplate = {
   },
   countries: [
     { id: "angola", name: "Angola", indent: 0, invoiceRequired: true },
+    { id: "angola-oot", name: "Angola OOT", indent: 1, invoiceRequired: true },
     {
       id: "antaser",
       name: "Antaser",

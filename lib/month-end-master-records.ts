@@ -142,10 +142,48 @@ function toRow(record: MonthEndMasterRecord): MonthEndMasterRecordRow {
     ctn_number: record.ctnNumber,
     status: record.status,
     amount: record.amount,
+    transaction_date: record.transactionDate ?? "",
     source_class: record.sourceClass,
     source_internal_id: record.sourceInternalId,
     source_row_index: record.sourceRowIndex,
   }
+}
+
+function withoutTransactionDate(row: MonthEndMasterRecordRow) {
+  const { transaction_date: _transactionDate, ...rest } = row
+
+  return rest
+}
+
+function isMissingTransactionDateColumnError(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "42703" &&
+    "message" in error &&
+    typeof error.message === "string" &&
+    error.message.includes("transaction_date")
+  )
+}
+
+async function upsertMasterRows(
+  supabase: ReturnType<typeof getSupabaseClient>,
+  rows: MonthEndMasterRecordRow[]
+) {
+  const { error } = await supabase
+    .from(tableName)
+    .upsert(rows, { onConflict: "id" })
+
+  if (!isMissingTransactionDateColumnError(error)) {
+    return error
+  }
+
+  const { error: retryError } = await supabase
+    .from(tableName)
+    .upsert(rows.map(withoutTransactionDate), { onConflict: "id" })
+
+  return retryError
 }
 
 function getLocalRecords() {
@@ -201,6 +239,14 @@ function countryRows(countries: TemplateCountryRow[]) {
 }
 
 const groupedCountryRoutes: Record<string, string[]> = {
+  africactnootprocessingfeeangola: ["angola-oot"],
+  angolaoot: ["angola-oot"],
+  democraticrepublicofcongo: ["frabemar-dr-congo"],
+  drcongo: ["frabemar-dr-congo"],
+  drc: ["frabemar-dr-congo"],
+  congodemocraticrepublic: ["frabemar-dr-congo"],
+  republicofcongo: ["republic-of-congo"],
+  congobrazzaville: ["republic-of-congo"],
   centralafricanrepublic: ["antaser", "antaser-oot"],
   guineabissau: ["antaser", "antaser-oot"],
   niger: ["antaser", "antaser-oot"],
@@ -518,9 +564,7 @@ export async function saveMonthEndMasterRecords(
     }
 
     if (records.length) {
-      const { error } = await supabase
-        .from(tableName)
-        .upsert(records.map(toRow), { onConflict: "id" })
+      const error = await upsertMasterRows(supabase, records.map(toRow))
 
       if (error) {
         throw error
@@ -576,9 +620,7 @@ export async function replaceMonthEndCountryMasterRecords({
     }
 
     if (records.length) {
-      const { error } = await supabase
-        .from(tableName)
-        .upsert(records.map(toRow), { onConflict: "id" })
+      const error = await upsertMasterRows(supabase, records.map(toRow))
 
       if (error) {
         throw error
@@ -604,6 +646,70 @@ export async function replaceMonthEndCountryMasterRecords({
     if (isLocalhostBrowser() && !hasSupabaseConfig()) {
       upsertLocalCountryMasterRecords(monthEndId, countryIds, records)
       return
+    }
+
+    throw error
+  }
+}
+
+export async function moveMonthEndMasterRecordsToCountry({
+  monthEndId,
+  recordIds,
+  countryId,
+  countryName,
+}: {
+  monthEndId: string
+  recordIds: string[]
+  countryId: string
+  countryName: string
+}) {
+  const uniqueRecordIds = Array.from(new Set(recordIds))
+
+  if (!uniqueRecordIds.length) {
+    return []
+  }
+
+  try {
+    const supabase = getSupabaseClient()
+    const { data, error } = await supabase
+      .from(tableName)
+      .update({
+        country_id: countryId,
+        country_name: countryName,
+        source_class: countryName,
+      })
+      .eq("month_end_id", monthEndId)
+      .in("id", uniqueRecordIds)
+      .select("*")
+
+    if (error) {
+      throw error
+    }
+
+    return (data ?? []).map((row) => toRecord(row as MonthEndMasterRecordRow))
+  } catch (error) {
+    if (isLocalhostBrowser() && !hasSupabaseConfig()) {
+      const records = getLocalRecords()
+      const recordIdSet = new Set(uniqueRecordIds)
+      const movedRecords: MonthEndMasterRecord[] = []
+      const nextRecords = records.map((record) => {
+        if (record.monthEndId !== monthEndId || !recordIdSet.has(record.id)) {
+          return record
+        }
+
+        const movedRecord = {
+          ...record,
+          countryId,
+          countryName,
+          sourceClass: countryName,
+        }
+
+        movedRecords.push(movedRecord)
+        return movedRecord
+      })
+
+      saveLocalRecords(nextRecords)
+      return movedRecords
     }
 
     throw error

@@ -27,6 +27,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
@@ -54,6 +55,7 @@ import {
   getMasterTransactionDateCheckedValues,
   listMonthEndMasterRecords,
   masterTransactionDatesKey,
+  moveMonthEndMasterRecordsToCountry,
   parseCountryMasterCsv,
   replaceMonthEndCountryMasterRecords,
   type MonthEndMasterRecord,
@@ -81,6 +83,9 @@ import {
   rollApprovalKey,
   serializeApprovedInternalIds,
 } from "@/lib/month-end-roll-invoices"
+
+const ANGOLA_OOT_COUNTRY_ID = "angola-oot"
+const ANGOLA_OOT_COUNTRY_NAME = "Angola OOT"
 
 function formatAmount(amount: number) {
   return new Intl.NumberFormat("en-US", {
@@ -399,28 +404,33 @@ function ReconciliationWorkbench({
   matchedRecords,
   missingCountryRecordIds,
   missingMasterRecordIds,
+  rolledInternalIds,
   showCountryColumn,
   onUploadMaster,
   onUploadCountry,
   onDeleteMaster,
   onDeleteCountry,
+  countryId,
   countryName,
   countryRecordCount,
   masterRecordCount,
   matchedCountryCount,
   matchedMasterCount,
   onRollInvoices,
+  onMoveInvoicesToOot,
 }: {
   countryRecords: MonthEndCountryReportRecord[]
   masterRecords: MonthEndMasterRecord[]
   matchedRecords: ReturnType<typeof reconcileRecords>["matched"]
   missingCountryRecordIds: Set<string>
   missingMasterRecordIds: Set<string>
+  rolledInternalIds: string[]
   showCountryColumn: boolean
   onUploadMaster: () => void
   onUploadCountry: () => void
   onDeleteMaster: () => void
   onDeleteCountry: () => void
+  countryId?: string
   countryName: string
   countryRecordCount: number
   masterRecordCount: number
@@ -429,14 +439,23 @@ function ReconciliationWorkbench({
   onRollInvoices: (
     records: MonthEndMasterRecord[]
   ) => Promise<{ savedCount: number; excludedCount: number }>
+  onMoveInvoicesToOot?: (
+    records: MonthEndMasterRecord[]
+  ) => Promise<{ movedCount: number }>
 }) {
   const [selectedMasterRecordIds, setSelectedMasterRecordIds] = React.useState(
     () => new Set<string>()
   )
   const [isRollingInvoices, setIsRollingInvoices] = React.useState(false)
+  const [isMovingInvoicesToOot, setIsMovingInvoicesToOot] =
+    React.useState(false)
   const [rollInvoiceMessage, setRollInvoiceMessage] = React.useState("")
+  const [hiddenMasterRecordIds, setHiddenMasterRecordIds] = React.useState(
+    () => new Set<string>()
+  )
   const visibleCountryIds = new Set(countryRecords.map((record) => record.id))
   const visibleMasterIds = new Set(masterRecords.map((record) => record.id))
+  const rolledInternalIdSet = new Set(rolledInternalIds)
   const countryRows = countryRecords
     .filter((record) => missingCountryRecordIds.has(record.id))
     .map((record) => ({
@@ -448,7 +467,13 @@ function ReconciliationWorkbench({
       )
     })
   const masterRows = masterRecords
-    .filter((record) => missingMasterRecordIds.has(record.id))
+    .filter(
+      (record) =>
+        missingMasterRecordIds.has(record.id) &&
+        !hiddenMasterRecordIds.has(record.id) &&
+        (!record.sourceInternalId ||
+          !rolledInternalIdSet.has(record.sourceInternalId))
+    )
     .map((record) => ({
       record,
     }))
@@ -488,6 +513,7 @@ function ReconciliationWorkbench({
     (ctnMatchCount === billOfLadingMatchCount &&
       countryCtnCount > countryBillOfLadingCount)
   const masterReferenceLabel = showCtnReference ? "CTN" : "Bill of Lading"
+  const showAngolaNetSuiteReferences = countryId === "angola"
   const countryTotal = countryRows.reduce(
     (sum, { record }) => sum + record.amount,
     0
@@ -534,8 +560,20 @@ function ReconciliationWorkbench({
   }
 
   async function rollSelectedInvoices() {
+    const rollingRecordIds = selectedMasterRecords.map((record) => record.id)
+
     setIsRollingInvoices(true)
     setRollInvoiceMessage("")
+    setHiddenMasterRecordIds((current) => {
+      const next = new Set(current)
+
+      for (const recordId of rollingRecordIds) {
+        next.add(recordId)
+      }
+
+      return next
+    })
+    setSelectedMasterRecordIds(new Set())
 
     try {
       const result = await onRollInvoices(selectedMasterRecords)
@@ -545,11 +583,65 @@ function ReconciliationWorkbench({
         : ""
 
       setRollInvoiceMessage(`${savedLabel}.${excludedLabel}`)
-      setSelectedMasterRecordIds(new Set())
-    } catch {
+    } catch (error) {
+      setHiddenMasterRecordIds((current) => {
+        const next = new Set(current)
+
+        for (const recordId of rollingRecordIds) {
+          next.delete(recordId)
+        }
+
+        return next
+      })
       setRollInvoiceMessage("Could not save the selected invoice IDs.")
     } finally {
       setIsRollingInvoices(false)
+    }
+  }
+
+  async function moveSelectedInvoicesToOot() {
+    if (!onMoveInvoicesToOot || !selectedMasterRecords.length) {
+      return
+    }
+
+    const movingRecordIds = selectedMasterRecords.map((record) => record.id)
+
+    setIsMovingInvoicesToOot(true)
+    setRollInvoiceMessage("")
+    setHiddenMasterRecordIds((current) => {
+      const next = new Set(current)
+
+      for (const recordId of movingRecordIds) {
+        next.add(recordId)
+      }
+
+      return next
+    })
+    setSelectedMasterRecordIds(new Set())
+
+    try {
+      const result = await onMoveInvoicesToOot(selectedMasterRecords)
+      setRollInvoiceMessage(
+        `${result.movedCount} invoice${result.movedCount === 1 ? "" : "s"} moved to ${ANGOLA_OOT_COUNTRY_NAME}.`
+      )
+    } catch (error) {
+      setHiddenMasterRecordIds((current) => {
+        const next = new Set(current)
+
+        for (const recordId of movingRecordIds) {
+          next.delete(recordId)
+        }
+
+        return next
+      })
+      setRollInvoiceMessage(
+        getUploadErrorMessage(
+          error,
+          `Could not move the selected invoices to ${ANGOLA_OOT_COUNTRY_NAME}.`
+        )
+      )
+    } finally {
+      setIsMovingInvoicesToOot(false)
     }
   }
 
@@ -654,18 +746,40 @@ function ReconciliationWorkbench({
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold tracking-normal">NetSuite</h2>
             <div className="flex items-center gap-2">
-              {selectedMasterRecords.length ? (
+              {showAngolaNetSuiteReferences &&
+              selectedMasterRecords.length &&
+              onMoveInvoicesToOot ? (
                 <Button
                   type="button"
+                  variant="outline"
                   size="sm"
                   className="h-8 rounded-full"
-                  disabled={isRollingInvoices}
-                  onClick={rollSelectedInvoices}
+                  disabled={isRollingInvoices || isMovingInvoicesToOot}
+                  onClick={moveSelectedInvoicesToOot}
                 >
-                  <FileOutputIcon />
-                  Roll Invoices ({selectedMasterRecords.length})
+                  <ArrowRightIcon />
+                  Move to OOT
                 </Button>
               ) : null}
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 rounded-full"
+                disabled={isRollingInvoices || isMovingInvoicesToOot}
+                onClick={rollSelectedInvoices}
+              >
+                {selectedMasterRecords.length ? (
+                  <>
+                    <FileOutputIcon />
+                    Roll Invoices ({selectedMasterRecords.length})
+                  </>
+                ) : (
+                  <>
+                    <ArrowRightIcon />
+                    Proceed
+                  </>
+                )}
+              </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
@@ -714,8 +828,17 @@ function ReconciliationWorkbench({
                       />
                     </TableHead>
                     <TableHead className="w-24">Date</TableHead>
-                    <TableHead>Sales Order</TableHead>
-                    <TableHead>{masterReferenceLabel}</TableHead>
+                    {showAngolaNetSuiteReferences ? (
+                      <>
+                        <TableHead>Bill of Lading</TableHead>
+                        <TableHead>CTN</TableHead>
+                      </>
+                    ) : (
+                      <>
+                        <TableHead>Sales Order</TableHead>
+                        <TableHead>{masterReferenceLabel}</TableHead>
+                      </>
+                    )}
                     <TableHead className="w-[18%]">Status</TableHead>
                     <TableHead className="w-24 text-right">Amount</TableHead>
                   </TableRow>
@@ -736,14 +859,27 @@ function ReconciliationWorkbench({
                         <TableCell className="break-words tabular-nums">
                           {formatTransactionDate(record.transactionDate)}
                         </TableCell>
-                        <TableCell className="font-medium break-words">
-                          {record.salesOrderNumber || "-"}
-                        </TableCell>
-                        <TableCell className="break-words">
-                          {(showCtnReference
-                            ? record.ctnNumber
-                            : record.billOfLadingNumber) || "-"}
-                        </TableCell>
+                        {showAngolaNetSuiteReferences ? (
+                          <>
+                            <TableCell className="break-words">
+                              {record.billOfLadingNumber || "-"}
+                            </TableCell>
+                            <TableCell className="break-words">
+                              {record.ctnNumber || "-"}
+                            </TableCell>
+                          </>
+                        ) : (
+                          <>
+                            <TableCell className="font-medium break-words">
+                              {record.salesOrderNumber || "-"}
+                            </TableCell>
+                            <TableCell className="break-words">
+                              {(showCtnReference
+                                ? record.ctnNumber
+                                : record.billOfLadingNumber) || "-"}
+                            </TableCell>
+                          </>
+                        )}
                         <TableCell className="break-words">
                           {record.status || "-"}
                         </TableCell>
@@ -1857,6 +1993,7 @@ export function MonthEndCountryReconciliationView({
     [reconciliation.missingFromCountry]
   )
   const hasCountryReport = countryReportRecords.length > 0
+  const hasMasterRecords = records.length > 0
 
   function openMasterFilePicker() {
     window.setTimeout(() => masterInputRef.current?.click(), 0)
@@ -2011,6 +2148,125 @@ export function MonthEndCountryReconciliationView({
       savedCount: newInternalIds.length,
       excludedCount,
     }
+  }
+
+  async function moveInvoicesToAngolaOot(
+    selectedRecords: MonthEndMasterRecord[]
+  ) {
+    if (!record || activeCountryId !== "angola") {
+      return { movedCount: 0 }
+    }
+
+    const latestRecord = (await getMonthEndRecord(record.period)) ?? record
+    const selectedRecordIds = new Set(selectedRecords.map((item) => item.id))
+    const existingAngolaDates = parseMasterTransactionDates(
+      latestRecord.checked[masterTransactionDatesKey(activeCountryId)]
+    )
+    const existingOotDates = parseMasterTransactionDates(
+      latestRecord.checked[masterTransactionDatesKey(ANGOLA_OOT_COUNTRY_ID)]
+    )
+    const selectedDateByRecordId = new Map(
+      selectedRecords
+        .map((item) => [
+          item.id,
+          item.transactionDate ||
+            existingAngolaDates.get(item.id) ||
+            existingOotDates.get(item.id) ||
+            "",
+        ])
+        .filter((entry): entry is [string, string] => Boolean(entry[1]))
+    )
+    const movedRecords = await moveMonthEndMasterRecordsToCountry({
+      monthEndId: record.id,
+      recordIds: Array.from(selectedRecordIds),
+      countryId: ANGOLA_OOT_COUNTRY_ID,
+      countryName: ANGOLA_OOT_COUNTRY_NAME,
+    })
+
+    if (movedRecords.length !== selectedRecordIds.size) {
+      throw new Error(
+        `${movedRecords.length} of ${selectedRecordIds.size} selected invoices moved to ${ANGOLA_OOT_COUNTRY_NAME}.`
+      )
+    }
+
+    const [remainingAngolaRecords, nextOotRecords, nextMasterRecords] =
+      await Promise.all([
+        listMonthEndMasterRecords({
+          monthEndId: record.id,
+          countryId: activeCountryId,
+        }),
+        listMonthEndMasterRecords({
+          monthEndId: record.id,
+          countryId: ANGOLA_OOT_COUNTRY_ID,
+        }),
+        listMonthEndMasterRecords({
+          monthEndId: record.id,
+        }),
+      ])
+
+    const checked = { ...latestRecord.checked }
+    const nextAngolaDates = new Map(existingAngolaDates)
+    const nextOotDates = new Map(existingOotDates)
+
+    for (const recordId of selectedRecordIds) {
+      nextAngolaDates.delete(recordId)
+      const transactionDate = selectedDateByRecordId.get(recordId)
+
+      if (transactionDate) {
+        nextOotDates.set(recordId, transactionDate)
+      }
+    }
+
+    checked[masterTransactionDatesKey(activeCountryId)] = JSON.stringify(
+      Object.fromEntries(nextAngolaDates)
+    )
+    checked[masterTransactionDatesKey(ANGOLA_OOT_COUNTRY_ID)] = JSON.stringify(
+      Object.fromEntries(nextOotDates)
+    )
+    delete checked[journalEntrySnapshotKey(activeCountryId)]
+    delete checked[journalEntrySnapshotKey(ANGOLA_OOT_COUNTRY_ID)]
+    delete checked[monthEndTaskKey(ANGOLA_OOT_COUNTRY_ID, "reconcile")]
+    delete checked[monthEndTaskKey(ANGOLA_OOT_COUNTRY_ID, "journal")]
+
+    const updatedRecord = {
+      ...latestRecord,
+      checked,
+      updatedAt: new Date().toISOString(),
+    }
+
+    await saveMonthEndRecord(updatedRecord)
+    setRecord(updatedRecord)
+    setRecords(remainingAngolaRecords)
+    window.dispatchEvent(new Event("month-end:records-updated"))
+
+    return { movedCount: movedRecords.length }
+  }
+
+  async function reopenReconciliation() {
+    if (!record || !activeCountryId) {
+      return
+    }
+
+    const latestRecord = (await getMonthEndRecord(record.period)) ?? record
+    const checked = { ...latestRecord.checked }
+
+    for (const linkedCountryId of workflowCountryIds) {
+      delete checked[monthEndTaskKey(linkedCountryId, "reconcile")]
+      delete checked[monthEndTaskKey(linkedCountryId, "journal")]
+    }
+
+    delete checked[journalEntrySnapshotKey(activeCountryId)]
+
+    const updatedRecord = {
+      ...latestRecord,
+      checked,
+      updatedAt: new Date().toISOString(),
+    }
+
+    await saveMonthEndRecord(updatedRecord)
+    setRecord(updatedRecord)
+    window.dispatchEvent(new Event("month-end:records-updated"))
+    router.push(reconciliationReportHref)
   }
 
   async function makeJournalEntry() {
@@ -2674,6 +2930,18 @@ export function MonthEndCountryReconciliationView({
                         <FileOutputIcon />
                         Journal Entry
                       </DropdownMenuItem>
+                      {isReconciliationComplete ? (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onClick={reopenReconciliation}
+                          >
+                            <ListChecksIcon />
+                            Reopen Reconciliation
+                          </DropdownMenuItem>
+                        </>
+                      ) : null}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -2742,7 +3010,7 @@ export function MonthEndCountryReconciliationView({
 
               {!hasLoaded ? (
                 <div className="text-sm text-muted-foreground">Loading...</div>
-              ) : !hasCountryReport ? (
+              ) : !hasCountryReport && !hasMasterRecords ? (
                 <CountryReportUploadStep
                   countryReportLabel={countryReportLabel}
                   masterCount={records.length}
@@ -2753,18 +3021,20 @@ export function MonthEndCountryReconciliationView({
                   onPasteReport={() => setIsPasteReportOpen(true)}
                   onFiles={uploadCountryReports}
                 />
-              ) : hasCountryReport ? (
+              ) : hasCountryReport || hasMasterRecords ? (
                 <ReconciliationWorkbench
                   countryRecords={countryReportRecords}
                   masterRecords={sortedRecords}
                   matchedRecords={reconciliation.matched}
                   missingCountryRecordIds={missingCountryRecordIds}
                   missingMasterRecordIds={missingMasterRecordIds}
+                  rolledInternalIds={rolledInternalIds}
                   showCountryColumn={showCountryColumn}
                   onUploadMaster={openMasterFilePicker}
                   onUploadCountry={openCountryReportFilePicker}
                   onDeleteMaster={deleteMasterRecords}
                   onDeleteCountry={deleteCountryReportRecords}
+                  countryId={activeCountryId}
                   countryName={
                     countryDisplayName || country?.name || "Unknown country"
                   }
@@ -2775,6 +3045,11 @@ export function MonthEndCountryReconciliationView({
                   matchedCountryCount={reconciliationCounts.country}
                   matchedMasterCount={reconciliationCounts.master}
                   onRollInvoices={rollInvoices}
+                  onMoveInvoicesToOot={
+                    activeCountryId === "angola"
+                      ? moveInvoicesToAngolaOot
+                      : undefined
+                  }
                 />
               ) : (
                 <div className="rounded-lg border bg-background p-4 text-sm text-muted-foreground">

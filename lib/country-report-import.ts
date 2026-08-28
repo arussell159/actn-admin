@@ -438,6 +438,67 @@ function parseCertificateReportCsv(rows: string[][]) {
   return Array.from(grouped.values())
 }
 
+function isAngolaCtnExport(headers: string[]) {
+  return (
+    findExactCsvColumn(headers, ["visumreferencenumber"]) >= 0 &&
+    findExactCsvColumn(headers, ["ectnnumber"]) >= 0 &&
+    findExactCsvColumn(headers, ["blnumber"]) >= 0 &&
+    findExactCsvColumn(headers, ["visumdate"]) >= 0 &&
+    findExactCsvColumn(headers, ["dnnumber"]) >= 0 &&
+    findExactCsvColumn(headers, ["createdby"]) >= 0
+  )
+}
+
+function parseAngolaCtnExportCsv(
+  rows: string[][],
+  options: { period?: string } = {}
+) {
+  const reportRows = getRowsFromHeader(rows, isAngolaCtnExport)
+  const [headers, ...dataRows] = reportRows ?? []
+
+  if (!headers) {
+    return undefined
+  }
+
+  const ctnIndex = findExactCsvColumn(headers, ["visumreferencenumber"])
+  const billOfLadingIndex = findExactCsvColumn(headers, ["blnumber"])
+  const visumDateIndex = findExactCsvColumn(headers, ["visumdate"])
+  const grouped = new Map<string, ParsedCountryReportRecord>()
+
+  for (const row of dataRows) {
+    const ctnNumber = row[ctnIndex]?.trim() ?? ""
+    const billOfLadingNumber = row[billOfLadingIndex]?.trim() ?? ""
+    const visumDatePeriod = getDatePeriod(row[visumDateIndex])
+
+    if (
+      !ctnNumber ||
+      !billOfLadingNumber ||
+      (options.period && visumDatePeriod !== options.period)
+    ) {
+      continue
+    }
+
+    const key = [ctnNumber, billOfLadingNumber].join("__")
+    const existing = grouped.get(key)
+
+    grouped.set(key, {
+      invoiceNumber: "",
+      ctnNumber: mergeReportValues(existing?.ctnNumber ?? "", ctnNumber),
+      billOfLadingNumber: mergeReportValues(
+        existing?.billOfLadingNumber ?? "",
+        billOfLadingNumber
+      ),
+      reference: mergeReportValues(existing?.reference ?? "", ctnNumber),
+      amount: existing?.amount ?? 0,
+      sourceRowCount: (existing?.sourceRowCount ?? 0) + 1,
+      sourceCountryName: "Angola",
+      targetCountryId: "angola",
+    })
+  }
+
+  return Array.from(grouped.values())
+}
+
 function isRepublicOfCongoCtnExport(headers: string[]) {
   return (
     findExactCsvColumn(headers, ["visumreferencenumber"]) >= 0 &&
@@ -1155,6 +1216,12 @@ export function parseCountryReportCsv(
 
   if (certificateRecords) {
     return certificateRecords
+  }
+
+  const angolaRecords = parseAngolaCtnExportCsv(rawRows, options)
+
+  if (angolaRecords) {
+    return angolaRecords
   }
 
   const republicOfCongoRecords = parseRepublicOfCongoCtnExportCsv(
