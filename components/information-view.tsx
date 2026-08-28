@@ -215,7 +215,7 @@ function MobileFoldersScreen({
           <FolderPlusIcon />
         </Button>
       </div>
-      <h1 className="text-[24pt] font-bold tracking-tight text-foreground md:text-3xl">
+      <h1 className="text-[30pt] font-bold leading-tight tracking-tight text-foreground md:text-3xl">
         Folders
       </h1>
       <div className="mt-5 overflow-hidden rounded-2xl bg-background">
@@ -297,7 +297,7 @@ function MobileFolderNotesScreen({
           <FilePlus2Icon />
         </Button>
       </div>
-      <h1 className="text-[24pt] font-bold tracking-tight text-foreground md:text-3xl">
+      <h1 className="text-[30pt] font-bold leading-tight tracking-tight text-foreground md:text-3xl">
         {folder?.title ?? "Notes"}
       </h1>
       <p className="text-muted-foreground">{notes.length} Notes</p>
@@ -1073,7 +1073,12 @@ export function InformationView() {
     >
       <AppSidebar variant="inset" />
       <SidebarInset>
-        <main className="flex min-h-0 flex-1 flex-col bg-background md:min-h-[calc(100svh-1rem)]">
+        <main
+          className={cn(
+            "flex min-h-0 flex-1 flex-col md:min-h-[calc(100svh-1rem)] md:bg-background",
+            activeNode?.type === "note" ? "bg-background" : "bg-muted/60"
+          )}
+        >
           <div className="hidden md:block">
             <SiteHeader title="Notebook" titleContent={noteHeaderTitle} />
           </div>
@@ -1228,7 +1233,7 @@ export function InformationView() {
                               event.currentTarget.blur()
                             }
                           }}
-                          className="h-auto rounded-none border-0 bg-transparent px-0 py-1 text-[24pt] font-bold leading-tight tracking-tight shadow-none focus-visible:ring-0 md:text-3xl"
+                          className="h-auto rounded-none border-0 bg-transparent px-0 py-1 text-[30pt] font-bold leading-tight tracking-tight shadow-none focus-visible:ring-0 md:text-3xl"
                           aria-label="Note title"
                         />
                       </div>

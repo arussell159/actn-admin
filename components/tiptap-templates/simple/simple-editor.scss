@@ -104,23 +104,23 @@ body,
   }
 
   .simple-editor-content .tiptap.ProseMirror.simple-editor {
-    font-size: 18pt;
+    font-size: 20pt;
     line-height: 1.5;
     min-height: 100%;
-    padding: 1rem 1rem calc(5.5rem + env(safe-area-inset-bottom, 0px));
+    padding: 1rem 1rem calc(7rem + env(safe-area-inset-bottom, 0px));
   }
 
   .simple-editor-content .tiptap.ProseMirror.simple-editor h1,
   .simple-editor-content .tiptap.ProseMirror.simple-editor h2,
   .simple-editor-content .tiptap.ProseMirror.simple-editor h3 {
-    font-size: 24pt;
+    font-size: 30pt;
     line-height: 1.2;
   }
 
   .tiptap-toolbar.simple-editor-mobile-toolbar {
-    position: absolute;
+    position: fixed;
     right: 0.75rem;
-    bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    bottom: calc(var(--simple-mobile-keyboard-inset, 0px) + 0.5rem);
     left: 0.75rem;
     width: auto;
     min-height: 2.75rem;
@@ -131,6 +131,19 @@ body,
     box-shadow: 0 10px 30px rgb(15 23 42 / 12%);
     background: color-mix(in oklch, var(--background), white 65%);
     backdrop-filter: blur(18px);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(0.75rem);
+    transition:
+      opacity 180ms ease,
+      transform 180ms ease,
+      bottom 120ms ease;
+  }
+
+  .tiptap-toolbar.simple-editor-mobile-toolbar--visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
   }
 }
 
@@ -143,6 +156,6 @@ body,
   }
 
   .simple-editor-content .tiptap.ProseMirror.simple-editor {
-    padding: 1rem 1rem calc(5.5rem + env(safe-area-inset-bottom, 0px));
+    padding: 1rem 1rem calc(7rem + env(safe-area-inset-bottom, 0px));
   }
 }

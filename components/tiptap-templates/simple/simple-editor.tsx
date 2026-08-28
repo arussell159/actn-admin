@@ -1,6 +1,12 @@
 "use client"
 
-import { useCallback, useRef, useState } from "react"
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react"
 import type { Content } from "@tiptap/core"
 import { EditorContent, EditorContext, useEditor } from "@tiptap/react"
 
@@ -187,6 +193,8 @@ export function SimpleEditor({
 }) {
   const isMobile = useIsBreakpoint()
   const [isSearchAndReplaceOpen, setIsSearchAndReplaceOpen] = useState(false)
+  const [hasEditorFocus, setHasEditorFocus] = useState(false)
+  const [mobileKeyboardInset, setMobileKeyboardInset] = useState(0)
   const toolbarRef = useRef<HTMLDivElement>(null)
   const searchAndReplaceButtonRef = useRef<HTMLButtonElement>(null)
 
@@ -232,10 +240,52 @@ export function SimpleEditor({
       }),
     ],
     content: parseEditorContent(value),
+    onFocus: () => setHasEditorFocus(true),
+    onBlur: ({ event }) => {
+      const nextTarget = event.relatedTarget as Node | null
+
+      if (nextTarget && toolbarRef.current?.contains(nextTarget)) {
+        return
+      }
+
+      setHasEditorFocus(false)
+    },
     onUpdate: ({ editor }) => {
       onChange?.(JSON.stringify(editor.getJSON()))
     },
   })
+
+  useEffect(() => {
+    if (!isMobile) {
+      setMobileKeyboardInset(0)
+      return
+    }
+
+    const visualViewport = window.visualViewport
+
+    function updateKeyboardInset() {
+      if (!visualViewport) {
+        setMobileKeyboardInset(0)
+        return
+      }
+
+      const inset = Math.max(
+        0,
+        window.innerHeight - visualViewport.height - visualViewport.offsetTop
+      )
+
+      setMobileKeyboardInset(inset)
+    }
+
+    updateKeyboardInset()
+    visualViewport?.addEventListener("resize", updateKeyboardInset)
+    visualViewport?.addEventListener("scroll", updateKeyboardInset)
+
+    return () => {
+      visualViewport?.removeEventListener("resize", updateKeyboardInset)
+      visualViewport?.removeEventListener("scroll", updateKeyboardInset)
+    }
+  }, [isMobile])
 
   const openSearchAndReplace = useCallback(() => {
     setIsSearchAndReplaceOpen(true)
@@ -255,6 +305,11 @@ export function SimpleEditor({
     openSearchAndReplace()
   }, [closeSearchAndReplace, isSearchAndReplaceOpen, openSearchAndReplace])
 
+  const mobileToolbarVisible =
+    isMobile &&
+    (hasEditorFocus || isSearchAndReplaceOpen) &&
+    (mobileKeyboardInset > 80 || hasEditorFocus)
+
   return (
     <div className="simple-editor-wrapper">
       <EditorContext.Provider value={{ editor }}>
@@ -270,7 +325,19 @@ export function SimpleEditor({
             />
           </Toolbar>
         ) : (
-          <Toolbar ref={toolbarRef} className="simple-editor-mobile-toolbar">
+          <Toolbar
+            ref={toolbarRef}
+            className={`simple-editor-mobile-toolbar${
+              mobileToolbarVisible ? " simple-editor-mobile-toolbar--visible" : ""
+            }`}
+            style={
+              {
+                "--simple-mobile-keyboard-inset": `${mobileKeyboardInset}px`,
+              } as CSSProperties
+            }
+            onMouseDown={(event) => event.preventDefault()}
+            onPointerDown={(event) => event.preventDefault()}
+          >
             <MainToolbarContent
               onHighlighterClick={() => undefined}
               onLinkClick={() => undefined}
