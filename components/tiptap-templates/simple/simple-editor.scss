@@ -91,17 +91,46 @@ body,
 
 @media screen and (max-width: 767px) {
   .simple-editor-wrapper {
-    min-height: calc(100svh - 7.5rem);
-    height: calc(100svh - 7.5rem);
+    min-height: 0;
+    height: 100%;
+    position: relative;
+    background: var(--background);
   }
 
   .simple-editor-content {
     max-width: none;
+    height: 100%;
+    overflow-y: auto;
   }
 
   .simple-editor-content .tiptap.ProseMirror.simple-editor {
-    font-size: 18px;
+    font-size: 18pt;
     line-height: 1.5;
+    min-height: 100%;
+    padding: 1rem 1rem calc(5.5rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .simple-editor-content .tiptap.ProseMirror.simple-editor h1,
+  .simple-editor-content .tiptap.ProseMirror.simple-editor h2,
+  .simple-editor-content .tiptap.ProseMirror.simple-editor h3 {
+    font-size: 24pt;
+    line-height: 1.2;
+  }
+
+  .tiptap-toolbar.simple-editor-mobile-toolbar {
+    position: absolute;
+    right: 0.75rem;
+    bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    left: 0.75rem;
+    width: auto;
+    min-height: 2.75rem;
+    height: 2.75rem;
+    border: 1px solid var(--tt-toolbar-border-color);
+    border-radius: 999px;
+    padding: 0 0.5rem;
+    box-shadow: 0 10px 30px rgb(15 23 42 / 12%);
+    background: color-mix(in oklch, var(--background), white 65%);
+    backdrop-filter: blur(18px);
   }
 }
 
@@ -114,6 +143,6 @@ body,
   }
 
   .simple-editor-content .tiptap.ProseMirror.simple-editor {
-    padding: 1rem 1rem 30vh;
+    padding: 1rem 1rem calc(5.5rem + env(safe-area-inset-bottom, 0px));
   }
 }

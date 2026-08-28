@@ -269,7 +269,18 @@ export function SimpleEditor({
               isMobile={false}
             />
           </Toolbar>
-        ) : null}
+        ) : (
+          <Toolbar ref={toolbarRef} className="simple-editor-mobile-toolbar">
+            <MainToolbarContent
+              onHighlighterClick={() => undefined}
+              onLinkClick={() => undefined}
+              onSearchAndReplaceClick={toggleSearchAndReplace}
+              isSearchAndReplaceOpen={isSearchAndReplaceOpen}
+              searchAndReplaceButtonRef={searchAndReplaceButtonRef}
+              isMobile
+            />
+          </Toolbar>
+        )}
 
         <SearchAndReplace
           className="simple-editor-search-and-replace"

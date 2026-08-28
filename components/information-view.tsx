@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
+  ArrowLeftIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   FilePlus2Icon,
@@ -14,6 +15,7 @@ import {
   PinIcon,
   PinOffIcon,
   PlusIcon,
+  SearchIcon,
   Trash2Icon,
 } from "lucide-react"
 
@@ -45,6 +47,8 @@ import {
   type InformationNodeType,
 } from "@/lib/information-notes"
 import { cn } from "@/lib/utils"
+
+const mobileRootNotesId = "__root_notes__"
 
 function childNodes(nodes: InformationNode[], parentId?: string) {
   return nodes
@@ -124,6 +128,197 @@ function formatEditedDate(value?: string) {
     hour: "numeric",
     minute: "2-digit",
   }).format(timestamp)
+}
+
+function formatShortEditedDate(value?: string) {
+  if (!value) {
+    return ""
+  }
+
+  const timestamp = new Date(value)
+
+  if (Number.isNaN(timestamp.getTime())) {
+    return ""
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "numeric",
+    day: "numeric",
+    year: "2-digit",
+  }).format(timestamp)
+}
+
+function notePreview(content?: string) {
+  if (!content) {
+    return ""
+  }
+
+  try {
+    const parsed = JSON.parse(content) as { content?: unknown[] }
+    const text: string[] = []
+    const collectText = (value: unknown) => {
+      if (!value || typeof value !== "object") {
+        return
+      }
+
+      if ("text" in value && typeof value.text === "string") {
+        text.push(value.text)
+      }
+
+      if ("content" in value && Array.isArray(value.content)) {
+        value.content.forEach(collectText)
+      }
+    }
+
+    parsed.content?.forEach(collectText)
+    return text.join(" ").trim()
+  } catch {
+    return content.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()
+  }
+}
+
+function MobileSearchBar() {
+  return (
+    <div className="fixed inset-x-4 bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] z-30 flex h-11 items-center gap-3 rounded-full bg-background/95 px-4 shadow-lg ring-1 ring-foreground/5 backdrop-blur md:hidden">
+      <SearchIcon className="size-5 shrink-0 text-muted-foreground" />
+      <span className="min-w-0 flex-1 text-muted-foreground">Search</span>
+    </div>
+  )
+}
+
+function MobileFoldersScreen({
+  nodes,
+  onOpenFolder,
+  onOpenRootNotes,
+  onCreate,
+}: {
+  nodes: InformationNode[]
+  onOpenFolder: (nodeId: string) => void
+  onOpenRootNotes: () => void
+  onCreate: (type: InformationNodeType, parentId?: string) => void
+}) {
+  const rootItems = childNodes(nodes)
+  const rootFolders = rootItems.filter((node) => node.type === "folder")
+  const rootNotes = rootItems.filter((node) => node.type === "note")
+  const totalNotes = nodes.filter((node) => node.type === "note").length
+
+  return (
+    <div className="relative min-h-full bg-muted/60 px-4 pb-24 pt-[calc(env(safe-area-inset-top,0px)+1rem)] md:hidden">
+      <div className="mb-5 flex items-center justify-end gap-2">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="rounded-full bg-background shadow-sm"
+          aria-label="Add folder"
+          onClick={() => onCreate("folder")}
+        >
+          <FolderPlusIcon />
+        </Button>
+      </div>
+      <h1 className="text-[24pt] font-bold tracking-tight text-foreground md:text-3xl">
+        Folders
+      </h1>
+      <div className="mt-5 overflow-hidden rounded-2xl bg-background">
+        {rootFolders.map((folder, index) => {
+          const count = folderDescendants(nodes, folder.id).filter(
+            (node) => node.type === "note"
+          ).length
+
+          return (
+            <button
+              key={folder.id}
+              type="button"
+              className="relative flex min-h-14 w-full items-center gap-3 px-4 text-left transition-colors active:bg-muted"
+              onClick={() => onOpenFolder(folder.id)}
+            >
+              <FolderIcon className="size-5 shrink-0 text-yellow-500" />
+              <span className="min-w-0 flex-1 font-medium">{folder.title}</span>
+              <span className="text-muted-foreground">{count}</span>
+              <ChevronRightIcon className="size-5 shrink-0 text-muted-foreground" />
+              {index < rootFolders.length - 1 ? (
+                <span className="absolute left-12 right-0 h-px translate-y-7 bg-border/60" />
+              ) : null}
+            </button>
+          )
+        })}
+        {rootNotes.length ? (
+          <button
+            type="button"
+            className="flex min-h-14 w-full items-center gap-3 px-4 text-left transition-colors active:bg-muted"
+            onClick={onOpenRootNotes}
+          >
+            <FileTextIcon className="size-5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 font-medium">Notes</span>
+            <span className="text-muted-foreground">{rootNotes.length}</span>
+            <ChevronRightIcon className="size-5 shrink-0 text-muted-foreground" />
+          </button>
+        ) : null}
+      </div>
+      <p className="mt-3 px-1 text-sm text-muted-foreground">
+        {totalNotes} Notes
+      </p>
+      <MobileSearchBar />
+    </div>
+  )
+}
+
+function MobileFolderNotesScreen({
+  folder,
+  notes,
+  onBack,
+  onOpenNote,
+  onCreateNote,
+}: {
+  folder?: InformationNode
+  notes: InformationNode[]
+  onBack: () => void
+  onOpenNote: (nodeId: string) => void
+  onCreateNote: () => void
+}) {
+  return (
+    <div className="relative min-h-full bg-muted/60 px-4 pb-24 pt-[calc(env(safe-area-inset-top,0px)+1rem)] md:hidden">
+      <div className="mb-5 flex items-center justify-between">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="rounded-full bg-background shadow-sm"
+          aria-label="Back to folders"
+          onClick={onBack}
+        >
+          <ArrowLeftIcon />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="rounded-full bg-background shadow-sm"
+          aria-label="Add note"
+          onClick={onCreateNote}
+        >
+          <FilePlus2Icon />
+        </Button>
+      </div>
+      <h1 className="text-[24pt] font-bold tracking-tight text-foreground md:text-3xl">
+        {folder?.title ?? "Notes"}
+      </h1>
+      <p className="text-muted-foreground">{notes.length} Notes</p>
+      <div className="mt-5 grid gap-3">
+        {notes.map((note) => (
+          <button
+            key={note.id}
+            type="button"
+            className="min-h-16 rounded-2xl bg-background px-5 py-3 text-left transition-colors active:bg-muted"
+            onClick={() => onOpenNote(note.id)}
+          >
+            <span className="block truncate font-semibold">{note.title}</span>
+            <span className="mt-1 block truncate text-sm text-muted-foreground">
+              {formatShortEditedDate(note.updatedAt)} {notePreview(note.content)}
+            </span>
+          </button>
+        ))}
+      </div>
+      <MobileSearchBar />
+    </div>
+  )
 }
 
 function FolderDashboard({
@@ -213,6 +408,50 @@ function FolderDashboard({
         )}
       </div>
     </div>
+  )
+}
+
+function MobileNoteHeader({
+  onClose,
+  onDelete,
+}: {
+  onClose: () => void
+  onDelete: () => void
+}) {
+  return (
+    <header className="sticky top-0 z-30 flex h-[calc(4rem+env(safe-area-inset-top,0px))] shrink-0 items-end justify-between bg-background px-4 pb-2 pt-[env(safe-area-inset-top,0px)] md:hidden">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        className="rounded-full bg-background shadow-sm"
+        aria-label="Back to notes"
+        onClick={onClose}
+      >
+        <ArrowLeftIcon />
+      </Button>
+      <div className="flex items-center gap-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="rounded-full bg-background shadow-sm"
+                aria-label="Note actions"
+              />
+            }
+          >
+            <MoreHorizontalIcon />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-44">
+            <DropdownMenuItem variant="destructive" onClick={onDelete}>
+              <Trash2Icon />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </header>
   )
 }
 
@@ -470,7 +709,13 @@ export function InformationView() {
       const requested = requestedNode
         ? loaded.find((node) => node.id === requestedNode)
         : undefined
-      const initialNode = requested ?? firstNote(loaded) ?? loaded[0]
+      const shouldShowMobileFolders =
+        !requestedNode &&
+        typeof window !== "undefined" &&
+        window.matchMedia("(max-width: 767px)").matches
+      const initialNode = shouldShowMobileFolders
+        ? undefined
+        : (requested ?? firstNote(loaded) ?? loaded[0])
 
       if (isMounted) {
         setNodes(loaded)
@@ -532,6 +777,17 @@ export function InformationView() {
   }
 
   function selectNode(nodeId: string) {
+    if (!nodeId) {
+      setActiveId(undefined)
+      setContentDraft("")
+      setTitleDraft("")
+      setEditingTitle(false)
+      mobileNoteSelectorRef.current?.removeAttribute("open")
+      router.replace("/information")
+      window.dispatchEvent(new Event("information-notes:navigation"))
+      return
+    }
+
     const node = nodes.find((item) => item.id === nodeId)
 
     setActiveId(node?.id ?? nodeId)
@@ -541,6 +797,14 @@ export function InformationView() {
     mobileNoteSelectorRef.current?.removeAttribute("open")
     router.replace(`/information?node=${encodeURIComponent(nodeId)}`)
     window.dispatchEvent(new Event("information-notes:navigation"))
+  }
+
+  function selectRootNotes() {
+    setActiveId(mobileRootNotesId)
+    setContentDraft("")
+    setTitleDraft("Notes")
+    setEditingTitle(false)
+    mobileNoteSelectorRef.current?.removeAttribute("open")
   }
 
   function startCreate(type: InformationNodeType, parentId = "") {
@@ -609,6 +873,43 @@ export function InformationView() {
 
     saveNodeTitle(activeNode.id, titleDraft)
     setEditingTitle(false)
+  }
+
+  function saveActiveNote() {
+    if (!activeNode || activeNode.type !== "note") {
+      return
+    }
+
+    const cleanTitle = titleDraft.trim() || activeNode.title
+    const timestamp = new Date().toISOString()
+
+    persist(
+      nodes.map((node) =>
+        node.id === activeNode.id
+          ? {
+              ...node,
+              title: cleanTitle,
+              content: contentDraft,
+              updatedAt: timestamp,
+            }
+          : node
+      )
+    )
+    setTitleDraft(cleanTitle)
+    setEditingTitle(false)
+  }
+
+  function closeMobileNote() {
+    if (activeNode?.parentId) {
+      selectNode(activeNode.parentId)
+      return
+    }
+
+    const firstFolder = childNodes(nodes).find((node) => node.type === "folder")
+
+    if (firstFolder) {
+      selectNode(firstFolder.id)
+    }
   }
 
   function commitTreeTitle(nodeId: string) {
@@ -756,6 +1057,10 @@ export function InformationView() {
   ) : (
     "Notebook"
   )
+  const activeFolderNotes =
+    activeNode?.type === "folder"
+      ? childNodes(nodes, activeNode.id).filter((node) => node.type === "note")
+      : childNodes(nodes).filter((node) => node.type === "note")
 
   return (
     <SidebarProvider
@@ -768,11 +1073,26 @@ export function InformationView() {
     >
       <AppSidebar variant="inset" />
       <SidebarInset>
-        <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
-          <SiteHeader title="Notebook" titleContent={noteHeaderTitle} />
-          <div className="flex flex-1 px-0 py-0 sm:px-4 sm:py-4 lg:px-6">
+        <main className="flex min-h-0 flex-1 flex-col bg-background md:min-h-[calc(100svh-1rem)]">
+          <div className="hidden md:block">
+            <SiteHeader title="Notebook" titleContent={noteHeaderTitle} />
+          </div>
+          {activeNode?.type === "note" ? (
+            <MobileNoteHeader
+              onClose={() => {
+                saveActiveNote()
+                closeMobileNote()
+              }}
+              onDelete={() => {
+                if (activeNode) {
+                  deleteNode(activeNode.id)
+                }
+              }}
+            />
+          ) : null}
+          <div className="flex min-h-0 flex-1 px-0 py-0 sm:px-4 sm:py-4 lg:px-6">
             <Card className="min-h-0 flex-1 rounded-none bg-transparent py-0 shadow-none ring-0 sm:rounded-lg sm:bg-card sm:shadow-sm sm:ring-1">
-              <CardContent className="grid min-h-[calc(100svh-8rem)] gap-0 p-0 lg:grid-cols-[20rem_minmax(0,1fr)]">
+              <CardContent className="grid min-h-0 flex-1 gap-0 p-0 lg:grid-cols-[20rem_minmax(0,1fr)]">
                 <aside className="hidden border-b p-5 lg:block lg:border-r lg:border-b-0">
                   <div className="mb-4 flex items-center justify-between gap-3">
                     <span aria-hidden="true" />
@@ -826,8 +1146,8 @@ export function InformationView() {
                   </div>
                 </aside>
 
-                <section className="min-w-0 p-0 sm:p-5">
-                  <div className="sticky top-0 z-10 border-b bg-background/95 px-3 py-2 backdrop-blur sm:-mx-5 sm:px-5 lg:hidden">
+                <section className="flex min-h-0 min-w-0 flex-col p-0 sm:p-5">
+                  <div className="hidden">
                     <div className="flex items-center gap-2">
                       <details
                         ref={mobileNoteSelectorRef}
@@ -896,7 +1216,22 @@ export function InformationView() {
                   </div>
 
                   {activeNode?.type === "note" ? (
-                    <div className="overflow-hidden bg-background sm:rounded-lg sm:border">
+                    <div className="min-h-0 flex-1 overflow-hidden bg-background sm:rounded-lg sm:border">
+                      <div className="px-5 pt-4 md:hidden">
+                        <Input
+                          value={titleDraft}
+                          onChange={(event) => setTitleDraft(event.target.value)}
+                          onBlur={saveActiveNote}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              saveActiveNote()
+                              event.currentTarget.blur()
+                            }
+                          }}
+                          className="h-auto rounded-none border-0 bg-transparent px-0 py-1 text-[24pt] font-bold leading-tight tracking-tight shadow-none focus-visible:ring-0 md:text-3xl"
+                          aria-label="Note title"
+                        />
+                      </div>
                       <SimpleEditor
                         key={activeNode.id}
                         value={contentDraft}
@@ -904,13 +1239,52 @@ export function InformationView() {
                       />
                     </div>
                   ) : activeNode?.type === "folder" ? (
-                    <div className="px-3 pt-3 pb-3 sm:px-0 sm:pt-0 sm:pb-0">
-                      <FolderDashboard
+                    <>
+                      <MobileFolderNotesScreen
                         folder={activeNode}
-                        nodes={nodes}
+                        notes={activeFolderNotes}
+                        onBack={() => selectNode("")}
                         onOpenNote={selectNode}
+                        onCreateNote={() => startCreate("note", activeNode.id)}
                       />
-                    </div>
+                      <div className="hidden px-3 pt-3 pb-3 sm:px-0 sm:pt-0 sm:pb-0 md:block">
+                        <FolderDashboard
+                          folder={activeNode}
+                          nodes={nodes}
+                          onOpenNote={selectNode}
+                        />
+                      </div>
+                    </>
+                  ) : activeId === mobileRootNotesId ? (
+                    <>
+                      <MobileFolderNotesScreen
+                        notes={activeFolderNotes}
+                        onBack={() => selectNode("")}
+                        onOpenNote={selectNode}
+                        onCreateNote={() => startCreate("note")}
+                      />
+                      <div className="hidden px-3 pb-3 sm:px-0 sm:pb-0 md:block">
+                        <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
+                          <HomeIcon className="size-8" />
+                          <p>Select a note from the tree or create a new one.</p>
+                        </div>
+                      </div>
+                    </>
+                  ) : nodes.length ? (
+                    <>
+                      <MobileFoldersScreen
+                        nodes={nodes}
+                        onOpenFolder={selectNode}
+                        onOpenRootNotes={selectRootNotes}
+                        onCreate={startCreate}
+                      />
+                      <div className="hidden px-3 pb-3 sm:px-0 sm:pb-0 md:block">
+                        <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
+                          <HomeIcon className="size-8" />
+                          <p>Select a note from the tree or create a new one.</p>
+                        </div>
+                      </div>
+                    </>
                   ) : (
                     <div className="px-3 pb-3 sm:px-0 sm:pb-0">
                       <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
