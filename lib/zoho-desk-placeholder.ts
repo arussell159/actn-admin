@@ -32,7 +32,7 @@ const settingId = "zoho_desk_placeholder_dashboard"
 let placeholderCache: ZohoDeskPlaceholderData | null = null
 
 export function shouldUseZohoDeskPlaceholder() {
-  return process.env.ZOHO_DESK_USE_PLACEHOLDER !== "false"
+  return process.env.ZOHO_DESK_USE_PLACEHOLDER === "true"
 }
 
 function hoursAgo(hours: number) {

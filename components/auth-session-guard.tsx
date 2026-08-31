@@ -4,9 +4,10 @@ import * as React from "react"
 import { usePathname, useRouter } from "next/navigation"
 
 import {
-  authSessionStartedAtKey,
   clearAuthSessionStart,
   hasAuthSessionExpired,
+  hasAuthSessionStarted,
+  isPhoneAuthSession,
   markAuthSessionStarted,
 } from "@/lib/auth-session-timeout"
 import { createClient } from "@/lib/client"
@@ -32,7 +33,7 @@ export function AuthSessionGuard() {
         return
       }
 
-      if (!window.localStorage.getItem(authSessionStartedAtKey)) {
+      if (!hasAuthSessionStarted() && !isPhoneAuthSession()) {
         markAuthSessionStarted()
         return
       }

@@ -1,5 +1,8 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
+import type { CookieOptions } from "@supabase/ssr"
+
+import { desktopAuthSessionMaxAgeSeconds } from "@/lib/auth-session-timeout"
 import { assertSupabaseConfig } from "@/lib/supabase-env"
 
 export const loginPath = "/login"
@@ -28,11 +31,33 @@ export function isAuthBypassPath(pathname: string) {
   )
 }
 
+function isPhoneRequest(request: NextRequest) {
+  const userAgent = request.headers.get("user-agent") ?? ""
+
+  return /iphone|ipod|android.*mobile|windows phone/i.test(userAgent)
+}
+
+function authCookieOptions(options: CookieOptions, isPhone: boolean) {
+  const nextOptions = { ...options }
+
+  if (nextOptions.maxAge && nextOptions.maxAge > 0) {
+    if (isPhone) {
+      delete nextOptions.maxAge
+      delete nextOptions.expires
+    } else {
+      nextOptions.maxAge = desktopAuthSessionMaxAgeSeconds
+    }
+  }
+
+  return nextOptions
+}
+
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({
     request,
   })
   const { supabaseUrl, supabaseKey } = assertSupabaseConfig()
+  const isPhone = isPhoneRequest(request)
 
   const supabase = createServerClient(
     supabaseUrl,
@@ -49,9 +74,13 @@ export async function updateSession(request: NextRequest) {
           response = NextResponse.next({
             request,
           })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          )
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(
+              name,
+              value,
+              authCookieOptions(options, isPhone)
+            )
+          })
         },
       },
     }
