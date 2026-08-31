@@ -48,6 +48,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   ToggleGroup,
   ToggleGroupItem,
@@ -65,6 +66,7 @@ type ZohoTicket = {
   teamName: string
   responseDueTime: string
   repliedTime: string
+  threadCount?: number
   createdTime: string
   closedTime: string
   contactName: string
@@ -73,35 +75,9 @@ type ZohoTicket = {
   countryName?: string
 }
 
-type ZohoThread = {
-  id?: string
-  summary?: string
-  content?: string
-  plainText?: string
-  direction?: string
-  channel?: string
-  status?: string
-  visibility?: string
-  createdTime?: string
-  fromEmailAddress?: string
-  to?: string
-  author?: {
-    name?: string
-    type?: string
-    email?: string
-  }
-}
-
 type ZohoTicketResponse = {
   ok: boolean
   tickets: ZohoTicket[]
-  message: string
-}
-
-type ZohoTicketReaderResponse = {
-  ok: boolean
-  ticket: ZohoTicket | null
-  threads: ZohoThread[]
   message: string
 }
 
@@ -120,6 +96,14 @@ type ZohoDashboardMetricResponse = {
     closedTickets: number
     onHoldTickets: number
   }
+  message: string
+}
+
+type ZohoDashboardBundleResponse = {
+  ok: boolean
+  tickets: ZohoTicket[]
+  todayTickets: ZohoTicket[]
+  metrics: ZohoDashboardMetricResponse
   message: string
 }
 
@@ -227,60 +211,6 @@ const ticketCountryMatchers = Object.entries(dashboardCountryLabelsByRowId).map(
   })
 )
 
-function threadBody(thread: ZohoThread) {
-  return (
-    thread.plainText ||
-    thread.summary ||
-    (thread.content ? thread.content.replace(/<[^>]+>/g, " ") : "") ||
-    "No reply content returned."
-  )
-}
-
-function sanitizedThreadHtml(thread: ZohoThread) {
-  if (!thread.content) {
-    return ""
-  }
-
-  return thread.content
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/\son\w+="[^"]*"/gi, "")
-    .replace(/\son\w+='[^']*'/gi, "")
-    .replace(/\shref=(["'])javascript:[\s\S]*?\1/gi, "")
-}
-
-function threadAuthor(thread: ZohoThread) {
-  return (
-    thread.author?.name ||
-    thread.fromEmailAddress ||
-    (thread.direction === "out" ? "ACTN" : "Customer")
-  )
-}
-
-function threadInitials(thread: ZohoThread) {
-  const author = threadAuthor(thread)
-  const words = author
-    .replace(/<[^>]*>/g, "")
-    .split(/[\s.-]+/)
-    .filter(Boolean)
-
-  return (
-    words
-      .slice(0, 2)
-      .map((word) => word[0])
-      .join("")
-      .toUpperCase() || "EM"
-  )
-}
-
-function threadPreview(thread: ZohoThread) {
-  return threadBody(thread).replace(/\s+/g, " ").trim()
-}
-
-function formatThreadTime(thread: ZohoThread) {
-  return thread.createdTime ? new Date(thread.createdTime).toLocaleString() : ""
-}
-
 function isToday(value: string) {
   if (!value) {
     return false
@@ -296,6 +226,12 @@ function zohoTicketUrl(ticket: ZohoTicket) {
   return `https://desk.zoho.com/agent/africactnllc/info/tickets/details/${encodeURIComponent(
     ticket.id || ticket.ticketNumber
   )}`
+}
+
+function formatThreadCount(ticket: ZohoTicket) {
+  return typeof ticket.threadCount === "number"
+    ? ticket.threadCount.toLocaleString()
+    : "-"
 }
 
 function countryRowIdForTicket(ticket: ZohoTicket) {
@@ -397,129 +333,93 @@ function CountryTicketHeatMap({
   )
 }
 
-function ThreadContent({
-  thread,
-  compact = false,
-}: {
-  thread: ZohoThread
-  compact?: boolean
-}) {
-  const html = sanitizedThreadHtml(thread)
-
-  if (html) {
-    return (
-      <div
-        className={cn(
-          "mt-3 overflow-auto rounded-md bg-muted/20 p-3 text-sm leading-6 text-foreground",
-          "[&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:pl-3",
-          "[&_br]:block [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-3 [&_table]:my-3",
-          "[&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:p-2 [&_th]:border [&_th]:p-2",
-          "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5",
-          compact ? "max-h-36" : "max-h-[60vh]"
-        )}
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
-    )
-  }
-
+function TicketVolumeSkeleton() {
   return (
-    <p
-      className={cn(
-        "mt-3 overflow-auto whitespace-pre-wrap rounded-md bg-muted/20 p-3 text-sm leading-6",
-        compact ? "max-h-36" : "max-h-[60vh]"
-      )}
-    >
-      {threadBody(thread)}
-    </p>
+    <div className="grid h-[250px] content-end gap-4 px-2 pb-2">
+      <div className="grid gap-4">
+        {[0, 1, 2, 3, 4].map((line) => (
+          <Skeleton key={line} className="h-px rounded-none" />
+        ))}
+      </div>
+      <div className="flex h-32 items-end gap-3">
+        {[28, 44, 36, 68, 52, 82, 46, 62, 38, 72, 48, 58].map(
+          (height, index) => (
+            <Skeleton
+              key={index}
+              className="flex-1 rounded-t-md"
+              style={{ height: `${height}%` }}
+            />
+          )
+        )}
+      </div>
+      <div className="grid grid-cols-6 gap-4">
+        {[0, 1, 2, 3, 4, 5].map((tick) => (
+          <Skeleton key={tick} className="h-3" />
+        ))}
+      </div>
+    </div>
   )
 }
 
-function TicketThreadList({
-  ticketId,
-  ticketReader,
-  isLoadingTicketReader,
-  selectedThreadId,
-  setSelectedThreadId,
-}: {
-  ticketId: string
-  ticketReader: ZohoTicketReaderResponse | null
-  isLoadingTicketReader: boolean
-  selectedThreadId: string
-  setSelectedThreadId: React.Dispatch<React.SetStateAction<string>>
-}) {
-  const latestThread = ticketReader?.threads[0]
-  const threadHistory = ticketReader?.threads.slice(1) ?? []
-
-  if (isLoadingTicketReader) {
-    return (
-      <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
-        Loading recent replies...
-      </div>
-    )
-  }
-
-  if (!ticketReader?.ok || !latestThread) {
-    return (
-      <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
-        {ticketReader?.message ?? "No recent replies found."}
-      </div>
-    )
-  }
-
+function AgentListSkeleton() {
   return (
     <div className="grid gap-2">
-      {[latestThread, ...threadHistory].map((thread, index) => {
-        const threadKey = thread.id ?? `${ticketId}-${index}`
-        const isThreadOpen = selectedThreadId === threadKey
-        const isOutbound = thread.direction === "out"
-
-        return (
-          <article
-            key={threadKey}
-            className="overflow-hidden rounded-md border bg-muted/30"
-          >
-            <button
-              type="button"
-              className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/60"
-              onClick={() =>
-                setSelectedThreadId(isThreadOpen ? "" : threadKey)
-              }
-              aria-expanded={isThreadOpen}
-            >
-              <span className="relative mt-1 grid size-9 shrink-0 place-items-center rounded-full border bg-background text-xs font-medium">
-                {threadInitials(thread)}
-                <span
-                  className={cn(
-                    "absolute -right-0.5 -top-0.5 size-3 rounded-full border-2 border-background",
-                    isOutbound ? "bg-primary" : "bg-emerald-500"
-                  )}
-                  aria-hidden="true"
-                />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
-                  <span className="font-semibold text-foreground">
-                    {threadAuthor(thread)}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {formatThreadTime(thread)}
-                  </span>
-                </span>
-                <span className="mt-2 line-clamp-2 text-sm leading-6 text-foreground">
-                  {threadPreview(thread)}
-                </span>
-              </span>
-              <MailIcon className="mt-1 size-4 shrink-0 text-muted-foreground" />
-            </button>
-            {isThreadOpen ? (
-              <div className="border-t bg-background px-4 pb-4">
-                <ThreadContent thread={thread} />
-              </div>
-            ) : null}
-          </article>
-        )
-      })}
+      {[0, 1, 2, 3, 4, 5].map((row) => (
+        <div key={row} className="flex items-center justify-between gap-3 py-2">
+          <Skeleton className="h-4 w-28 rounded-md" />
+          <Skeleton className="h-4 w-8 rounded-md" />
+        </div>
+      ))}
     </div>
+  )
+}
+
+function MobileTicketSkeleton() {
+  return (
+    <div className="grid gap-3">
+      {[0, 1, 2].map((row) => (
+        <div
+          key={row}
+          className="rounded-[min(var(--radius-4xl),24px)] border bg-background p-3 shadow-sm"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-4 w-24" />
+          </div>
+          <Skeleton className="mt-3 h-5 w-11/12" />
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-4 w-24" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function DesktopTicketTableSkeleton() {
+  return (
+    <>
+      {[0, 1, 2, 3, 4, 5].map((row) => (
+        <TableRow key={row}>
+          <TableCell className="pl-6">
+            <Skeleton className="h-4 w-20" />
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-4 w-32" />
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-4 w-full max-w-[520px]" />
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-4 w-16" />
+          </TableCell>
+          <TableCell className="pr-6">
+            <Skeleton className="h-4 w-28" />
+          </TableCell>
+        </TableRow>
+      ))}
+    </>
   )
 }
 
@@ -528,14 +428,10 @@ export function DashboardView() {
   const [zohoData, setZohoData] = React.useState<ZohoTicketResponse | null>(
     null
   )
+  const [zohoTodayData, setZohoTodayData] =
+    React.useState<ZohoTicketResponse | null>(null)
   const [zohoMetrics, setZohoMetrics] =
     React.useState<ZohoDashboardMetricResponse | null>(null)
-  const [selectedTicketId, setSelectedTicketId] = React.useState("")
-  const [selectedThreadId, setSelectedThreadId] = React.useState("")
-  const [ticketReader, setTicketReader] =
-    React.useState<ZohoTicketReaderResponse | null>(null)
-  const [isLoadingTicketReader, setIsLoadingTicketReader] =
-    React.useState(false)
   const [isSyncingZoho, setIsSyncingZoho] = React.useState(false)
   const [timeRange, setTimeRange] = React.useState(() =>
     typeof window !== "undefined" &&
@@ -550,22 +446,30 @@ export function DashboardView() {
     setIsSyncingZoho(true)
 
     try {
-      const [ticketsResponse, metricsResponse] = await Promise.all([
-        fetch("/api/zoho-desk/tickets?limit=100", {
-          cache: "no-store",
-        }),
-        fetch("/api/zoho-desk/dashboard-metrics", {
-          cache: "no-store",
-        }),
-      ])
-      const data = (await ticketsResponse.json()) as ZohoTicketResponse
-      const metrics =
-        (await metricsResponse.json()) as ZohoDashboardMetricResponse
+      const response = await fetch("/api/zoho-desk/dashboard?limit=400", {
+        cache: "no-store",
+      })
+      const dashboard = (await response.json()) as ZohoDashboardBundleResponse
 
-      setZohoData(data)
-      setZohoMetrics(metrics)
+      setZohoData({
+        ok: dashboard.ok,
+        tickets: dashboard.tickets,
+        message: dashboard.message,
+      })
+      setZohoTodayData({
+        ok: dashboard.ok,
+        tickets: dashboard.todayTickets,
+        message: dashboard.message,
+      })
+      setZohoMetrics(dashboard.metrics)
     } catch (error) {
       setZohoData({
+        ok: false,
+        tickets: [],
+        message:
+          error instanceof Error ? error.message : "Could not reach Zoho Desk.",
+      })
+      setZohoTodayData({
         ok: false,
         tickets: [],
         message:
@@ -597,43 +501,10 @@ export function DashboardView() {
     }
   }, [isMobile])
 
-  async function openTicketReader(ticketId: string) {
-    if (selectedTicketId === ticketId) {
-      setSelectedTicketId("")
-      setSelectedThreadId("")
-      setTicketReader(null)
-      return
-    }
-
-    setSelectedTicketId(ticketId)
-    setSelectedThreadId("")
-    setIsLoadingTicketReader(true)
-
-    try {
-      const response = await fetch(
-        `/api/zoho-desk/tickets/${encodeURIComponent(ticketId)}/reader`,
-        {
-          cache: "no-store",
-        }
-      )
-      const data = (await response.json()) as ZohoTicketReaderResponse
-
-      setTicketReader(data)
-    } catch (error) {
-      setTicketReader({
-        ok: false,
-        ticket: null,
-        threads: [],
-        message:
-          error instanceof Error ? error.message : "Could not read ticket.",
-      })
-    } finally {
-      setIsLoadingTicketReader(false)
-    }
-  }
-
   const tickets = zohoData?.tickets ?? []
+  const todayCreatedTickets = zohoTodayData?.tickets ?? []
   const hourlyTicketData = zohoMetrics?.chartData ?? []
+  const isInitialZohoLoad = isSyncingZoho && !zohoData && !zohoMetrics
   const selectedTimeRange = timeRange
   const filteredHourlyTicketData = React.useMemo(() => {
     const hoursToShow =
@@ -667,11 +538,7 @@ export function DashboardView() {
   const agentTicketCounts = React.useMemo(() => {
     const counts = new Map<string, number>()
 
-    tickets.forEach((ticket) => {
-      if (!isToday(ticket.createdTime)) {
-        return
-      }
-
+    todayCreatedTickets.forEach((ticket) => {
       const assigneeName = ticket.assigneeName || "Unassigned"
 
       counts.set(assigneeName, (counts.get(assigneeName) ?? 0) + 1)
@@ -681,17 +548,16 @@ export function DashboardView() {
       (left, right) =>
         right.count - left.count || left.name.localeCompare(right.name)
     )
-  }, [tickets])
+  }, [todayCreatedTickets])
   const todayCountryTickets = React.useMemo(
     () =>
-      tickets
-        .filter((ticket) => isToday(ticket.createdTime))
+      todayCreatedTickets
         .map((ticket) => ({
           ticket,
           countryId: countryRowIdForTicket(ticket),
         }))
         .filter((item) => item.countryId),
-    [tickets]
+    [todayCreatedTickets]
   )
   const countryTicketCounts = React.useMemo(() => {
     const counts = new Map<string, number>()
@@ -728,6 +594,14 @@ export function DashboardView() {
       )
     },
     [countryTicketCounts, todayCountryTickets]
+  )
+  const countryTicketTotal = React.useMemo(
+    () =>
+      Array.from(countryTicketCounts.values()).reduce(
+        (total, count) => total + count,
+        0
+      ),
+    [countryTicketCounts]
   )
   const activeCountryId =
     selectedCountryId || countryTicketLeaders[0]?.countryId || ""
@@ -803,7 +677,11 @@ export function DashboardView() {
                           {stat.label}
                         </div>
                         <div className="mt-1 text-lg font-semibold tabular-nums">
-                          {stat.value}
+                          {isInitialZohoLoad ? (
+                            <Skeleton className="h-6 w-10" />
+                          ) : (
+                            stat.value
+                          )}
                         </div>
                       </div>
                     ))}
@@ -820,6 +698,9 @@ export function DashboardView() {
                     </summary>
                     <div className="mt-2 grid gap-1.5">
                       {agentTicketCounts.length ? (
+                        isInitialZohoLoad ? (
+                          <AgentListSkeleton />
+                        ) : (
                         agentTicketCounts.map((agent) => (
                           <div
                             key={agent.name}
@@ -833,6 +714,7 @@ export function DashboardView() {
                             </span>
                           </div>
                         ))
+                        )
                       ) : (
                         <span className="text-xs text-muted-foreground">
                           No new assignments today
@@ -852,7 +734,11 @@ export function DashboardView() {
                         <CardDescription>Country Heat Map</CardDescription>
                         <CardTitle className="flex items-center gap-2 text-3xl tabular-nums">
                           <MapIcon className="size-5 text-muted-foreground" />
-                          {countryTicketLeaders[0]?.count ?? 0}
+                          {isInitialZohoLoad ? (
+                            <Skeleton className="h-8 w-14" />
+                          ) : (
+                            countryTicketTotal
+                          )}
                         </CardTitle>
                       </div>
                       <CountryTicketHeatMap
@@ -878,7 +764,11 @@ export function DashboardView() {
                           <CardDescription>{stat.label}</CardDescription>
                           <CardTitle className="flex items-center gap-2 text-3xl tabular-nums">
                             <Icon className="size-5 text-muted-foreground" />
-                            {stat.value}
+                            {isInitialZohoLoad ? (
+                              <Skeleton className="h-8 w-16" />
+                            ) : (
+                              stat.value
+                            )}
                           </CardTitle>
                         </CardHeader>
                       </Card>
@@ -889,22 +779,22 @@ export function DashboardView() {
                 {isCountryMapOpen ? (
                   <section className="hidden px-4 md:block lg:px-6">
                     <Card>
-                      <CardContent className="grid gap-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.75fr)]">
-                        <div className="grid min-h-[24rem] place-items-center p-4">
+                      <CardContent className="grid h-[clamp(16rem,calc(100svh-17rem),22rem)] gap-4 overflow-hidden p-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(16rem,0.75fr)]">
+                        <div className="grid min-h-0 place-items-center">
                           <CountryTicketHeatMap
                             countryCounts={countryTicketCounts}
                             selectedCountryId={activeCountryId}
                             onSelectCountry={setSelectedCountryId}
-                            className="h-full max-h-[30rem] w-full"
+                            className="h-full max-h-full w-full"
                           />
                         </div>
-                        <div className="grid content-start gap-1.5">
+                        <div className="grid min-h-0 content-start gap-1.5 overflow-y-auto pr-1">
                           {countryTicketLeaders.length ? (
                             countryTicketLeaders.map((country) => (
                               <button
                                 key={country.countryId}
                                 type="button"
-                              className="flex items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
+                                className="flex items-center justify-between gap-3 rounded-md px-3 py-1.5 text-left text-sm transition-colors hover:bg-muted"
                                 onClick={() =>
                                   setSelectedCountryId(country.countryId)
                                 }
@@ -997,7 +887,10 @@ export function DashboardView() {
                       </CardAction>
                     </CardHeader>
                     <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
-                      <ChartContainer
+                      {isInitialZohoLoad ? (
+                        <TicketVolumeSkeleton />
+                      ) : (
+                        <ChartContainer
                         config={chartConfig}
                         className="aspect-auto h-[250px] w-full"
                         initialDimension={{ width: 900, height: 250 }}
@@ -1074,6 +967,7 @@ export function DashboardView() {
                           />
                         </ComposedChart>
                       </ChartContainer>
+                      )}
                     </CardContent>
                   </Card>
                   <Card className="hidden shadow-sm md:flex lg:col-span-1">
@@ -1081,7 +975,9 @@ export function DashboardView() {
                       <CardTitle>Agents</CardTitle>
                     </CardHeader>
                     <CardContent className="grid content-start">
-                      {agentTicketCounts.length ? (
+                      {isInitialZohoLoad ? (
+                        <AgentListSkeleton />
+                      ) : agentTicketCounts.length ? (
                         agentTicketCounts.map((agent) => (
                           <div
                             key={agent.name}
@@ -1107,10 +1003,10 @@ export function DashboardView() {
                 <section className="px-4 lg:px-6">
                   <div className="grid gap-3 md:hidden">
                     <h2 className="px-1 text-base font-medium">Open Tickets</h2>
-                    {tickets.length ? (
+                    {isInitialZohoLoad ? (
+                      <MobileTicketSkeleton />
+                    ) : tickets.length ? (
                       tickets.map((ticket) => {
-                        const isSelected = selectedTicketId === ticket.id
-
                         return (
                           <article
                             key={ticket.id || ticket.ticketNumber}
@@ -1127,13 +1023,11 @@ export function DashboardView() {
                                 >
                                   #{ticket.ticketNumber || "-"}
                                 </a>
+                                <span className="shrink-0 font-medium text-muted-foreground tabular-nums">
+                                  {formatThreadCount(ticket)} threads
+                                </span>
                               </div>
-                              <button
-                                type="button"
-                                className="grid gap-2 text-left"
-                                onClick={() => openTicketReader(ticket.id)}
-                                aria-expanded={isSelected}
-                              >
+                              <div className="grid gap-2 text-left">
                                 <span
                                   className="line-clamp-2 text-[15px] font-semibold leading-5"
                                   title={ticket.subject}
@@ -1161,19 +1055,8 @@ export function DashboardView() {
                                     </span>
                                   </span>
                                 </span>
-                              </button>
-                            </div>
-                            {isSelected ? (
-                              <div className="border-t bg-muted/20 p-3">
-                                <TicketThreadList
-                                  ticketId={ticket.id}
-                                  ticketReader={ticketReader}
-                                  isLoadingTicketReader={isLoadingTicketReader}
-                                  selectedThreadId={selectedThreadId}
-                                  setSelectedThreadId={setSelectedThreadId}
-                                />
                               </div>
-                            ) : null}
+                            </div>
                           </article>
                         )
                       })
@@ -1198,26 +1081,21 @@ export function DashboardView() {
                               Response Due Time
                             </TableHead>
                             <TableHead>Subject</TableHead>
-                            <TableHead className="w-32">Status</TableHead>
+                            <TableHead className="w-32">Threads</TableHead>
                             <TableHead className="w-44 pr-6">
                               Assigned To
                             </TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {tickets.length ? (
+                          {isInitialZohoLoad ? (
+                            <DesktopTicketTableSkeleton />
+                          ) : tickets.length ? (
                             tickets.map((ticket) => {
-                              const isSelected = selectedTicketId === ticket.id
-
                               return (
-                                <React.Fragment
+                                <TableRow
                                   key={ticket.id || ticket.ticketNumber}
                                 >
-                                  <TableRow
-                                    className="cursor-pointer"
-                                    data-state={isSelected ? "selected" : ""}
-                                    onClick={() => openTicketReader(ticket.id)}
-                                  >
                                     <TableCell className="pl-6 font-medium">
                                       <a
                                         href={zohoTicketUrl(ticket)}
@@ -1239,22 +1117,15 @@ export function DashboardView() {
                                         : "-"}
                                     </TableCell>
                                     <TableCell className="min-w-0">
-                                      <button
-                                        className="block max-w-[680px] truncate text-left underline-offset-4 hover:underline"
-                                        type="button"
+                                      <span
+                                        className="block max-w-[680px] truncate text-left"
                                         title={ticket.subject}
-                                        onClick={(event) => {
-                                          event.stopPropagation()
-                                          openTicketReader(ticket.id)
-                                        }}
                                       >
                                         {ticket.subject || "-"}
-                                      </button>
+                                      </span>
                                     </TableCell>
-                                    <TableCell>
-                                      {ticket.status ||
-                                        ticket.statusType ||
-                                        "-"}
+                                    <TableCell className="font-medium tabular-nums text-muted-foreground">
+                                      {formatThreadCount(ticket)}
                                     </TableCell>
                                     <TableCell className="min-w-0 pr-6">
                                       <span
@@ -1264,34 +1135,7 @@ export function DashboardView() {
                                         {ticket.assigneeName || "-"}
                                       </span>
                                     </TableCell>
-                                  </TableRow>
-                                  {isSelected ? (
-                                    <TableRow>
-                                      <TableCell
-                                        colSpan={5}
-                                        className="bg-muted/30 p-0"
-                                      >
-                                        <div className="border-y bg-background px-6 py-4">
-                                          <div className="grid gap-3">
-                                            <TicketThreadList
-                                              ticketId={ticket.id}
-                                              ticketReader={ticketReader}
-                                              isLoadingTicketReader={
-                                                isLoadingTicketReader
-                                              }
-                                              selectedThreadId={
-                                                selectedThreadId
-                                              }
-                                              setSelectedThreadId={
-                                                setSelectedThreadId
-                                              }
-                                            />
-                                          </div>
-                                        </div>
-                                      </TableCell>
-                                    </TableRow>
-                                  ) : null}
-                                </React.Fragment>
+                                </TableRow>
                               )
                             })
                           ) : (

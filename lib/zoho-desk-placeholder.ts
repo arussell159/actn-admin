@@ -155,6 +155,8 @@ function ticket(
     teamName: countryTeamName(countryCode, countryName),
     responseDueTime,
     repliedTime: createdTime,
+    customerResponseTime: createdTime,
+    threadCount: 4 + (Number(id.replace(/\D/g, "").slice(-1)) % 7),
     createdTime,
     closedTime: "",
     modifiedTime: createdTime,
