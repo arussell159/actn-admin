@@ -3140,10 +3140,12 @@ export function MonthEndCountryReconciliationView({
     }
 
     const template = await getMonthEndTemplate()
+    const linkedCountryRows = getLinkedCountryRows(
+      activeCountryId,
+      template.countries
+    )
     const linkedCountryNames = new Set(
-      getLinkedCountryRows(activeCountryId, template.countries).map((item) =>
-        normalizeMatchKey(item.name)
-      )
+      linkedCountryRows.map((item) => normalizeMatchKey(item.name))
     )
     const filteredRecords = parsedRecords.filter((item) => {
       const sourceCountryName = normalizeMatchKey(item.sourceCountryName)
@@ -3166,9 +3168,15 @@ export function MonthEndCountryReconciliationView({
       },
       new Map<string, ParsedCountryReportRecord[]>()
     )
+    const replacementCountryIds = new Set([
+      activeCountryId,
+      ...linkedCountryRows.map((item) => item.id),
+      ...recordsByCountryId.keys(),
+    ])
     const savedRecordGroups = await Promise.all(
-      Array.from(recordsByCountryId.entries()).map(
-        async ([targetCountryId, countryParsedRecords]) => {
+      Array.from(replacementCountryIds).map(
+        async (targetCountryId) => {
+          const countryParsedRecords = recordsByCountryId.get(targetCountryId) ?? []
           const targetCountry =
             template.countries.find((item) => item.id === targetCountryId) ??
             country
@@ -3179,21 +3187,11 @@ export function MonthEndCountryReconciliationView({
             countryId: targetCountryId,
             countryName: targetCountry.name,
           })
-          const recordsToSave =
-            targetCountryId === activeCountryId
-              ? reportRecords
-              : mergeCountryReportRecords([
-                  ...(await listMonthEndCountryReportRecords({
-                    monthEndId: record.id,
-                    countryId: targetCountryId,
-                  })),
-                  ...reportRecords,
-                ])
 
           await replaceMonthEndCountryReportRecords({
             monthEndId: record.id,
             countryId: targetCountryId,
-            records: recordsToSave,
+            records: reportRecords,
           })
 
           return reportRecords
