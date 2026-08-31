@@ -62,12 +62,15 @@ import {
   getMasterTransactionDateCheckedValues,
   getLinkedCountryIds,
   masterTransactionDatesKey,
+  parseMappedCountryMasterCsv,
   parseCountryMasterCsv,
   saveMonthEndMasterRecords,
   type MonthEndMasterRecord,
 } from "@/lib/month-end-master-records"
+import { extractWorkbookRows } from "@/lib/country-report-import"
 import {
   getMonthEndTemplate,
+  isDefaultMasterReportMapping,
   loadMonthEndTemplate,
   workflowTasks,
   type CloseTaskId,
@@ -256,6 +259,16 @@ function AfricaStatusMap({
       </svg>
     </div>
   )
+}
+
+async function reportFileToCsvText(file: File, period?: string) {
+  const extension = file.name.split(".").pop()?.toLowerCase()
+
+  if (extension === "xlsx" || extension === "xls") {
+    return extractWorkbookRows(file, { period })
+  }
+
+  return file.text()
 }
 
 export function MonthEndView({ period }: { period?: string } = {}) {
@@ -636,13 +649,27 @@ export function MonthEndView({ period }: { period?: string } = {}) {
       const targetCountries = activeTemplate.countries.filter(
         (country) => country.checkable !== false
       )
-      const csvText = await file.text()
-      const masterRecords = await parseCountryMasterCsv({
-        csvText,
-        monthEndId: activeRecord.id,
-        period: activeRecord.period,
-        targetCountries,
-      })
+      const csvText = await reportFileToCsvText(file, activeRecord.period)
+      const mappedMasterRecords = targetCountries.flatMap(
+        (country) =>
+          isDefaultMasterReportMapping(country.masterReportMapping)
+            ? []
+            : (parseMappedCountryMasterCsv({
+                csvText,
+                monthEndId: activeRecord.id,
+                period: activeRecord.period,
+                targetCountries: [country],
+                mapping: country.masterReportMapping,
+              }) ?? [])
+      )
+      const masterRecords = mappedMasterRecords.length
+        ? mappedMasterRecords
+        : await parseCountryMasterCsv({
+            csvText,
+            monthEndId: activeRecord.id,
+            period: activeRecord.period,
+            targetCountries,
+          })
 
       await saveMonthEndMasterRecords(activeRecord.id, masterRecords)
 
@@ -791,26 +818,11 @@ export function MonthEndView({ period }: { period?: string } = {}) {
         <AppSidebar variant="inset" />
         <SidebarInset>
           <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
-            <SiteHeader title="New Month End" />
+            <SiteHeader title="Create Month End" />
             <div className="grid gap-4 px-4 py-4 lg:px-6">
-              <section>
-                <h1 className="text-2xl font-semibold">No Open Month End</h1>
-              </section>
-              <Card className="rounded-lg shadow-sm">
-                <CardHeader className="gap-3">
-                  <CardTitle>Create a month end to continue</CardTitle>
-                  <CardDescription>
-                    Current Month is empty because there is no open month-end
-                    record.
-                  </CardDescription>
-                  <Button
-                    className="w-fit"
-                    render={<AppLink href="/month-end/new" />}
-                  >
-                    Create Month End
-                  </Button>
-                </CardHeader>
-              </Card>
+              <Button className="w-fit" render={<AppLink href="/month-end/new" />}>
+                Create Month End
+              </Button>
             </div>
           </main>
         </SidebarInset>

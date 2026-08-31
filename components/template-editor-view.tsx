@@ -21,7 +21,9 @@ import {
   ArrowLeftIcon,
   CheckIcon,
   ChevronsUpDownIcon,
+  FileSpreadsheetIcon,
   GripVerticalIcon,
+  InfoIcon,
   MoreHorizontalIcon,
   PencilIcon,
   PlusIcon,
@@ -36,13 +38,7 @@ import { SiteHeader } from "@/components/site-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -70,6 +66,7 @@ import {
   SelectTrigger,
 } from "@/components/ui/select"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Table,
   TableBody,
@@ -78,16 +75,34 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Textarea } from "@/components/ui/textarea"
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import {
+  defaultCountryReportMapping,
+  defaultMasterReportMapping,
   getMonthEndTemplate,
   loadMonthEndTemplate,
   makeTemplateId,
   saveMonthEndTemplate,
   type MonthEndTemplate,
+  type ReportFieldMapping,
+  type ReportMappingField,
   type TemplateCountryRow,
   type TemplateModuleLevel,
   type TemplateSimpleTask,
 } from "@/lib/month-end-template"
+import {
+  extractPdfText,
+  extractWorkbookRows,
+  parseCountryReportText,
+  parseCountryReportUploadFile,
+  type ParsedCountryReportRecord,
+} from "@/lib/country-report-import"
+import { parseCsv } from "@/lib/csv"
 
 const countriesModuleId = "countries"
 const protectedModuleIds = new Set([
@@ -96,6 +111,183 @@ const protectedModuleIds = new Set([
   "statements",
   "bank-reconciliation",
 ])
+
+const reportMappingNoneValue = "__none__"
+
+type ReportMappingFieldDefinition = {
+  id: ReportMappingField
+  label: string
+  description: string
+  aliases: string[]
+}
+
+type ReportSampleField = {
+  sourceColumn: string
+  label: string
+  previewValues: string[]
+}
+
+type ReportMappingSamples = Record<
+  string,
+  Record<"countryReport" | "masterReport", ReportSampleField[]>
+>
+
+const countryReportMappingFields = [
+  {
+    id: "invoiceNumber",
+    label: "Invoice Number",
+    description: "Used to group country report rows by invoice.",
+    aliases: [
+      "parsedinvoicenumber",
+      "invoicenumber",
+      "invoice",
+      "salesorder",
+      "salesordernumber",
+    ],
+  },
+  {
+    id: "ctnNumber",
+    label: "CTN / ECTN Number",
+    description: "Used as the main CTN identifier from the country report.",
+    aliases: [
+      "parsedctnectnnumber",
+      "parsedctnnumber",
+      "ctnnumber",
+      "ctn",
+      "ectnnumber",
+      "ectn",
+      "besc",
+      "bescsfg",
+    ],
+  },
+  {
+    id: "billOfLadingNumber",
+    label: "Bill of Lading Number",
+    description: "Used to match report rows to the master bill of lading.",
+    aliases: [
+      "billofladingnumber",
+      "parsedbillofladingnumber",
+      "billoflading",
+      "blnumber",
+      "blreference",
+      "numerobl",
+      "numbl",
+      "bl",
+    ],
+  },
+  {
+    id: "reference",
+    label: "Country Report Reference",
+    description:
+      "Fallback matching value when CTN or bill of lading is absent.",
+    aliases: [
+      "parsedreference",
+      "reference",
+      "blreference",
+      "documentnumber",
+      "bookingnumber",
+    ],
+  },
+  {
+    id: "amount",
+    label: "Primary Country Amount",
+    description: "Primary amount included in the country report total.",
+    aliases: [
+      "parsedamount",
+      "amount",
+      "price",
+      "costofectn",
+      "ctnnet",
+      "debit",
+      "credit",
+    ],
+  },
+  {
+    id: "secondaryAmount",
+    label: "Secondary Country Amount",
+    description: "Optional second amount column added into the report total.",
+    aliases: ["amount2", "secondaryamount", "fees", "fee"],
+  },
+  {
+    id: "tertiaryAmount",
+    label: "Third Country Amount",
+    description: "Optional third amount column added into the report total.",
+    aliases: ["amount3", "tertiaryamount", "tax", "vat"],
+  },
+  {
+    id: "sourceCountryName",
+    label: "Source Country Name",
+    description:
+      "Used when one uploaded report contains rows for multiple countries.",
+    aliases: [
+      "parsedsourcecountry",
+      "country",
+      "countryname",
+      "sourcecountry",
+      "sourcecountryname",
+    ],
+  },
+] satisfies ReportMappingFieldDefinition[]
+
+const masterReportMappingFields = [
+  {
+    id: "sourceInternalId",
+    label: "NetSuite Internal ID",
+    description:
+      "Used with the row number to create a stable imported record ID.",
+    aliases: ["internalid", "id"],
+  },
+  {
+    id: "salesOrderNumber",
+    label: "Sales Order Number",
+    description:
+      "Imported as the Sales Order value and cleaned before matching.",
+    aliases: ["createdfrom", "salesorder", "salesordernumber"],
+  },
+  {
+    id: "billOfLadingNumber",
+    label: "Bill of Lading Number",
+    description: "Used to reconcile NetSuite rows against country report rows.",
+    aliases: [
+      "billofladingnumber",
+      "billoflading",
+      "blnumber",
+      "blreference",
+      "bl",
+    ],
+  },
+  {
+    id: "ctnNumber",
+    label: "CTN Number",
+    description: "Used to reconcile NetSuite rows against country report rows.",
+    aliases: ["ctnnumber", "ctn", "ectnnumber", "ectn"],
+  },
+  {
+    id: "status",
+    label: "CTN Status",
+    description:
+      "Imported as the master report status shown in reconciliation.",
+    aliases: ["ctnstatus", "status"],
+  },
+  {
+    id: "amount",
+    label: "NetSuite Amount",
+    description: "Imported as the master report amount.",
+    aliases: ["amount", "netamount", "total"],
+  },
+  {
+    id: "transactionDate",
+    label: "Transaction Date",
+    description: "Used for the transaction date checks on the country page.",
+    aliases: ["date", "transactiondate", "trandate", "invoicedate"],
+  },
+  {
+    id: "sourceClass",
+    label: "NetSuite Class / Country",
+    description: "Used to route one master upload to the correct country.",
+    aliases: ["class", "country", "sourceclass", "countryname"],
+  },
+] satisfies ReportMappingFieldDefinition[]
 
 type ModuleDraft = {
   name: string
@@ -147,6 +339,14 @@ export function TemplateEditorView() {
       level: "organizational",
     })
   const [itemForm, setItemForm] = React.useState<ItemForm>(null)
+  const [activeCountryId, setActiveCountryId] = React.useState<string | null>(
+    null
+  )
+  const [mappingHeaders, setMappingHeaders] =
+    React.useState<ReportMappingSamples>({})
+  const [showCountryExitPrompt, setShowCountryExitPrompt] =
+    React.useState(false)
+  const countryMappingPanelRef = React.useRef<CountryMappingPanelHandle>(null)
 
   const modules = React.useMemo(
     () => [
@@ -171,6 +371,13 @@ export function TemplateEditorView() {
     (group) => group.id === activeModuleId
   )
   const activeModule = modules.find((module) => module.id === activeModuleId)
+  const activeCountry = activeCountryId
+    ? template.countries.find((country) => country.id === activeCountryId)
+    : undefined
+  const activeCountryMappingHeaders =
+    activeCountryId && mappingHeaders[activeCountryId]
+      ? mappingHeaders[activeCountryId]
+      : { countryReport: [], masterReport: [] }
   const parentRows = template.countries
   const countryRowIds = React.useMemo(
     () => template.countries.map((row) => row.id),
@@ -329,6 +536,46 @@ export function TemplateEditorView() {
     })
   }
 
+  function openCountry(row: TemplateCountryRow, rowIndex: number) {
+    setShowCountryExitPrompt(false)
+    setActiveCountryId(row.id)
+    startEditCountry(row, rowIndex)
+  }
+
+  function closeActiveCountry() {
+    setShowCountryExitPrompt(false)
+    setActiveCountryId(null)
+    setItemForm(null)
+  }
+
+  function requestCloseActiveCountry() {
+    if (countryMappingPanelRef.current?.hasUnsavedChanges()) {
+      setShowCountryExitPrompt(true)
+      return
+    }
+
+    closeActiveCountry()
+  }
+
+  function saveMappingsAndCloseCountry() {
+    countryMappingPanelRef.current?.saveMappings()
+    closeActiveCountry()
+  }
+
+  function discardMappingsAndCloseCountry() {
+    countryMappingPanelRef.current?.discardMappings()
+    if (activeCountryId) {
+      setMappingHeaders((current) => {
+        const nextSamples = { ...current }
+
+        delete nextSamples[activeCountryId]
+
+        return nextSamples
+      })
+    }
+    closeActiveCountry()
+  }
+
   function startEditTask(task: TemplateSimpleTask) {
     setItemForm({
       mode: "edit-task",
@@ -417,7 +664,27 @@ export function TemplateEditorView() {
           updatedAt
         ),
       })
-      setItemForm(null)
+      if (activeCountryId === form.rowId) {
+        setItemForm({
+          mode: "edit-country",
+          rowId: form.rowId,
+          draft: {
+            ...form.draft,
+            name: cleanName,
+            invoiceRequired:
+              form.draft.type === "country"
+                ? form.draft.invoiceRequired
+                : false,
+            requiresPasteReport:
+              form.draft.type === "country"
+                ? form.draft.requiresPasteReport
+                : false,
+            combinedWithCountryIds,
+          },
+        })
+      } else {
+        setItemForm(null)
+      }
       return
     }
 
@@ -525,6 +792,92 @@ export function TemplateEditorView() {
       countries,
     })
     setItemForm(null)
+  }
+
+  function updateCountryReportMapping(
+    countryId: string,
+    mappingType: "countryReportMapping" | "masterReportMapping",
+    mapping?: ReportFieldMapping
+  ) {
+    const updatedAt = new Date().toISOString()
+
+    persist({
+      ...template,
+      countriesModule: {
+        ...template.countriesModule,
+        updatedAt,
+      },
+      countries: template.countries.map((country) =>
+        country.id === countryId
+          ? {
+              ...country,
+              [mappingType]: mapping,
+              updatedAt,
+            }
+          : country
+      ),
+    })
+  }
+
+  async function loadMappingSample(
+    file: File,
+    mappingKind: "countryReport" | "masterReport"
+  ) {
+    const extension = file.name.split(".").pop()?.toLowerCase()
+    const sampleText =
+      extension === "pdf" || file.type === "application/pdf"
+        ? await extractPdfText(file)
+        : extension === "xlsx" || extension === "xls"
+          ? await extractWorkbookRows(file)
+          : await file.text()
+    const sample = analyzeReportSample(sampleText)
+    const mappedSample =
+      mappingKind === "countryReport"
+        ? mergeParsedCountryReportSampleFields(
+            sample,
+            await parseCountryReportSampleFile(file)
+          )
+        : sample
+
+    if (activeCountryId) {
+      setMappingHeaders((current) => ({
+        ...current,
+        [activeCountryId]: {
+          countryReport: current[activeCountryId]?.countryReport ?? [],
+          masterReport: current[activeCountryId]?.masterReport ?? [],
+          [mappingKind]: mappedSample.fields,
+        },
+      }))
+    }
+
+    return mappedSample
+  }
+
+  async function loadMappingSampleText(
+    csvText: string,
+    mappingKind: "countryReport" | "masterReport"
+  ) {
+    const sample = analyzeReportSample(csvText)
+    const mappedSample =
+      mappingKind === "countryReport"
+        ? mergeParsedCountryReportSampleFields(
+            sample,
+            parseCountryReportSampleText(csvText)
+          )
+        : sample
+
+    if (activeCountryId) {
+      setMappingHeaders((current) => ({
+        ...current,
+        [activeCountryId]: {
+          countryReport: current[activeCountryId]?.countryReport ?? [],
+          masterReport: current[activeCountryId]?.masterReport ?? [],
+          [mappingKind]: mappedSample.fields,
+        },
+      }))
+    }
+
+    return mappedSample
   }
 
   function reorderCountryRow(event: DragEndEvent) {
@@ -761,15 +1114,18 @@ export function TemplateEditorView() {
                       {modules.map((module) => (
                         <TableRow
                           key={module.id}
-                          className="cursor-pointer"
+                          className="group cursor-pointer"
                           onClick={() => {
                             setActiveModuleId(module.id)
                             setItemForm(null)
+                            setActiveCountryId(null)
                           }}
                         >
                           <TableCell className="font-medium">
                             <div className="flex items-center gap-2">
-                              {module.name}
+                              <span className="underline-offset-4 group-hover:underline">
+                                {module.name}
+                              </span>
                               <Badge variant="secondary">{module.count}</Badge>
                             </div>
                           </TableCell>
@@ -828,22 +1184,34 @@ export function TemplateEditorView() {
                         variant="outline"
                         size="icon-sm"
                         className="h-9 w-9 shrink-0 rounded-full md:h-9 md:w-9"
-                        aria-label="Back to modules"
+                        aria-label={
+                          activeCountry
+                            ? "Back to countries"
+                            : "Back to modules"
+                        }
                         onClick={() => {
+                          if (activeCountry) {
+                            requestCloseActiveCountry()
+                            return
+                          }
+
                           setActiveModuleId(null)
                           setItemForm(null)
+                          setActiveCountryId(null)
                         }}
                       >
                         <ArrowLeftIcon />
                       </Button>
                       <CardTitle className="min-w-0 truncate">
-                        {activeModule?.name}
+                        {activeCountry?.name ?? activeModule?.name}
                       </CardTitle>
                     </div>
-                    <Button onClick={startAddItem}>
-                      <PlusIcon />
-                      Add New
-                    </Button>
+                    {activeCountry ? null : (
+                      <Button onClick={startAddItem}>
+                        <PlusIcon />
+                        Add New
+                      </Button>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent className="grid gap-4">
@@ -860,7 +1228,33 @@ export function TemplateEditorView() {
                     )
                   ) : null}
 
-                  {activeModuleId === countriesModuleId ? (
+                  {activeModuleId === countriesModuleId && activeCountry ? (
+                    <CountryMappingPanel
+                      ref={countryMappingPanelRef}
+                      country={activeCountry}
+                      detailsForm={
+                        itemForm?.mode === "edit-country" ? itemForm : null
+                      }
+                      parentRows={parentRows}
+                      template={template}
+                      mappingHeaders={activeCountryMappingHeaders}
+                      showExitPrompt={showCountryExitPrompt}
+                      onChangeDetailsForm={setItemForm}
+                      onSaveDetailsForm={saveItemForm}
+                      onSaveAndExit={saveMappingsAndCloseCountry}
+                      onDiscardAndExit={discardMappingsAndCloseCountry}
+                      onKeepEditing={() => setShowCountryExitPrompt(false)}
+                      onLoadSample={loadMappingSample}
+                      onLoadSampleText={loadMappingSampleText}
+                      onSaveMapping={(mappingType, mapping) =>
+                        updateCountryReportMapping(
+                          activeCountry.id,
+                          mappingType,
+                          mapping
+                        )
+                      }
+                    />
+                  ) : activeModuleId === countriesModuleId ? (
                     <CountriesTable
                       template={template}
                       itemForm={
@@ -870,6 +1264,7 @@ export function TemplateEditorView() {
                       sensors={countryRowDndSensors}
                       onChangeItemForm={setItemForm}
                       onCancelItemForm={() => setItemForm(null)}
+                      onOpenCountry={openCountry}
                       onEditCountry={startEditCountry}
                       onDeleteCountry={deleteCountryRow}
                       onDragEnd={reorderCountryRow}
@@ -959,6 +1354,7 @@ function SortableCountryRow({
   itemForm,
   onChangeItemForm,
   onCancelItemForm,
+  onOpenCountry,
   onEditCountry,
   onDeleteCountry,
   onSaveItemForm,
@@ -969,6 +1365,7 @@ function SortableCountryRow({
   itemForm: Extract<ItemForm, { mode: "edit-country" }> | null
   onChangeItemForm: (form: ItemForm) => void
   onCancelItemForm: () => void
+  onOpenCountry: (row: TemplateCountryRow, rowIndex: number) => void
   onEditCountry: (row: TemplateCountryRow, rowIndex: number) => void
   onDeleteCountry: (rowIndex: number) => void
   onSaveItemForm: () => void
@@ -1011,12 +1408,14 @@ function SortableCountryRow({
           </button>
         </TableCell>
         <TableCell className={isGroup ? "font-semibold" : "font-medium"}>
-          <span
-            className="block truncate"
+          <button
+            type="button"
+            className="block max-w-full cursor-pointer truncate text-left underline-offset-4 hover:underline"
             style={{ marginLeft: `${row.indent * 1.5}rem` }}
+            onClick={() => onOpenCountry(row, rowIndex)}
           >
             {row.name}
-          </span>
+          </button>
         </TableCell>
         <TableCell>
           <Badge variant={isGroup ? "outline" : "secondary"}>
@@ -1111,6 +1510,7 @@ function CountriesTable({
   sensors,
   onChangeItemForm,
   onCancelItemForm,
+  onOpenCountry,
   onEditCountry,
   onDeleteCountry,
   onDragEnd,
@@ -1122,6 +1522,7 @@ function CountriesTable({
   sensors: React.ComponentProps<typeof DndContext>["sensors"]
   onChangeItemForm: (form: ItemForm) => void
   onCancelItemForm: () => void
+  onOpenCountry: (row: TemplateCountryRow, rowIndex: number) => void
   onEditCountry: (row: TemplateCountryRow, rowIndex: number) => void
   onDeleteCountry: (rowIndex: number) => void
   onDragEnd: (event: DragEndEvent) => void
@@ -1159,6 +1560,7 @@ function CountriesTable({
                 itemForm={itemForm}
                 onChangeItemForm={onChangeItemForm}
                 onCancelItemForm={onCancelItemForm}
+                onOpenCountry={onOpenCountry}
                 onEditCountry={onEditCountry}
                 onDeleteCountry={onDeleteCountry}
                 onSaveItemForm={onSaveItemForm}
@@ -1168,6 +1570,1061 @@ function CountriesTable({
         </TableBody>
       </Table>
     </DndContext>
+  )
+}
+
+type ReportMappingCardHandle = {
+  openSample: () => void
+  addExtraField: () => void
+  resetToDefaultMapping: () => void
+  hasUnsavedChanges: () => boolean
+  saveMapping: () => void
+  discardChanges: () => void
+}
+
+type CountryMappingPanelHandle = {
+  hasUnsavedChanges: () => boolean
+  saveMappings: () => void
+  discardMappings: () => void
+}
+
+const CountryMappingPanel = React.forwardRef<
+  CountryMappingPanelHandle,
+  {
+    country: TemplateCountryRow
+    detailsForm: Extract<ItemForm, { mode: "edit-country" }> | null
+    parentRows: TemplateCountryRow[]
+    template: MonthEndTemplate
+    mappingHeaders: Record<
+      "countryReport" | "masterReport",
+      ReportSampleField[]
+    >
+    showExitPrompt: boolean
+    onChangeDetailsForm: (form: ItemForm) => void
+    onSaveDetailsForm: () => void
+    onSaveAndExit: () => void
+    onDiscardAndExit: () => void
+    onKeepEditing: () => void
+    onLoadSample: (
+      file: File,
+      mappingKind: "countryReport" | "masterReport"
+    ) => Promise<{
+      headerRowIndex: number
+      headers: string[]
+      fields: ReportSampleField[]
+    }>
+    onLoadSampleText: (
+      csvText: string,
+      mappingKind: "countryReport" | "masterReport"
+    ) => Promise<{
+      headerRowIndex: number
+      headers: string[]
+      fields: ReportSampleField[]
+    }>
+    onSaveMapping: (
+      mappingType: "countryReportMapping" | "masterReportMapping",
+      mapping?: ReportFieldMapping
+    ) => void
+  }
+>(function CountryMappingPanel(
+  {
+    country,
+    detailsForm,
+    parentRows,
+    template,
+    mappingHeaders,
+    showExitPrompt,
+    onChangeDetailsForm,
+    onSaveDetailsForm,
+    onSaveAndExit,
+    onDiscardAndExit,
+    onKeepEditing,
+    onLoadSample,
+    onLoadSampleText,
+    onSaveMapping,
+  },
+  ref
+) {
+  const [activeMappingTab, setActiveMappingTab] =
+    React.useState("country-report")
+  const [showResetConfirm, setShowResetConfirm] = React.useState(false)
+  const countryReportMappingRef = React.useRef<ReportMappingCardHandle>(null)
+  const masterReportMappingRef = React.useRef<ReportMappingCardHandle>(null)
+  const activeMappingRef =
+    activeMappingTab === "master-report"
+      ? masterReportMappingRef
+      : countryReportMappingRef
+
+  React.useImperativeHandle(ref, () => ({
+    hasUnsavedChanges() {
+      return (
+        countryReportMappingRef.current?.hasUnsavedChanges() === true ||
+        masterReportMappingRef.current?.hasUnsavedChanges() === true
+      )
+    },
+    saveMappings() {
+      countryReportMappingRef.current?.saveMapping()
+      masterReportMappingRef.current?.saveMapping()
+    },
+    discardMappings() {
+      countryReportMappingRef.current?.discardChanges()
+      masterReportMappingRef.current?.discardChanges()
+    },
+  }))
+
+  return (
+    <div className="grid gap-4">
+      {showExitPrompt ? (
+        <div className="flex flex-col gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 md:flex-row md:items-center md:justify-between">
+          <span>Save your mapping changes before leaving this country?</span>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={onSaveAndExit}>
+              <SaveIcon />
+              Save
+            </Button>
+            <Button size="sm" variant="outline" onClick={onDiscardAndExit}>
+              Cancel Changes
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onKeepEditing}>
+              Keep Editing
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {detailsForm ? (
+        <section className="grid gap-3">
+          <h2 className="text-lg font-semibold">Country Information</h2>
+          <div className="rounded-lg border bg-background p-4">
+            <CountryFields
+              form={detailsForm}
+              parentRows={parentRows}
+              template={template}
+              onChange={onChangeDetailsForm}
+              showLegend={false}
+            />
+            <div className="mt-5 flex justify-end gap-2">
+              <Button onClick={onSaveDetailsForm}>
+                <SaveIcon />
+                Save
+              </Button>
+            </div>
+          </div>
+        </section>
+      ) : null}
+      <Tabs
+        value={activeMappingTab}
+        onValueChange={setActiveMappingTab}
+        className="min-h-0 flex-1 gap-4"
+      >
+        <h2 className="text-lg font-semibold">Report Mapping</h2>
+        <div className="flex items-center gap-3">
+          <div className="-mx-4 min-w-0 flex-1 overflow-x-auto px-4 md:mx-0 md:px-0">
+            <TabsList className="h-auto min-h-11 w-max min-w-full flex-nowrap items-center gap-1 rounded-[1.375rem] p-1 md:min-w-0">
+              <TabsTrigger
+                value="country-report"
+                className="h-9 flex-none rounded-[1.05rem] px-4 py-2 leading-none"
+              >
+                Country Report
+              </TabsTrigger>
+              <TabsTrigger
+                value="master-report"
+                className="h-9 flex-none rounded-[1.05rem] px-4 py-2 leading-none"
+              >
+                NetSuite Master
+              </TabsTrigger>
+            </TabsList>
+          </div>
+          <div className="flex shrink-0 items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              className="h-9"
+              onClick={() => activeMappingRef.current?.openSample()}
+            >
+              <FileSpreadsheetIcon />
+              Sample
+            </Button>
+            <DropdownMenu
+              onOpenChange={(open) => {
+                if (!open) {
+                  setShowResetConfirm(false)
+                }
+              }}
+            >
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-9 w-9 rounded-full p-0"
+                    aria-label="Report mapping actions"
+                  />
+                }
+              >
+                <MoreHorizontalIcon />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-40">
+                {showResetConfirm ? (
+                  <>
+                    <button
+                      type="button"
+                      className="relative flex min-h-10 w-full cursor-default items-center gap-2 rounded-xl px-2 py-2 text-left text-sm whitespace-nowrap text-destructive outline-hidden select-none hover:bg-destructive/10 hover:text-destructive focus:bg-destructive/10 focus:text-destructive md:min-h-7 md:py-1.5 [&_svg]:size-4 [&_svg]:shrink-0"
+                      onClick={() => {
+                        activeMappingRef.current?.resetToDefaultMapping()
+                        setShowResetConfirm(false)
+                      }}
+                    >
+                      <Trash2Icon />
+                      Confirm Reset
+                    </button>
+                    <button
+                      type="button"
+                      className="relative flex min-h-10 w-full cursor-default items-center gap-2 rounded-xl px-2 py-2 text-left text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground md:min-h-7 md:py-1.5 [&_svg]:size-4 [&_svg]:shrink-0"
+                      onClick={() => {
+                        setShowResetConfirm(false)
+                      }}
+                    >
+                      <XIcon />
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <DropdownMenuItem
+                      onClick={() => activeMappingRef.current?.addExtraField()}
+                    >
+                      <PlusIcon />
+                      Add Field
+                    </DropdownMenuItem>
+                    <button
+                      type="button"
+                      className="relative flex min-h-10 w-full cursor-default items-center gap-2 rounded-xl px-2 py-2 text-left text-sm text-destructive outline-hidden select-none hover:bg-destructive/10 hover:text-destructive focus:bg-destructive/10 focus:text-destructive md:min-h-7 md:py-1.5 [&_svg]:size-4 [&_svg]:shrink-0"
+                      onClick={() => {
+                        setShowResetConfirm(true)
+                      }}
+                    >
+                      <Trash2Icon />
+                      Reset
+                    </button>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+        <TabsContent value="country-report" className="m-0">
+          <ReportMappingCard
+            ref={countryReportMappingRef}
+            mappingKind="countryReport"
+            fields={countryReportMappingFields}
+            mapping={country.countryReportMapping}
+            sampleHeaders={mappingHeaders.countryReport}
+            sampleMode={country.requiresPasteReport ? "paste" : "upload"}
+            onLoadSample={onLoadSample}
+            onLoadSampleText={onLoadSampleText}
+            onSave={(mapping) => onSaveMapping("countryReportMapping", mapping)}
+          />
+        </TabsContent>
+        <TabsContent value="master-report" className="m-0">
+          <ReportMappingCard
+            ref={masterReportMappingRef}
+            mappingKind="masterReport"
+            fields={masterReportMappingFields}
+            mapping={country.masterReportMapping}
+            sampleHeaders={mappingHeaders.masterReport}
+            sampleMode="upload"
+            onLoadSample={onLoadSample}
+            onLoadSampleText={onLoadSampleText}
+            onSave={(mapping) => onSaveMapping("masterReportMapping", mapping)}
+          />
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+})
+
+function normalizeMappingHeader(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "")
+}
+
+function normalizePastedReportText(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((row) => (row.includes("\t") ? row.split("\t").join(",") : row))
+    .join("\n")
+}
+
+function analyzeReportSample(value: string): {
+  headerRowIndex: number
+  headers: string[]
+  fields: ReportSampleField[]
+} {
+  const normalizedText = normalizePastedReportText(value)
+  const rows = parseCsv(normalizedText)
+  const headerRowIndex = rows.findIndex(
+    (row) => row.filter((cell) => cell.trim()).length >= 2
+  )
+  const headers = rows[headerRowIndex] ?? []
+  const dataRows = headerRowIndex >= 0 ? rows.slice(headerRowIndex + 1) : []
+  const hasStructuredColumns =
+    headerRowIndex >= 0 &&
+    headers.length > 1 &&
+    headers.some((header) => header.trim()) &&
+    dataRows.some((row) => row.filter((cell) => cell.trim()).length > 1)
+
+  if (hasStructuredColumns) {
+    return {
+      headerRowIndex,
+      headers,
+      fields: headers
+        .map((header, columnIndex) => ({
+          sourceColumn: header || `Column ${columnIndex + 1}`,
+          label: header || `Column ${columnIndex + 1}`,
+          previewValues: dataRows
+            .map((row) => row[columnIndex]?.trim() ?? "")
+            .filter(Boolean)
+            .slice(0, 3),
+        }))
+        .filter((field) => field.label.trim()),
+    }
+  }
+
+  const textLines = normalizedText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const previewLines = textLines.slice(0, 3)
+  const lineFields = textLines.slice(0, 8).map((line, index) => ({
+    sourceColumn: `__text_line_${index + 1}__`,
+    label: `Text Line ${index + 1}`,
+    previewValues: [line],
+  }))
+
+  return {
+    headerRowIndex: 0,
+    headers: [
+      "__full_text__",
+      ...lineFields.map((field) => field.sourceColumn),
+    ],
+    fields: [
+      {
+        sourceColumn: "__full_text__",
+        label: "Full Text",
+        previewValues: previewLines,
+      },
+      ...lineFields,
+    ],
+  }
+}
+
+async function parseCountryReportSampleFile(file: File) {
+  try {
+    return (await parseCountryReportUploadFile(file)).records
+  } catch {
+    return []
+  }
+}
+
+function parseCountryReportSampleText(text: string) {
+  try {
+    return parseCountryReportText(text)
+  } catch {
+    return []
+  }
+}
+
+function parsedCountryReportSampleFields(records: ParsedCountryReportRecord[]) {
+  const fieldConfigs = [
+    {
+      sourceColumn: "__parsed_invoice_number__",
+      label: "Parsed Invoice Number",
+      getValue: (record: ParsedCountryReportRecord) => record.invoiceNumber,
+    },
+    {
+      sourceColumn: "__parsed_ctn_number__",
+      label: "Parsed CTN / ECTN Number",
+      getValue: (record: ParsedCountryReportRecord) => record.ctnNumber,
+    },
+    {
+      sourceColumn: "__parsed_bill_of_lading_number__",
+      label: "Parsed Bill of Lading Number",
+      getValue: (record: ParsedCountryReportRecord) =>
+        record.billOfLadingNumber,
+    },
+    {
+      sourceColumn: "__parsed_reference__",
+      label: "Parsed Reference",
+      getValue: (record: ParsedCountryReportRecord) => record.reference,
+    },
+    {
+      sourceColumn: "__parsed_amount__",
+      label: "Parsed Amount",
+      getValue: (record: ParsedCountryReportRecord) =>
+        record.amount ? String(record.amount) : "",
+    },
+    {
+      sourceColumn: "__parsed_source_country__",
+      label: "Parsed Source Country",
+      getValue: (record: ParsedCountryReportRecord) =>
+        record.sourceCountryName ?? "",
+    },
+  ]
+
+  return fieldConfigs
+    .map((field) => ({
+      sourceColumn: field.sourceColumn,
+      label: field.label,
+      previewValues: records
+        .map(field.getValue)
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .slice(0, 3),
+    }))
+    .filter((field) => field.previewValues.length)
+}
+
+function mergeParsedCountryReportSampleFields(
+  sample: {
+    headerRowIndex: number
+    headers: string[]
+    fields: ReportSampleField[]
+  },
+  records: ParsedCountryReportRecord[]
+) {
+  const parsedFields = parsedCountryReportSampleFields(records)
+
+  if (!parsedFields.length) {
+    return sample
+  }
+
+  return {
+    ...sample,
+    headers: [
+      ...parsedFields.map((field) => field.sourceColumn),
+      ...sample.headers,
+    ],
+    fields: [...parsedFields, ...sample.fields],
+  }
+}
+
+function getSuggestedHeader(
+  sampleFields: ReportSampleField[],
+  field: ReportMappingFieldDefinition
+) {
+  const normalizedAliases = new Set(field.aliases.map(normalizeMappingHeader))
+  const exactMatch = sampleFields.find((sampleField) =>
+    normalizedAliases.has(normalizeMappingHeader(sampleField.label))
+  )
+
+  if (exactMatch) {
+    return exactMatch.sourceColumn
+  }
+
+  return sampleFields.find((sampleField) => {
+    const normalizedHeader = normalizeMappingHeader(sampleField.label)
+
+    return field.aliases.some((alias) =>
+      normalizedHeader.includes(normalizeMappingHeader(alias))
+    )
+  })?.sourceColumn
+}
+
+function makeExtraMappingId() {
+  return `extra-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function cloneFieldMapping(mapping: ReportFieldMapping): ReportFieldMapping {
+  return {
+    headerRowIndex: mapping.headerRowIndex,
+    fields: { ...mapping.fields },
+    extraFields: mapping.extraFields?.map((field) => ({ ...field })) ?? [],
+  }
+}
+
+function emptyReportMapping(): ReportFieldMapping {
+  return {
+    headerRowIndex: 0,
+    fields: {},
+    extraFields: [],
+  }
+}
+
+function serializeReportMapping(mapping: ReportFieldMapping | undefined) {
+  return JSON.stringify(mapping ?? emptyReportMapping())
+}
+
+const ReportMappingCard = React.forwardRef<
+  ReportMappingCardHandle,
+  {
+    mappingKind: "countryReport" | "masterReport"
+    fields: ReportMappingFieldDefinition[]
+    mapping?: ReportFieldMapping
+    sampleHeaders: ReportSampleField[]
+    sampleMode: "upload" | "paste"
+    onLoadSample: (
+      file: File,
+      mappingKind: "countryReport" | "masterReport"
+    ) => Promise<{
+      headerRowIndex: number
+      headers: string[]
+      fields: ReportSampleField[]
+    }>
+    onLoadSampleText: (
+      csvText: string,
+      mappingKind: "countryReport" | "masterReport"
+    ) => Promise<{
+      headerRowIndex: number
+      headers: string[]
+      fields: ReportSampleField[]
+    }>
+    onSave: (mapping?: ReportFieldMapping) => void
+  }
+>(function ReportMappingCard(
+  {
+    mappingKind,
+    fields,
+    mapping,
+    sampleHeaders,
+    sampleMode,
+    onLoadSample,
+    onLoadSampleText,
+    onSave,
+  },
+  ref
+) {
+  const inputRef = React.useRef<HTMLInputElement | null>(null)
+  const [showPasteSample, setShowPasteSample] = React.useState(false)
+  const [pasteSample, setPasteSample] = React.useState("")
+  const [hasPendingSample, setHasPendingSample] = React.useState(false)
+  const [draft, setDraft] = React.useState<ReportFieldMapping>(
+    mapping ?? {
+      headerRowIndex: 0,
+      fields: {},
+      extraFields: [],
+    }
+  )
+  const sampleFields = sampleHeaders.length
+    ? sampleHeaders
+    : [
+        ...Object.values(draft.fields)
+          .filter(Boolean)
+          .map((sourceColumn) => ({
+            sourceColumn,
+            label: sourceColumn,
+            previewValues: [],
+          })),
+        ...(draft.extraFields
+          ?.map((field) => field.sourceColumn)
+          .filter(Boolean)
+          .map((sourceColumn) => ({
+            sourceColumn,
+            label: sourceColumn,
+            previewValues: [],
+          })) ?? []),
+      ]
+  const fieldLabelsBySource = new Map(
+    sampleFields.map((sampleField) => [
+      sampleField.sourceColumn,
+      sampleField.label,
+    ])
+  )
+  React.useEffect(() => {
+    setDraft(
+      mapping ?? {
+        headerRowIndex: 0,
+        fields: {},
+        extraFields: [],
+      }
+    )
+  }, [mapping])
+
+  async function handleSampleFile(file: File) {
+    const sample = await onLoadSample(file, mappingKind)
+
+    applySampleHeaders(sample)
+    setHasPendingSample(true)
+  }
+
+  async function handleSamplePaste() {
+    const sample = await onLoadSampleText(pasteSample, mappingKind)
+
+    applySampleHeaders(sample)
+    setHasPendingSample(true)
+  }
+
+  function applySampleHeaders(sample: {
+    headerRowIndex: number
+    headers: string[]
+    fields: ReportSampleField[]
+  }) {
+    setDraft((current) => ({
+      headerRowIndex: sample.headerRowIndex,
+      fields: fields.reduce<ReportFieldMapping["fields"]>(
+        (nextFields, field) => {
+          nextFields[field.id] =
+            current.fields[field.id] ?? getSuggestedHeader(sample.fields, field)
+
+          return nextFields
+        },
+        {}
+      ),
+      extraFields: current.extraFields ?? [],
+    }))
+  }
+
+  function updateField(field: ReportMappingField, value: string) {
+    setDraft((current) => ({
+      ...current,
+      fields: {
+        ...current.fields,
+        [field]: value === reportMappingNoneValue ? undefined : value,
+      },
+    }))
+  }
+
+  function formatMappedSource(value: string | undefined) {
+    return value ? (fieldLabelsBySource.get(value) ?? value) : "Not mapped"
+  }
+
+  function getAssignedTargetValue(sourceColumn: string) {
+    const coreField = fields.find(
+      (field) => draft.fields[field.id] === sourceColumn
+    )
+
+    if (coreField) {
+      return `core:${coreField.id}`
+    }
+
+    const extraField = draft.extraFields?.find(
+      (field) => field.sourceColumn === sourceColumn
+    )
+
+    return extraField ? `extra:${extraField.id}` : reportMappingNoneValue
+  }
+
+  function assignSourceField(sourceColumn: string, targetValue: string | null) {
+    setDraft((current) => {
+      const clearedFields = Object.fromEntries(
+        Object.entries(current.fields).map(([fieldId, mappedSource]) => [
+          fieldId,
+          mappedSource === sourceColumn ? undefined : mappedSource,
+        ])
+      ) as ReportFieldMapping["fields"]
+      const clearedExtraFields = (current.extraFields ?? []).map((field) =>
+        field.sourceColumn === sourceColumn
+          ? { ...field, sourceColumn: "" }
+          : field
+      )
+
+      if (!targetValue || targetValue === reportMappingNoneValue) {
+        return {
+          ...current,
+          fields: clearedFields,
+          extraFields: clearedExtraFields,
+        }
+      }
+
+      if (targetValue.startsWith("core:")) {
+        const fieldId = targetValue.replace("core:", "") as ReportMappingField
+
+        return {
+          ...current,
+          fields: {
+            ...clearedFields,
+            [fieldId]: sourceColumn,
+          },
+          extraFields: clearedExtraFields,
+        }
+      }
+
+      if (targetValue.startsWith("extra:")) {
+        const extraFieldId = targetValue.replace("extra:", "")
+
+        return {
+          ...current,
+          fields: clearedFields,
+          extraFields: clearedExtraFields.map((field) =>
+            field.id === extraFieldId ? { ...field, sourceColumn } : field
+          ),
+        }
+      }
+
+      return current
+    })
+  }
+
+  function addExtraField() {
+    setDraft((current) => ({
+      ...current,
+      extraFields: [
+        ...(current.extraFields ?? []),
+        { id: makeExtraMappingId(), label: "New Field", sourceColumn: "" },
+      ],
+    }))
+  }
+
+  function updateExtraField(
+    fieldId: string,
+    updates: Partial<NonNullable<ReportFieldMapping["extraFields"]>[number]>
+  ) {
+    setDraft((current) => ({
+      ...current,
+      extraFields: (current.extraFields ?? []).map((field) =>
+        field.id === fieldId ? { ...field, ...updates } : field
+      ),
+    }))
+  }
+
+  function removeExtraField(fieldId: string) {
+    setDraft((current) => ({
+      ...current,
+      extraFields: (current.extraFields ?? []).filter(
+        (field) => field.id !== fieldId
+      ),
+    }))
+  }
+
+  function resetToDefaultMapping() {
+    onSave(
+      cloneFieldMapping(
+        mappingKind === "countryReport"
+          ? defaultCountryReportMapping
+          : defaultMasterReportMapping
+      )
+    )
+    setHasPendingSample(false)
+  }
+
+  function saveMapping() {
+    onSave(draft)
+    setHasPendingSample(false)
+  }
+
+  function discardChanges() {
+    setDraft(mapping ?? emptyReportMapping())
+    setHasPendingSample(false)
+    setShowPasteSample(false)
+  }
+
+  React.useImperativeHandle(ref, () => ({
+    openSample() {
+      if (sampleMode === "paste") {
+        setShowPasteSample((current) => !current)
+        return
+      }
+
+      inputRef.current?.click()
+    },
+    addExtraField,
+    resetToDefaultMapping,
+    hasUnsavedChanges() {
+      return (
+        hasPendingSample ||
+        serializeReportMapping(draft) !== serializeReportMapping(mapping)
+      )
+    },
+    saveMapping,
+    discardChanges,
+  }))
+
+  return (
+    <Card className="rounded-lg shadow-none">
+      <CardContent className="grid gap-4">
+        {sampleMode === "upload" ? (
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".csv,.pdf,.xls,.xlsx,text/csv,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            className="sr-only"
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0]
+
+              if (file) {
+                handleSampleFile(file)
+              }
+
+              event.currentTarget.value = ""
+            }}
+          />
+        ) : null}
+        {sampleMode === "paste" && showPasteSample ? (
+          <div className="grid gap-3 rounded-lg border bg-muted/20 p-3">
+            <Textarea
+              value={pasteSample}
+              onChange={(event) => setPasteSample(event.target.value)}
+              placeholder="Paste the report rows here, including the header row."
+              className="min-h-36"
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowPasteSample(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSamplePaste}
+                disabled={!pasteSample.trim()}
+              >
+                Use Sample
+              </Button>
+            </div>
+          </div>
+        ) : null}
+        {sampleHeaders.length ? (
+          <div className="grid gap-2">
+            {sampleFields.map((sampleField, index) => (
+              <div
+                key={`${sampleField.sourceColumn}-${index}`}
+                className="grid gap-3 rounded-lg border bg-background p-3 md:grid-cols-[minmax(0,1fr)_minmax(14rem,18rem)] md:items-center"
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">
+                    {sampleField.label}
+                  </div>
+                  {sampleField.previewValues.length ? (
+                    <div className="mt-1 truncate text-xs text-muted-foreground">
+                      {sampleField.previewValues.join(" | ")}
+                    </div>
+                  ) : (
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      No preview values found.
+                    </div>
+                  )}
+                </div>
+                <Select
+                  value={getAssignedTargetValue(sampleField.sourceColumn)}
+                  onValueChange={(value) =>
+                    assignSourceField(sampleField.sourceColumn, value)
+                  }
+                >
+                  <SelectTrigger className="w-full cursor-pointer">
+                    {formatAssignedTarget(
+                      getAssignedTargetValue(sampleField.sourceColumn),
+                      fields,
+                      draft.extraFields ?? []
+                    )}
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={reportMappingNoneValue}>
+                        Not mapped
+                      </SelectItem>
+                      {fields.map((field) => (
+                        <SelectItem key={field.id} value={`core:${field.id}`}>
+                          {field.label}
+                        </SelectItem>
+                      ))}
+                      {(draft.extraFields ?? []).map((field) => (
+                        <SelectItem key={field.id} value={`extra:${field.id}`}>
+                          {field.label || "Extra Field"}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+            ))}
+            {(draft.extraFields ?? []).map((field) => (
+              <ExtraMappingField
+                key={field.id}
+                field={field}
+                onChange={updateExtraField}
+                onRemove={removeExtraField}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2">
+            {fields.map((field) => (
+              <Field key={field.id}>
+                <div className="flex items-center gap-1.5">
+                  <FieldLabel>{field.label}</FieldLabel>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          className="text-muted-foreground transition-colors hover:text-foreground"
+                          aria-label={`About ${field.label}`}
+                        >
+                          <InfoIcon className="size-3.5" />
+                        </button>
+                      }
+                    />
+                    <TooltipContent>{field.description}</TooltipContent>
+                  </Tooltip>
+                </div>
+                <Select
+                  value={draft.fields[field.id] ?? reportMappingNoneValue}
+                  onValueChange={(value) => {
+                    if (value) {
+                      updateField(field.id, value)
+                    }
+                  }}
+                  disabled={!sampleFields.length}
+                >
+                  <SelectTrigger className="w-full cursor-pointer">
+                    {formatMappedSource(draft.fields[field.id])}
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={reportMappingNoneValue}>
+                        Not mapped
+                      </SelectItem>
+                      {sampleFields.map((sampleField, index) => (
+                        <SelectItem
+                          key={`${sampleField.sourceColumn}-${index}`}
+                          value={sampleField.sourceColumn}
+                        >
+                          <div className="grid gap-0.5">
+                            <span>{sampleField.label}</span>
+                            {sampleField.previewValues.length ? (
+                              <span className="max-w-72 truncate text-xs text-muted-foreground">
+                                {sampleField.previewValues.join(" | ")}
+                              </span>
+                            ) : null}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+            ))}
+            {(draft.extraFields ?? []).map((field) => (
+              <Field key={field.id}>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={field.label}
+                    onChange={(event) =>
+                      updateExtraField(field.id, { label: event.target.value })
+                    }
+                    aria-label="Extra field name"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Remove ${field.label || "extra field"}`}
+                    onClick={() => removeExtraField(field.id)}
+                  >
+                    <Trash2Icon />
+                  </Button>
+                </div>
+                <Select
+                  value={field.sourceColumn || reportMappingNoneValue}
+                  onValueChange={(value) =>
+                    updateExtraField(field.id, {
+                      sourceColumn:
+                        value && value !== reportMappingNoneValue ? value : "",
+                    })
+                  }
+                  disabled={!sampleFields.length}
+                >
+                  <SelectTrigger className="w-full cursor-pointer">
+                    {formatMappedSource(field.sourceColumn)}
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={reportMappingNoneValue}>
+                        Not mapped
+                      </SelectItem>
+                      {sampleFields.map((sampleField, index) => (
+                        <SelectItem
+                          key={`${sampleField.sourceColumn}-${index}`}
+                          value={sampleField.sourceColumn}
+                        >
+                          <div className="grid gap-0.5">
+                            <span>{sampleField.label}</span>
+                            {sampleField.previewValues.length ? (
+                              <span className="max-w-72 truncate text-xs text-muted-foreground">
+                                {sampleField.previewValues.join(" | ")}
+                              </span>
+                            ) : null}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+            ))}
+          </div>
+        )}
+        {!sampleHeaders.length ? (
+          <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+            {sampleMode === "paste"
+              ? "Paste a sample report to choose its columns."
+              : "Upload a sample report to choose its columns."}
+          </div>
+        ) : null}
+        <div className="flex justify-end gap-2">
+          <Button onClick={saveMapping}>
+            <SaveIcon />
+            Save Mapping
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+})
+
+function formatAssignedTarget(
+  value: string,
+  fields: ReportMappingFieldDefinition[],
+  extraFields: NonNullable<ReportFieldMapping["extraFields"]>
+) {
+  if (value === reportMappingNoneValue) {
+    return "Not mapped"
+  }
+
+  if (value.startsWith("core:")) {
+    const fieldId = value.replace("core:", "")
+    return fields.find((field) => field.id === fieldId)?.label ?? "Not mapped"
+  }
+
+  if (value.startsWith("extra:")) {
+    const fieldId = value.replace("extra:", "")
+    return (
+      extraFields.find((field) => field.id === fieldId)?.label ?? "Extra Field"
+    )
+  }
+
+  return "Not mapped"
+}
+
+function ExtraMappingField({
+  field,
+  onChange,
+  onRemove,
+}: {
+  field: NonNullable<ReportFieldMapping["extraFields"]>[number]
+  onChange: (
+    fieldId: string,
+    updates: Partial<NonNullable<ReportFieldMapping["extraFields"]>[number]>
+  ) => void
+  onRemove: (fieldId: string) => void
+}) {
+  return (
+    <div className="grid gap-2 rounded-lg border border-dashed bg-muted/20 p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+      <Field>
+        <FieldLabel>Extra Required Field</FieldLabel>
+        <Input
+          value={field.label}
+          onChange={(event) =>
+            onChange(field.id, { label: event.target.value })
+          }
+          aria-label="Extra field name"
+        />
+      </Field>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label={`Remove ${field.label || "extra field"}`}
+        onClick={() => onRemove(field.id)}
+      >
+        <Trash2Icon />
+      </Button>
+    </div>
   )
 }
 
@@ -1294,11 +2751,13 @@ function CountryFields({
   parentRows,
   template,
   onChange,
+  showLegend = true,
 }: {
   form: Extract<ItemForm, { mode: "add-country" | "edit-country" }>
   parentRows: TemplateCountryRow[]
   template: MonthEndTemplate
   onChange: (form: ItemForm) => void
+  showLegend?: boolean
 }) {
   const editedRowIndex =
     form.mode === "edit-country"
@@ -1327,7 +2786,7 @@ function CountryFields({
 
   return (
     <FieldSet>
-      <FieldLegend>Country Details</FieldLegend>
+      {showLegend ? <FieldLegend>Country Details</FieldLegend> : null}
       <FieldGroup className="grid gap-4 md:grid-cols-2">
         <Field>
           <FieldLabel htmlFor="country-row-name">Name</FieldLabel>

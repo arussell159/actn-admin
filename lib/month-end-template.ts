@@ -10,7 +10,36 @@ export type TemplateCountryRow = {
   invoiceRequired?: boolean
   requiresPasteReport?: boolean
   combinedWithCountryIds?: string[]
+  countryReportMapping?: ReportFieldMapping
+  masterReportMapping?: ReportFieldMapping
   updatedAt?: string
+}
+
+export type ReportFieldMapping = {
+  headerRowIndex: number
+  fields: Partial<Record<ReportMappingField, string>>
+  extraFields?: ReportExtraFieldMapping[]
+}
+
+export type ReportMappingField =
+  | "invoiceNumber"
+  | "ctnNumber"
+  | "billOfLadingNumber"
+  | "reference"
+  | "amount"
+  | "secondaryAmount"
+  | "tertiaryAmount"
+  | "salesOrderNumber"
+  | "status"
+  | "transactionDate"
+  | "sourceClass"
+  | "sourceInternalId"
+  | "sourceCountryName"
+
+export type ReportExtraFieldMapping = {
+  id: string
+  label: string
+  sourceColumn: string
 }
 
 export type TemplateSimpleTask = {
@@ -46,6 +75,88 @@ const storageKey = "africa-ctn-month-end-template"
 const tableName = "month_end_templates"
 const templateId = "default"
 const defaultUpdatedAt = "2026-08-26T00:00:00.000Z"
+
+export const defaultCountryReportMapping: ReportFieldMapping = {
+  headerRowIndex: 0,
+  fields: {
+    invoiceNumber: "Invoice Number",
+    ctnNumber: "CTN Number",
+    billOfLadingNumber: "Bill of Lading",
+    reference: "Reference",
+    amount: "Amount",
+    secondaryAmount: "Amount 2",
+    tertiaryAmount: "Amount 3",
+    sourceCountryName: "Source Country",
+  },
+  extraFields: [],
+}
+
+export const defaultMasterReportMapping: ReportFieldMapping = {
+  headerRowIndex: 0,
+  fields: {
+    sourceInternalId: "Internal ID",
+    salesOrderNumber: "Created From",
+    billOfLadingNumber: "Bill of Lading",
+    ctnNumber: "CTN Number",
+    status: "CTN Status",
+    amount: "Amount",
+    transactionDate: "Date",
+    sourceClass: "Class",
+  },
+  extraFields: [],
+}
+
+function reportMappingsEqual(
+  first: ReportFieldMapping | undefined,
+  second: ReportFieldMapping
+) {
+  if (!first || first.headerRowIndex !== second.headerRowIndex) {
+    return false
+  }
+
+  const fieldNames = new Set([
+    ...Object.keys(first.fields),
+    ...Object.keys(second.fields),
+  ])
+
+  for (const fieldName of fieldNames) {
+    if (
+      first.fields[fieldName as ReportMappingField] !==
+      second.fields[fieldName as ReportMappingField]
+    ) {
+      return false
+    }
+  }
+
+  const firstExtraFields = first.extraFields ?? []
+  const secondExtraFields = second.extraFields ?? []
+
+  if (firstExtraFields.length !== secondExtraFields.length) {
+    return false
+  }
+
+  return firstExtraFields.every((field, index) => {
+    const otherField = secondExtraFields[index]
+
+    return (
+      field.id === otherField?.id &&
+      field.label === otherField.label &&
+      field.sourceColumn === otherField.sourceColumn
+    )
+  })
+}
+
+export function isDefaultCountryReportMapping(
+  mapping: ReportFieldMapping | undefined
+) {
+  return reportMappingsEqual(mapping, defaultCountryReportMapping)
+}
+
+export function isDefaultMasterReportMapping(
+  mapping: ReportFieldMapping | undefined
+) {
+  return reportMappingsEqual(mapping, defaultMasterReportMapping)
+}
 
 export const workflowTasks = [
   { id: "invoice", label: "Invoice" },
@@ -208,13 +319,13 @@ export function makeTemplateId(value: string) {
 
 export function loadMonthEndTemplate() {
   if (typeof window === "undefined") {
-    return defaultTemplate
+    return normalizeTemplate(defaultTemplate)
   }
 
   const saved = window.localStorage.getItem(storageKey)
 
   if (!saved) {
-    return defaultTemplate
+    return normalizeTemplate(defaultTemplate)
   }
 
   try {
@@ -222,7 +333,7 @@ export function loadMonthEndTemplate() {
 
     return normalizeTemplate(parsed)
   } catch {
-    return defaultTemplate
+    return normalizeTemplate(defaultTemplate)
   }
 }
 
@@ -242,9 +353,11 @@ export async function getMonthEndTemplate() {
     }
 
     if (!data?.template) {
-      saveLocalTemplate(defaultTemplate)
-      saveDatabaseTemplate(defaultTemplate)
-      return defaultTemplate
+      const template = normalizeTemplate(defaultTemplate)
+
+      saveLocalTemplate(template)
+      saveDatabaseTemplate(template)
+      return template
     }
 
     const template = normalizeTemplate(data.template)
@@ -292,21 +405,22 @@ function normalizeTemplate(template: MonthEndTemplate): MonthEndTemplate {
           mergeDefaultCountryRows(template.countries).map((row) => {
             const defaultRow = defaultCountriesById.get(row.id)
 
-            return {
+            return withDefaultReportMappings({
               ...row,
-            checkable: row.checkable ?? defaultRow?.checkable,
-            invoiceRequired: row.invoiceRequired ?? defaultRow?.invoiceRequired,
-            requiresPasteReport:
-              row.requiresPasteReport ?? defaultRow?.requiresPasteReport,
-            combinedWithCountryIds:
+              checkable: row.checkable ?? defaultRow?.checkable,
+              invoiceRequired:
+                row.invoiceRequired ?? defaultRow?.invoiceRequired,
+              requiresPasteReport:
+                row.requiresPasteReport ?? defaultRow?.requiresPasteReport,
+              combinedWithCountryIds:
                 row.combinedWithCountryIds ??
                 defaultRow?.combinedWithCountryIds ??
                 [],
               updatedAt: row.updatedAt ?? defaultRow?.updatedAt,
-            }
+            })
           })
         )
-      : defaultTemplate.countries,
+      : defaultTemplate.countries.map(withDefaultReportMappings),
     taskGroups: template.taskGroups?.length
       ? template.taskGroups.map((group) => {
           const defaultGroup = defaultTaskGroupsById.get(group.id)
@@ -327,6 +441,27 @@ function normalizeTemplate(template: MonthEndTemplate): MonthEndTemplate {
           }
         })
       : defaultTemplate.taskGroups,
+  }
+}
+
+function cloneReportMapping(mapping: ReportFieldMapping): ReportFieldMapping {
+  return {
+    headerRowIndex: mapping.headerRowIndex,
+    fields: { ...mapping.fields },
+    extraFields: mapping.extraFields?.map((field) => ({ ...field })) ?? [],
+  }
+}
+
+function withDefaultReportMappings(
+  row: TemplateCountryRow
+): TemplateCountryRow {
+  return {
+    ...row,
+    countryReportMapping:
+      row.countryReportMapping ??
+      cloneReportMapping(defaultCountryReportMapping),
+    masterReportMapping:
+      row.masterReportMapping ?? cloneReportMapping(defaultMasterReportMapping),
   }
 }
 
@@ -373,7 +508,9 @@ function mergeDefaultCountryRows(countries: TemplateCountryRow[]) {
       .map((country) => country.id)
     const insertAfterIndex = previousDefaultRowIds.reduce(
       (latestIndex, rowId) => {
-        const rowIndex = mergedCountries.findIndex((country) => country.id === rowId)
+        const rowIndex = mergedCountries.findIndex(
+          (country) => country.id === rowId
+        )
 
         return rowIndex >= 0 ? rowIndex : latestIndex
       },

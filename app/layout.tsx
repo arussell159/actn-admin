@@ -8,13 +8,14 @@ import { appTitle } from "@/lib/page-title"
 import { cn } from "@/lib/utils"
 import type { Metadata } from "next"
 import type { Viewport } from "next"
-import { Inter } from "next/font/google";
+import { Inter } from "next/font/google"
 
-const inter = Inter({subsets:['latin'],variable:'--font-sans'});
+const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
 
 export const metadata: Metadata = {
   title: appTitle,
-  description: "Africa CTN admin tools for month end, quotes, notes, and pricing.",
+  description:
+    "Africa CTN admin tools for month end, quotes, notes, and pricing.",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",

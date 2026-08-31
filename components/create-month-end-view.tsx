@@ -53,9 +53,6 @@ export function CreateMonthEndView() {
         <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
           <SiteHeader title="Create Month End" />
           <div className="grid gap-4 px-4 py-4 lg:px-6">
-            <section>
-              <h1 className="text-2xl font-semibold">Create Month End</h1>
-            </section>
             {isLoading ? (
               <CreateMonthEndSkeleton />
             ) : (

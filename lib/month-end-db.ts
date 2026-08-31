@@ -1,5 +1,5 @@
 import { createPublicClient } from "@/lib/public-client"
-import { assertSupabaseConfig, hasSupabaseConfig } from "@/lib/supabase-env"
+import { assertSupabaseConfig } from "@/lib/supabase-env"
 
 export type MonthEndStatus = "Open" | "Closed"
 export type MonthEndValue = boolean | number | string
@@ -188,7 +188,7 @@ export async function getMonthEndRecord(period = getDefaultPeriod()) {
 
     return data ? toRecord(data) : undefined
   } catch (error) {
-    if (isLocalhostBrowser() && !hasSupabaseConfig()) {
+    if (isLocalhostBrowser()) {
       return getLocalRecords().find((record) => record.period === period)
     }
 
@@ -207,7 +207,7 @@ export async function saveMonthEndRecord(record: MonthEndRecord) {
       throw error
     }
   } catch (error) {
-    if (isLocalhostBrowser() && !hasSupabaseConfig()) {
+    if (isLocalhostBrowser()) {
       saveLocalRecord(record)
       return
     }
@@ -228,7 +228,7 @@ export async function deleteMonthEndRecord(period: string) {
       throw error
     }
   } catch (error) {
-    if (isLocalhostBrowser() && !hasSupabaseConfig()) {
+    if (isLocalhostBrowser()) {
       deleteLocalRecord(period)
       return
     }
@@ -266,7 +266,7 @@ export async function listMonthEndRecords() {
       second.period.localeCompare(first.period)
     )
   } catch (error) {
-    if (isLocalhostBrowser() && !hasSupabaseConfig()) {
+    if (isLocalhostBrowser()) {
       return getLocalRecords()
     }
 

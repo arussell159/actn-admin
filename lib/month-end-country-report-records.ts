@@ -1,5 +1,5 @@
 import { createPublicClient } from "@/lib/public-client"
-import { assertSupabaseConfig, hasSupabaseConfig } from "@/lib/supabase-env"
+import { assertSupabaseConfig } from "@/lib/supabase-env"
 import {
   mergeReportValues,
   normalizeCountryReportReference,
@@ -226,6 +226,10 @@ export async function replaceMonthEndCountryReportRecords({
 }) {
   const canonicalCountryId = getCanonicalCountryId(countryId)
 
+  if (isLocalhostBrowser()) {
+    replaceLocalCountryReportRecords(monthEndId, countryId, records)
+  }
+
   try {
     const supabase = getSupabaseClient()
     const { data: existingRows, error: selectError } = await supabase
@@ -264,7 +268,7 @@ export async function replaceMonthEndCountryReportRecords({
       }
     }
   } catch (error) {
-    if (isLocalhostBrowser() && !hasSupabaseConfig()) {
+    if (isLocalhostBrowser()) {
       replaceLocalCountryReportRecords(monthEndId, countryId, records)
       return
     }
@@ -295,11 +299,29 @@ export async function listMonthEndCountryReportRecords({
       throw error
     }
 
-    return (data ?? []).map((row) =>
+    const remoteRecords = (data ?? []).map((row) =>
       toRecord(row as MonthEndCountryReportRecordRow)
     )
+
+    if (!isLocalhostBrowser()) {
+      return remoteRecords
+    }
+
+    const localRecords = getLocalRecords().filter(
+      (record) =>
+        record.monthEndId === monthEndId &&
+        getCanonicalCountryId(record.countryId) === canonicalCountryId
+    )
+    const localIds = new Set(localRecords.map((record) => record.id))
+    const remoteOnlyRecords = remoteRecords.filter(
+      (record) => !localIds.has(record.id)
+    )
+
+    return [...remoteOnlyRecords, ...localRecords].sort((first, second) =>
+      first.reference.localeCompare(second.reference)
+    )
   } catch (error) {
-    if (isLocalhostBrowser() && !hasSupabaseConfig()) {
+    if (isLocalhostBrowser()) {
       return getLocalRecords()
         .filter(
           (record) =>

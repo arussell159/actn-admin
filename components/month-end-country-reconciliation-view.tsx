@@ -57,16 +57,21 @@ import {
   listMonthEndMasterRecords,
   masterTransactionDatesKey,
   moveMonthEndMasterRecordsToCountry,
+  parseMappedCountryMasterCsv,
   parseCountryMasterCsv,
   replaceMonthEndCountryMasterRecords,
   type MonthEndMasterRecord,
 } from "@/lib/month-end-master-records"
 import {
   getMonthEndTemplate,
+  isDefaultCountryReportMapping,
+  isDefaultMasterReportMapping,
   loadMonthEndTemplate,
   type TemplateCountryRow,
 } from "@/lib/month-end-template"
 import {
+  extractWorkbookRows,
+  parseMappedCountryReportCsv,
   parseCountryReportUploadFile,
   parseCountryReportText,
   type AntaserJournalDocument,
@@ -190,6 +195,16 @@ function getUploadErrorMessage(error: unknown, fallback: string) {
   }
 
   return fallback
+}
+
+async function reportFileToCsvText(file: File, period?: string) {
+  const extension = file.name.split(".").pop()?.toLowerCase()
+
+  if (extension === "xlsx" || extension === "xls") {
+    return extractWorkbookRows(file, { period })
+  }
+
+  return file.text()
 }
 
 function lineItemCountryName(value: string | undefined) {
@@ -411,6 +426,7 @@ function ReconciliationWorkbench({
   onUploadCountry,
   onDeleteMaster,
   onDeleteCountry,
+  canEditCountryData = true,
   countryId,
   countryName,
   countryRecordCount,
@@ -431,6 +447,7 @@ function ReconciliationWorkbench({
   onUploadCountry: () => void
   onDeleteMaster: () => void
   onDeleteCountry: () => void
+  canEditCountryData?: boolean
   countryId?: string
   countryName: string
   countryRecordCount: number
@@ -529,6 +546,14 @@ function ReconciliationWorkbench({
   const selectedMasterRecords = masterRows
     .map(({ record }) => record)
     .filter((record) => selectedMasterRecordIds.has(record.id))
+
+  function countryCellLabel(record: MonthEndCountryReportRecord) {
+    return (
+      record.sourceCountryName ||
+      lineItemCountryName(record.countryName) ||
+      countryName
+    )
+  }
 
   function toggleAllMasterRows(checked: boolean) {
     setSelectedMasterRecordIds((current) => {
@@ -652,34 +677,36 @@ function ReconciliationWorkbench({
         <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-lg border bg-background p-3">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold tracking-normal">Country</h2>
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 rounded-full"
-                  />
-                }
-              >
-                <PencilIcon />
-                Edit
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-52">
-                <DropdownMenuItem onClick={onUploadCountry}>
-                  <UploadIcon />
-                  Upload / Replace Data
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  variant="destructive"
-                  onClick={onDeleteCountry}
+            {canEditCountryData ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 rounded-full"
+                    />
+                  }
                 >
-                  <Trash2Icon />
-                  Delete Data
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  <PencilIcon />
+                  Edit
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-52">
+                  <DropdownMenuItem onClick={onUploadCountry}>
+                    <UploadIcon />
+                    Upload / Replace Data
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={onDeleteCountry}
+                  >
+                    <Trash2Icon />
+                    Delete Data
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
           </div>
           <div className="min-h-0 overflow-x-hidden overflow-y-auto">
             <Table
@@ -699,10 +726,13 @@ function ReconciliationWorkbench({
                 {countryRows.length ? (
                   countryRows.map(({ record }) => (
                     <TableRow key={record.id} className="h-12">
-                      <TableCell className="break-words">
-                        {record.sourceCountryName ||
-                          lineItemCountryName(record.countryName) ||
-                          countryName}
+                      <TableCell className="min-w-0">
+                        <span
+                          className="block truncate"
+                          title={countryCellLabel(record)}
+                        >
+                          {countryCellLabel(record)}
+                        </span>
                       </TableCell>
                       <TableCell className="font-medium break-words">
                         {record.reference || record.invoiceNumber || "-"}
@@ -976,7 +1006,10 @@ function ReconciliationWorkbench({
                             {masterRecord.salesOrderNumber || "-"}
                           </div>
                           {showCountryColumn ? (
-                            <div className="text-muted-foreground">
+                            <div
+                              className="truncate text-muted-foreground"
+                              title={masterRecord.countryName || "-"}
+                            >
                               {masterRecord.countryName || "-"}
                             </div>
                           ) : null}
@@ -1234,6 +1267,14 @@ function DashboardCountryTable({
   records: MonthEndCountryReportRecord[]
   countryName: string
 }) {
+  function countryCellLabel(record: MonthEndCountryReportRecord) {
+    return (
+      record.sourceCountryName ||
+      lineItemCountryName(record.countryName) ||
+      countryName
+    )
+  }
+
   return (
     <div className="max-h-[60svh] overflow-x-hidden overflow-y-auto">
       <Table
@@ -1253,10 +1294,13 @@ function DashboardCountryTable({
           {records.length ? (
             records.map((record) => (
               <TableRow key={record.id} className="h-12">
-                <TableCell className="break-words">
-                  {record.sourceCountryName ||
-                    lineItemCountryName(record.countryName) ||
-                    countryName}
+                <TableCell className="min-w-0">
+                  <span
+                    className="block truncate"
+                    title={countryCellLabel(record)}
+                  >
+                    {countryCellLabel(record)}
+                  </span>
                 </TableCell>
                 <TableCell className="font-medium break-words">
                   {record.reference || record.invoiceNumber || "-"}
@@ -1993,6 +2037,7 @@ export function MonthEndCountryReconciliationView({
   )
   const hasCountryReport = countryReportRecords.length > 0
   const hasMasterRecords = records.length > 0
+  const requiresCountryReport = activeCountryId !== ANGOLA_OOT_COUNTRY_ID
 
   function openMasterFilePicker() {
     window.setTimeout(() => masterInputRef.current?.click(), 0)
@@ -2313,12 +2358,29 @@ export function MonthEndCountryReconciliationView({
         activeCountryId,
         template.countries
       )
-      const parsedRecords = parseCountryMasterCsv({
-        csvText: await file.text(),
-        targetCountries,
-        monthEndId: record.id,
-        period: record.period,
-      })
+      const activeCountry = template.countries.find(
+        (item) => item.id === activeCountryId
+      )
+      const csvText = await reportFileToCsvText(file, record.period)
+      const mappedRecords = isDefaultMasterReportMapping(
+        activeCountry?.masterReportMapping
+      )
+        ? undefined
+        : parseMappedCountryMasterCsv({
+            csvText,
+            targetCountries,
+            monthEndId: record.id,
+            period: record.period,
+            mapping: activeCountry?.masterReportMapping,
+          })
+      const parsedRecords = mappedRecords?.length
+        ? mappedRecords
+        : parseCountryMasterCsv({
+            csvText,
+            targetCountries,
+            monthEndId: record.id,
+            period: record.period,
+          })
 
       await replaceMonthEndCountryMasterRecords({
         monthEndId: record.id,
@@ -2469,14 +2531,38 @@ export function MonthEndCountryReconciliationView({
     setUploadError("")
 
     try {
+      const template = await getMonthEndTemplate()
+      const activeCountry = activeCountryId
+        ? template.countries.find((item) => item.id === activeCountryId)
+        : undefined
       const parsedGroups = await Promise.all(
-        files.map((file) =>
-          parseCountryReportUploadFile(file, { period: record?.period })
-        )
+        files.map(async (file) => {
+          const mappedRecords = isDefaultCountryReportMapping(
+            activeCountry?.countryReportMapping
+          )
+            ? undefined
+            : parseMappedCountryReportCsv(
+                await reportFileToCsvText(file, record?.period),
+                activeCountry?.countryReportMapping
+              )
+
+          if (mappedRecords?.length) {
+            return { records: mappedRecords }
+          }
+
+          return parseCountryReportUploadFile(file, { period: record?.period })
+        })
       )
       const antaserDocuments = parsedGroups.flatMap((group) =>
         group.antaserJournalDocument ? [group.antaserJournalDocument] : []
       )
+      const parsedRecords = parsedGroups.flatMap((group) => group.records)
+
+      if (!parsedRecords.length) {
+        throw new Error(
+          `No country report rows were found for ${record?.period ?? "this month end"}. Make sure the report period matches the open month end.`
+        )
+      }
 
       if (activeCountryId?.startsWith("antaser")) {
         const documentKinds = new Set(
@@ -2505,7 +2591,7 @@ export function MonthEndCountryReconciliationView({
       }
 
       await saveParsedCountryReportRecords({
-        parsedRecords: parsedGroups.flatMap((group) => group.records),
+        parsedRecords,
         sourceLabel: files.map((file) => file.name).join(", "),
         antaserDocuments: activeCountryId?.startsWith("antaser")
           ? antaserDocuments
@@ -3004,7 +3090,7 @@ export function MonthEndCountryReconciliationView({
 
               {!hasLoaded ? (
                 <CountryReconciliationSkeleton />
-              ) : !hasCountryReport && !hasMasterRecords ? (
+              ) : requiresCountryReport && !hasCountryReport ? (
                 <CountryReportUploadStep
                   countryReportLabel={countryReportLabel}
                   masterCount={records.length}
@@ -3028,6 +3114,7 @@ export function MonthEndCountryReconciliationView({
                   onUploadCountry={openCountryReportFilePicker}
                   onDeleteMaster={deleteMasterRecords}
                   onDeleteCountry={deleteCountryReportRecords}
+                  canEditCountryData={requiresCountryReport}
                   countryId={activeCountryId}
                   countryName={
                     countryDisplayName || country?.name || "Unknown country"

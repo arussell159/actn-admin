@@ -1,4 +1,5 @@
 import { findCsvColumn, parseCsv } from "@/lib/csv"
+import type { ReportFieldMapping } from "@/lib/month-end-template"
 
 export type ParsedCountryReportRecord = {
   invoiceNumber: string
@@ -83,6 +84,111 @@ function getCountryReportRows(csvText: string) {
   const headerIndex = rows.findIndex(rowHasCountryReportHeaders)
 
   return headerIndex >= 0 ? rows.slice(headerIndex) : rows
+}
+
+function mappedColumnIndex(
+  headers: string[],
+  mapping: ReportFieldMapping,
+  field: keyof ReportFieldMapping["fields"]
+) {
+  const header = mapping.fields[field]
+
+  if (!header) {
+    return -1
+  }
+
+  return headers.findIndex((item) => item === header)
+}
+
+export function parseMappedCountryReportCsv(
+  csvText: string,
+  mapping?: ReportFieldMapping
+) {
+  if (!mapping) {
+    return undefined
+  }
+
+  const rows = parseCsv(csvText)
+  const [headers, ...dataRows] = rows.slice(mapping.headerRowIndex)
+
+  if (!headers) {
+    return []
+  }
+
+  const invoiceIndex = mappedColumnIndex(headers, mapping, "invoiceNumber")
+  const ctnIndex = mappedColumnIndex(headers, mapping, "ctnNumber")
+  const billOfLadingIndex = mappedColumnIndex(
+    headers,
+    mapping,
+    "billOfLadingNumber"
+  )
+  const referenceIndex = mappedColumnIndex(headers, mapping, "reference")
+  const amountIndexes = [
+    mappedColumnIndex(headers, mapping, "amount"),
+    mappedColumnIndex(headers, mapping, "secondaryAmount"),
+    mappedColumnIndex(headers, mapping, "tertiaryAmount"),
+  ].filter((index) => index >= 0)
+  const sourceCountryIndex = mappedColumnIndex(
+    headers,
+    mapping,
+    "sourceCountryName"
+  )
+
+  if (ctnIndex < 0 && billOfLadingIndex < 0 && referenceIndex < 0) {
+    return []
+  }
+
+  const grouped = new Map<string, ParsedCountryReportRecord>()
+
+  for (const row of dataRows) {
+    const invoiceNumber =
+      invoiceIndex >= 0 ? (row[invoiceIndex]?.trim() ?? "") : ""
+    const ctnNumber = ctnIndex >= 0 ? (row[ctnIndex]?.trim() ?? "") : ""
+    const billOfLadingNumber =
+      billOfLadingIndex >= 0 ? (row[billOfLadingIndex]?.trim() ?? "") : ""
+    const reference =
+      referenceIndex >= 0 ? (row[referenceIndex]?.trim() ?? "") : ""
+    const amount = amountIndexes.reduce(
+      (total, index) => total + parseAmount(row[index]),
+      0
+    )
+    const sourceCountryName =
+      sourceCountryIndex >= 0 ? (row[sourceCountryIndex]?.trim() ?? "") : ""
+
+    if (!ctnNumber && !billOfLadingNumber && !reference && !invoiceNumber) {
+      continue
+    }
+
+    const key = [
+      invoiceNumber,
+      ctnNumber,
+      billOfLadingNumber,
+      reference,
+      sourceCountryName,
+    ].join("__")
+    const existing = grouped.get(key)
+
+    grouped.set(key, {
+      invoiceNumber,
+      ctnNumber: mergeReportValues(existing?.ctnNumber ?? "", ctnNumber),
+      billOfLadingNumber: mergeReportValues(
+        existing?.billOfLadingNumber ?? "",
+        billOfLadingNumber
+      ),
+      reference: mergeReportValues(
+        existing?.reference ?? "",
+        reference || billOfLadingNumber || ctnNumber || invoiceNumber
+      ),
+      amount: (existing?.amount ?? 0) + amount,
+      sourceRowCount: (existing?.sourceRowCount ?? 0) + 1,
+      sourceCountryName: mergeReportValues(
+        existing?.sourceCountryName ?? "",
+        sourceCountryName
+      ),
+    })
+  }
+
+  return Array.from(grouped.values())
 }
 
 function getDatePeriod(value: string | undefined) {
@@ -1375,7 +1481,7 @@ export function parseCountryReportText(
   return parseCountryReportCsv(text, options)
 }
 
-async function extractPdfText(file: File) {
+export async function extractPdfText(file: File) {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs")
 
   pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -1399,7 +1505,7 @@ async function extractPdfText(file: File) {
   return pages.join("\n")
 }
 
-async function extractWorkbookRows(
+export async function extractWorkbookRows(
   file: File,
   options: { period?: string } = {}
 ) {
