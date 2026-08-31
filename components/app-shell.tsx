@@ -3,6 +3,7 @@
 import * as React from "react"
 
 import { CreateMonthEndView } from "@/components/create-month-end-view"
+import { DashboardView } from "@/components/dashboard-view"
 import MonthEndPage from "@/components/month-end-view"
 import { PricingUploadView } from "@/components/pricing-upload-view"
 import { PreviousMonthEndsView } from "@/components/previous-month-ends-view"
@@ -11,6 +12,7 @@ import { TemplateEditorView } from "@/components/template-editor-view"
 
 type AppRoute =
   | "/"
+  | "/dashboard"
   | "/month-end"
   | "/month-end/new"
   | "/pricing-upload"
@@ -23,6 +25,7 @@ function normalizeRoute(route: string): AppRoute {
 
   switch (cleanRoute) {
     case "/month-end":
+    case "/dashboard":
     case "/month-end/new":
     case "/pricing-upload":
     case "/previous-month-ends":
@@ -30,17 +33,17 @@ function normalizeRoute(route: string): AppRoute {
     case "/template-builder":
       return cleanRoute
     default:
-      return "/month-end"
+      return "/dashboard"
   }
 }
 
 function getCurrentRoute() {
-  if (typeof window === "undefined") return "/month-end" as AppRoute
+  if (typeof window === "undefined") return "/dashboard" as AppRoute
   return normalizeRoute(window.location.hash.slice(1))
 }
 
 export function AppShell() {
-  const [route, setRoute] = React.useState<AppRoute>("/month-end")
+  const [route, setRoute] = React.useState<AppRoute>("/dashboard")
 
   React.useEffect(() => {
     const syncRoute = () => setRoute(getCurrentRoute())
@@ -56,6 +59,8 @@ export function AppShell() {
   }, [])
 
   switch (route) {
+    case "/dashboard":
+      return <DashboardView />
     case "/template-builder":
       return <TemplateEditorView />
     case "/month-end/new":

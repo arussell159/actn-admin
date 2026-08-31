@@ -1940,6 +1940,15 @@ export function InformationView() {
     selectNode("", "replace")
   }
 
+  function closeMobileFolder(folder?: InformationNode) {
+    if (folder?.parentId) {
+      selectNode(folder.parentId, "replace")
+      return
+    }
+
+    selectNode("", "replace")
+  }
+
   function commitTreeTitle(nodeId: string) {
     saveNodeTitle(nodeId, treeTitleDraft)
     setEditingTreeNodeId(undefined)
@@ -2519,7 +2528,7 @@ export function InformationView() {
                           folder={activeNode}
                           nodes={nodes}
                           notes={activeFolderNotes}
-                          onBack={() => selectNode("", "replace")}
+                          onBack={() => closeMobileFolder(activeNode)}
                           onOpenNote={selectNode}
                           onCreateNote={() =>
                             startCreate("note", activeNode.id)
@@ -2543,7 +2552,7 @@ export function InformationView() {
                         <MobileFolderNotesScreen
                           nodes={nodes}
                           notes={activeFolderNotes}
-                          onBack={() => selectNode("", "replace")}
+                          onBack={() => closeMobileFolder()}
                           onOpenNote={selectNode}
                           onCreateNote={() => startCreate("note")}
                           onCreateFolder={() => requestCreateFolder()}

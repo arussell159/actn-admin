@@ -36,6 +36,7 @@ import {
   FileTextIcon,
   FolderIcon,
   HistoryIcon,
+  LayoutDashboardIcon,
   MoreHorizontalIcon,
   PinOffIcon,
   PlusIcon,
@@ -195,6 +196,19 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
+        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={isActiveUrl("/dashboard")}
+                render={<AppLink href="/dashboard" />}
+              >
+                <LayoutDashboardIcon />
+                <span>Dashboard</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroup>
         <NavDocuments title="Month End" items={monthEndItems} />
         <SidebarGroup className="group-data-[collapsible=icon]:hidden">
           <SidebarGroupLabel>Utilities</SidebarGroupLabel>

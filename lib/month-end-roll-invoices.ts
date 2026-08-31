@@ -1,7 +1,12 @@
 const rollApprovalSuffix = "__approved_country_rolls"
+const leftInvoiceSuffix = "__left_country_invoices"
 
 export function rollApprovalKey(rowId: string) {
   return `${rowId}${rollApprovalSuffix}`
+}
+
+export function leftInvoiceKey(rowId: string) {
+  return `${rowId}${leftInvoiceSuffix}`
 }
 
 export function parseApprovedInternalIds(value: unknown) {

@@ -63,11 +63,11 @@ export function LoginForm({
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const [hasSavedPasskey, setHasSavedPasskey] = React.useState(false)
   const [error, setError] = React.useState("")
-  const nextPath = searchParams.get("next") || "/month-end"
+  const nextPath = searchParams.get("next") || "/dashboard"
   const safeNextPath =
     nextPath.startsWith("/") && !nextPath.startsWith("//")
       ? nextPath
-      : "/month-end"
+      : "/dashboard"
 
   function finishLogin() {
     markAuthSessionStarted()

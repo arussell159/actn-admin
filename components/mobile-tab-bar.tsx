@@ -24,6 +24,7 @@ import {
   BookOpenTextIcon,
   CalendarClockIcon,
   CalculatorIcon,
+  LayoutDashboardIcon,
   MinusIcon,
   GripIcon,
   HistoryIcon,
@@ -55,10 +56,16 @@ const activeIndicatorPendingStorageKey = "actn-mobile-nav-transition-pending-v1"
 
 const allModuleItems = [
   {
+    label: "Dashboard",
+    href: "/dashboard",
+    icon: LayoutDashboardIcon,
+    match: ["/", "/dashboard"],
+  },
+  {
     label: "Current Month",
     href: "/month-end",
     icon: CalendarClockIcon,
-    match: ["/", "/month-end"],
+    match: ["/month-end"],
   },
   {
     label: "Previous Months",
@@ -99,8 +106,8 @@ const allModuleItems = [
 ]
 
 const defaultDockHrefs = [
+  "/dashboard",
   "/month-end",
-  "/previous-month-ends",
   "/quote-tool",
   "/information",
 ]
@@ -113,10 +120,18 @@ function subscribeToClientMount() {
 
 function isActivePath(pathname: string, matches: string[]) {
   return matches.some((match) =>
-    match === "/" || match === "/month-end"
+    match === "/" || match === "/dashboard" || match === "/month-end"
       ? pathname === match
       : pathname.startsWith(match)
   )
+}
+
+function normalizeDefaultDockHrefs(hrefs: string[]) {
+  const dockWithoutPreviousMonths = hrefs.filter(
+    (href) => href !== "/previous-month-ends" && href !== "/dashboard"
+  )
+
+  return ["/dashboard", ...dockWithoutPreviousMonths].slice(0, maxDockItems)
 }
 
 function SortableDockRow({
@@ -235,7 +250,13 @@ export function MobileTabBar() {
       )
 
       if (isMounted && storedDockHrefs?.length) {
-        setDockHrefs(storedDockHrefs)
+        const normalizedDockHrefs = normalizeDefaultDockHrefs(storedDockHrefs)
+
+        setDockHrefs(normalizedDockHrefs)
+
+        if (normalizedDockHrefs.join("|") !== storedDockHrefs.join("|")) {
+          saveMobileNavDockHrefs(normalizedDockHrefs)
+        }
       }
     }
 

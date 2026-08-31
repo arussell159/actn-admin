@@ -8,7 +8,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "ACTN Admin",
     short_name: "ACTN Admin",
     description: "Africa CTN admin tools for month end, quotes, notes, and pricing.",
-    start_url: "/month-end",
+    start_url: "/dashboard",
     scope: "/",
     display: "standalone",
     background_color: "#f7fafb",
@@ -17,10 +17,10 @@ export default function manifest(): MetadataRoute.Manifest {
     categories: ["business", "productivity", "utilities"],
     shortcuts: [
       {
-        name: "Month End",
-        short_name: "Month End",
-        description: "Open the current month-end checklist.",
-        url: "/month-end",
+        name: "Dashboard",
+        short_name: "Dashboard",
+        description: "Open the admin dashboard.",
+        url: "/dashboard",
       },
       {
         name: "Previous Months",

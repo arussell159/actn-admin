@@ -6,14 +6,12 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   CheckCircle2Icon,
+  DownloadIcon,
   EllipsisVerticalIcon,
   FileSpreadsheetIcon,
   FileOutputIcon,
   ListChecksIcon,
-  LayoutDashboardIcon,
-  PencilIcon,
   ClipboardPasteIcon,
-  Trash2Icon,
   UploadIcon,
 } from "lucide-react"
 
@@ -21,6 +19,14 @@ import { AppLink } from "@/components/app-link"
 import { AppSidebar } from "@/components/app-sidebar"
 import { CountryReconciliationSkeleton } from "@/components/page-skeletons"
 import { SiteHeader } from "@/components/site-header"
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -28,7 +34,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
@@ -40,8 +45,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   exchangeRateKey,
   getMonthEndRecord,
@@ -85,6 +90,7 @@ import {
   type MonthEndCountryReportRecord,
 } from "@/lib/month-end-country-report-records"
 import {
+  leftInvoiceKey,
   parseApprovedInternalIds,
   rollApprovalKey,
   serializeApprovedInternalIds,
@@ -140,6 +146,18 @@ function antaserJournalDocumentsKey(rowId: string) {
 
 function journalEntrySnapshotKey(rowId: string) {
   return `${rowId}__journal_entry_snapshot`
+}
+
+type CountryDashboardSection = "netsuite" | "country" | "left" | "rolled"
+
+function countryDashboardSectionKey(rowId: string) {
+  return `${rowId}__country_dashboard_section`
+}
+
+function parseCountryDashboardSection(value: unknown): CountryDashboardSection {
+  return value === "country" || value === "left" || value === "rolled"
+    ? value
+    : "netsuite"
 }
 
 function parseAntaserJournalDocuments(value: unknown) {
@@ -421,12 +439,12 @@ function ReconciliationWorkbench({
   missingCountryRecordIds,
   missingMasterRecordIds,
   rolledInternalIds,
+  leftInvoiceRecordIds,
   showCountryColumn,
-  onUploadMaster,
-  onUploadCountry,
-  onDeleteMaster,
-  onDeleteCountry,
+  onDropMasterFile,
+  onDropCountryFiles,
   canEditCountryData = true,
+  isReadOnly = false,
   countryId,
   countryName,
   countryRecordCount,
@@ -434,6 +452,7 @@ function ReconciliationWorkbench({
   matchedCountryCount,
   matchedMasterCount,
   onRollInvoices,
+  onLeaveInvoices,
   onMoveInvoicesToOot,
 }: {
   countryRecords: MonthEndCountryReportRecord[]
@@ -442,12 +461,12 @@ function ReconciliationWorkbench({
   missingCountryRecordIds: Set<string>
   missingMasterRecordIds: Set<string>
   rolledInternalIds: string[]
+  leftInvoiceRecordIds: string[]
   showCountryColumn: boolean
-  onUploadMaster: () => void
-  onUploadCountry: () => void
-  onDeleteMaster: () => void
-  onDeleteCountry: () => void
+  onDropMasterFile: (file: File) => void
+  onDropCountryFiles: (files: File[]) => void
   canEditCountryData?: boolean
+  isReadOnly?: boolean
   countryId?: string
   countryName: string
   countryRecordCount: number
@@ -457,6 +476,7 @@ function ReconciliationWorkbench({
   onRollInvoices: (
     records: MonthEndMasterRecord[]
   ) => Promise<{ savedCount: number; excludedCount: number }>
+  onLeaveInvoices: (records: MonthEndMasterRecord[]) => Promise<void>
   onMoveInvoicesToOot?: (
     records: MonthEndMasterRecord[]
   ) => Promise<{ movedCount: number }>
@@ -471,9 +491,13 @@ function ReconciliationWorkbench({
   const [hiddenMasterRecordIds, setHiddenMasterRecordIds] = React.useState(
     () => new Set<string>()
   )
+  const [dragTarget, setDragTarget] = React.useState<
+    "country" | "master" | null
+  >(null)
   const visibleCountryIds = new Set(countryRecords.map((record) => record.id))
   const visibleMasterIds = new Set(masterRecords.map((record) => record.id))
   const rolledInternalIdSet = new Set(rolledInternalIds)
+  const leftInvoiceRecordIdSet = new Set(leftInvoiceRecordIds)
   const countryRows = countryRecords
     .filter((record) => missingCountryRecordIds.has(record.id))
     .map((record) => ({
@@ -488,6 +512,7 @@ function ReconciliationWorkbench({
     .filter(
       (record) =>
         missingMasterRecordIds.has(record.id) &&
+        !leftInvoiceRecordIdSet.has(record.id) &&
         !hiddenMasterRecordIds.has(record.id) &&
         (!record.sourceInternalId ||
           !rolledInternalIdSet.has(record.sourceInternalId))
@@ -585,6 +610,20 @@ function ReconciliationWorkbench({
     })
   }
 
+  function toggleMasterRowSelection(recordId: string) {
+    setSelectedMasterRecordIds((current) => {
+      const next = new Set(current)
+
+      if (next.has(recordId)) {
+        next.delete(recordId)
+      } else {
+        next.add(recordId)
+      }
+
+      return next
+    })
+  }
+
   async function rollSelectedInvoices() {
     const rollingRecordIds = selectedMasterRecords.map((record) => record.id)
 
@@ -623,6 +662,52 @@ function ReconciliationWorkbench({
     } finally {
       setIsRollingInvoices(false)
     }
+  }
+
+  async function leaveSelectedInvoices() {
+    const leavingRecordIds = selectedMasterRecords.map((record) => record.id)
+
+    if (!leavingRecordIds.length) {
+      return
+    }
+
+    setRollInvoiceMessage("")
+    setHiddenMasterRecordIds((current) => {
+      const next = new Set(current)
+
+      for (const recordId of leavingRecordIds) {
+        next.add(recordId)
+      }
+
+      return next
+    })
+    setSelectedMasterRecordIds(new Set())
+
+    try {
+      await onLeaveInvoices(selectedMasterRecords)
+      setRollInvoiceMessage(
+        `${leavingRecordIds.length} invoice${leavingRecordIds.length === 1 ? "" : "s"} left in month end.`
+      )
+    } catch {
+      setHiddenMasterRecordIds((current) => {
+        const next = new Set(current)
+
+        for (const recordId of leavingRecordIds) {
+          next.delete(recordId)
+        }
+
+        return next
+      })
+      setRollInvoiceMessage("Could not save the selected left invoices.")
+    }
+  }
+
+  function getDroppedFiles(event: React.DragEvent<HTMLElement>) {
+    event.preventDefault()
+    event.stopPropagation()
+    setDragTarget(null)
+
+    return Array.from(event.dataTransfer.files ?? [])
   }
 
   async function moveSelectedInvoicesToOot() {
@@ -674,41 +759,67 @@ function ReconciliationWorkbench({
   return (
     <div className="grid min-h-0 gap-3 xl:gap-4">
       <div className="grid min-h-0 items-stretch gap-4 lg:min-h-[calc(100svh-var(--header-height)-5.5rem)] lg:grid-cols-2">
-        <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-lg border bg-background p-3">
+        <section
+          className={
+            "grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-lg border bg-background p-3 transition-colors " +
+            (dragTarget === "country" ? "border-primary bg-primary/5" : "")
+          }
+          onDragOver={(event) => {
+            if (isReadOnly || !canEditCountryData) {
+              return
+            }
+
+            event.preventDefault()
+            setDragTarget("country")
+          }}
+          onDragLeave={() => setDragTarget(null)}
+          onDrop={(event) => {
+            if (isReadOnly || !canEditCountryData) {
+              return
+            }
+
+            const files = getDroppedFiles(event)
+
+            if (files.length) {
+              onDropCountryFiles(files)
+            }
+          }}
+        >
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold tracking-normal">Country</h2>
-            {canEditCountryData ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 rounded-full"
-                    />
-                  }
-                >
-                  <PencilIcon />
-                  Edit
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-52">
-                  <DropdownMenuItem onClick={onUploadCountry}>
-                    <UploadIcon />
-                    Upload / Replace Data
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onClick={onDeleteCountry}
-                  >
-                    <Trash2Icon />
-                    Delete Data
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : null}
           </div>
-          <div className="min-h-0 overflow-x-hidden overflow-y-auto">
+          <div className="grid min-h-0 gap-2 overflow-y-auto pb-3 md:hidden">
+            {countryRows.length ? (
+              countryRows.map(({ record }) => (
+                <article
+                  key={record.id}
+                  className="rounded-lg border bg-muted/20 p-3 text-sm"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-semibold break-words">
+                        {record.ctnNumber || "-"}
+                      </div>
+                      <div className="mt-1 grid grid-cols-[2.5rem_minmax(0,1fr)] gap-2 text-xs">
+                        <span className="text-muted-foreground">BL</span>
+                        <span className="break-words">
+                          {record.billOfLadingNumber || "-"}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right text-sm font-semibold tabular-nums">
+                      {formatAmount(record.amount)}
+                    </div>
+                  </div>
+                </article>
+              ))
+            ) : (
+              <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+                No country-only records.
+              </div>
+            )}
+          </div>
+          <div className="hidden min-h-0 overflow-x-hidden overflow-y-auto pb-3 md:block">
             <Table
               className="w-full table-fixed text-xs"
               containerClassName="overflow-x-hidden"
@@ -773,11 +884,37 @@ function ReconciliationWorkbench({
             </span>
           </div>
         </section>
-        <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-lg border bg-background p-3">
+        <section
+          className={
+            "grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-lg border bg-background p-3 transition-colors " +
+            (dragTarget === "master" ? "border-primary bg-primary/5" : "")
+          }
+          onDragOver={(event) => {
+            if (isReadOnly) {
+              return
+            }
+
+            event.preventDefault()
+            setDragTarget("master")
+          }}
+          onDragLeave={() => setDragTarget(null)}
+          onDrop={(event) => {
+            if (isReadOnly) {
+              return
+            }
+
+            const [file] = getDroppedFiles(event)
+
+            if (file) {
+              onDropMasterFile(file)
+            }
+          }}
+        >
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold tracking-normal">NetSuite</h2>
             <div className="flex items-center gap-2">
-              {showAngolaNetSuiteReferences &&
+              {!isReadOnly &&
+              showAngolaNetSuiteReferences &&
               selectedMasterRecords.length &&
               onMoveInvoicesToOot ? (
                 <Button
@@ -792,146 +929,267 @@ function ReconciliationWorkbench({
                   Move to OOT
                 </Button>
               ) : null}
-              <Button
-                type="button"
-                size="sm"
-                className="h-8 rounded-full"
-                disabled={isRollingInvoices || isMovingInvoicesToOot}
-                onClick={rollSelectedInvoices}
-              >
-                {selectedMasterRecords.length ? (
-                  <>
+              {!isReadOnly && selectedMasterRecords.length ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 rounded-full"
+                    disabled={isRollingInvoices || isMovingInvoicesToOot}
+                    onClick={leaveSelectedInvoices}
+                  >
+                    <ArrowRightIcon />
+                    Leave Invoices ({selectedMasterRecords.length})
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-8 rounded-full"
+                    disabled={isRollingInvoices || isMovingInvoicesToOot}
+                    onClick={rollSelectedInvoices}
+                  >
                     <FileOutputIcon />
                     Roll Invoices ({selectedMasterRecords.length})
-                  </>
-                ) : (
-                  <>
-                    <ArrowRightIcon />
-                    Proceed
-                  </>
-                )}
-              </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 rounded-full"
-                    />
-                  }
+                  </Button>
+                </>
+              ) : !isReadOnly && masterRows.length === 0 ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 rounded-full"
+                  disabled={isRollingInvoices || isMovingInvoicesToOot}
+                  onClick={rollSelectedInvoices}
                 >
-                  <PencilIcon />
-                  Edit
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-52">
-                  <DropdownMenuItem onClick={onUploadMaster}>
-                    <UploadIcon />
-                    Upload / Replace Data
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onClick={onDeleteMaster}
-                  >
-                    <Trash2Icon />
-                    Delete Data
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                  <ArrowRightIcon />
+                  Proceed
+                </Button>
+              ) : null}
             </div>
           </div>
           {masterRecords.length ? (
-            <div className="min-h-0 overflow-x-hidden overflow-y-auto">
-              <Table
-                className="w-full table-fixed text-xs"
-                containerClassName="overflow-x-hidden"
-              >
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-8">
-                      <Checkbox
-                        checked={allMasterRowsSelected}
-                        onCheckedChange={(checked) =>
-                          toggleAllMasterRows(checked === true)
+            <>
+              <div className="grid min-h-0 gap-2 overflow-y-auto pb-3 md:hidden">
+                {masterRows.length ? (
+                  masterRows.map(({ record }) => (
+                    <article
+                      key={record.id}
+                      role="checkbox"
+                      tabIndex={0}
+                      aria-checked={selectedMasterRecordIds.has(record.id)}
+                      className={
+                        "rounded-lg border bg-muted/20 p-3 text-sm transition-colors " +
+                        (isReadOnly
+                          ? ""
+                          : selectedMasterRecordIds.has(record.id)
+                            ? "cursor-pointer border-primary bg-primary/5"
+                            : "cursor-pointer hover:bg-muted/40")
+                      }
+                      onClick={() => {
+                        if (!isReadOnly) {
+                          toggleMasterRowSelection(record.id)
                         }
-                        aria-label="Select all unmatched NetSuite records"
-                      />
-                    </TableHead>
-                    <TableHead className="w-24">Date</TableHead>
-                    {showAngolaNetSuiteReferences ? (
-                      <>
-                        <TableHead>Bill of Lading</TableHead>
-                        <TableHead>CTN</TableHead>
-                      </>
-                    ) : (
-                      <>
-                        <TableHead>Sales Order</TableHead>
-                        <TableHead>{masterReferenceLabel}</TableHead>
-                      </>
-                    )}
-                    <TableHead className="w-[18%]">Status</TableHead>
-                    <TableHead className="w-24 text-right">Amount</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {masterRows.length ? (
-                    masterRows.map(({ record }) => (
-                      <TableRow key={record.id} className="h-12">
-                        <TableCell>
-                          <Checkbox
-                            checked={selectedMasterRecordIds.has(record.id)}
-                            onCheckedChange={(checked) =>
-                              toggleMasterRow(record.id, checked === true)
+                      }}
+                      onKeyDown={(event) => {
+                        if (isReadOnly) {
+                          return
+                        }
+
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault()
+                          toggleMasterRowSelection(record.id)
+                        }
+                      }}
+                    >
+                      <div className="flex items-start gap-3">
+                        <Checkbox
+                          checked={selectedMasterRecordIds.has(record.id)}
+                          onCheckedChange={(checked) =>
+                            toggleMasterRow(record.id, checked === true)
+                          }
+                          aria-label={`Select NetSuite record ${record.salesOrderNumber || record.id}`}
+                          className="mt-0.5 shrink-0"
+                          disabled={isReadOnly}
+                          onClick={(event) => event.stopPropagation()}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-xs font-medium text-muted-foreground">
+                                {formatTransactionDate(record.transactionDate)}
+                              </div>
+                              <div className="font-semibold break-words">
+                                {showAngolaNetSuiteReferences
+                                  ? record.billOfLadingNumber || "-"
+                                  : record.salesOrderNumber || "-"}
+                              </div>
+                            </div>
+                            <div className="shrink-0 text-right text-sm font-semibold tabular-nums">
+                              {formatAmount(record.amount)}
+                            </div>
+                          </div>
+                          <dl className="mt-3 grid gap-2 text-xs">
+                            {showAngolaNetSuiteReferences ? (
+                              <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
+                                <dt className="text-muted-foreground">CTN</dt>
+                                <dd className="break-words">
+                                  {record.ctnNumber || "-"}
+                                </dd>
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
+                                <dt className="text-muted-foreground">
+                                  {masterReferenceLabel}
+                                </dt>
+                                <dd className="break-words">
+                                  {(showCtnReference
+                                    ? record.ctnNumber
+                                    : record.billOfLadingNumber) || "-"}
+                                </dd>
+                              </div>
+                            )}
+                            <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
+                              <dt className="text-muted-foreground">Status</dt>
+                              <dd className="break-words">
+                                {record.status || "-"}
+                              </dd>
+                            </div>
+                            {showCountryColumn ? (
+                              <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
+                                <dt className="text-muted-foreground">
+                                  Country
+                                </dt>
+                                <dd className="break-words">
+                                  {record.countryName || "-"}
+                                </dd>
+                              </div>
+                            ) : null}
+                          </dl>
+                        </div>
+                      </div>
+                    </article>
+                  ))
+                ) : (
+                  <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+                    No NetSuite-only records.
+                  </div>
+                )}
+              </div>
+              <div className="hidden min-h-0 overflow-x-hidden overflow-y-auto pb-3 md:block">
+                <Table
+                  className="w-full table-fixed text-xs"
+                  containerClassName="overflow-x-hidden"
+                >
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-8">
+                        <Checkbox
+                          checked={allMasterRowsSelected}
+                          onCheckedChange={(checked) =>
+                            toggleAllMasterRows(checked === true)
+                          }
+                          aria-label="Select all unmatched NetSuite records"
+                        />
+                      </TableHead>
+                      <TableHead className="w-24">Date</TableHead>
+                      {showAngolaNetSuiteReferences ? (
+                        <>
+                          <TableHead>Bill of Lading</TableHead>
+                          <TableHead>CTN</TableHead>
+                        </>
+                      ) : (
+                        <>
+                          <TableHead>Sales Order</TableHead>
+                          <TableHead>{masterReferenceLabel}</TableHead>
+                        </>
+                      )}
+                      <TableHead className="w-[18%]">Status</TableHead>
+                      <TableHead className="w-24 text-right">Amount</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {masterRows.length ? (
+                      masterRows.map(({ record }) => (
+                        <TableRow
+                          key={record.id}
+                          aria-selected={selectedMasterRecordIds.has(record.id)}
+                          className={
+                            "h-12 " + (isReadOnly ? "" : "cursor-pointer")
+                          }
+                          onClick={() => {
+                            if (!isReadOnly) {
+                              toggleMasterRowSelection(record.id)
                             }
-                            aria-label={`Select NetSuite record ${record.salesOrderNumber || record.id}`}
-                          />
-                        </TableCell>
-                        <TableCell className="break-words tabular-nums">
-                          {formatTransactionDate(record.transactionDate)}
-                        </TableCell>
-                        {showAngolaNetSuiteReferences ? (
-                          <>
-                            <TableCell className="break-words">
-                              {record.billOfLadingNumber || "-"}
-                            </TableCell>
-                            <TableCell className="break-words">
-                              {record.ctnNumber || "-"}
-                            </TableCell>
-                          </>
-                        ) : (
-                          <>
-                            <TableCell className="font-medium break-words">
-                              {record.salesOrderNumber || "-"}
-                            </TableCell>
-                            <TableCell className="break-words">
-                              {(showCtnReference
-                                ? record.ctnNumber
-                                : record.billOfLadingNumber) || "-"}
-                            </TableCell>
-                          </>
-                        )}
-                        <TableCell className="break-words">
-                          {record.status || "-"}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatAmount(record.amount)}
+                          }}
+                          onKeyDown={(event) => {
+                            if (isReadOnly) {
+                              return
+                            }
+
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault()
+                              toggleMasterRowSelection(record.id)
+                            }
+                          }}
+                          tabIndex={0}
+                        >
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedMasterRecordIds.has(record.id)}
+                              onCheckedChange={(checked) =>
+                                toggleMasterRow(record.id, checked === true)
+                              }
+                              aria-label={`Select NetSuite record ${record.salesOrderNumber || record.id}`}
+                              disabled={isReadOnly}
+                              onClick={(event) => event.stopPropagation()}
+                            />
+                          </TableCell>
+                          <TableCell className="break-words tabular-nums">
+                            {formatTransactionDate(record.transactionDate)}
+                          </TableCell>
+                          {showAngolaNetSuiteReferences ? (
+                            <>
+                              <TableCell className="break-words">
+                                {record.billOfLadingNumber || "-"}
+                              </TableCell>
+                              <TableCell className="break-words">
+                                {record.ctnNumber || "-"}
+                              </TableCell>
+                            </>
+                          ) : (
+                            <>
+                              <TableCell className="font-medium break-words">
+                                {record.salesOrderNumber || "-"}
+                              </TableCell>
+                              <TableCell className="break-words">
+                                {(showCtnReference
+                                  ? record.ctnNumber
+                                  : record.billOfLadingNumber) || "-"}
+                              </TableCell>
+                            </>
+                          )}
+                          <TableCell className="break-words">
+                            {record.status || "-"}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatAmount(record.amount)}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell
+                          colSpan={6}
+                          className="h-24 text-center text-sm text-muted-foreground"
+                        >
+                          No NetSuite-only records.
                         </TableCell>
                       </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell
-                        colSpan={6}
-                        className="h-24 text-center text-sm text-muted-foreground"
-                      >
-                        No NetSuite-only records.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           ) : (
             <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
               Upload or replace the NetSuite report from the Upload menu.
@@ -962,18 +1220,93 @@ function ReconciliationWorkbench({
             {matchedRowCount} matched
           </span>
         </div>
-        <div className="min-h-0 overflow-x-hidden overflow-y-auto">
+        <div className="grid min-h-0 gap-2 overflow-y-auto pb-3 md:hidden">
+          {matchedRows.length ? (
+            matchedRows.map(
+              ({ id, countryRecord, masterRecord, matchedOn }) => (
+                <article
+                  key={id}
+                  className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-3 text-sm dark:border-emerald-900/70 dark:bg-emerald-950/20"
+                >
+                  <div className="flex items-start gap-2">
+                    <CheckCircle2Icon className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-xs font-medium text-muted-foreground">
+                            Country record
+                          </div>
+                          <div className="font-semibold break-words">
+                            {countryRecord.reference ||
+                              countryRecord.invoiceNumber ||
+                              "-"}
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-right text-sm font-semibold tabular-nums">
+                          {formatAmount(countryRecord.amount)}
+                        </div>
+                      </div>
+                      <dl className="mt-3 grid gap-2 text-xs">
+                        <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
+                          <dt className="text-muted-foreground">NetSuite</dt>
+                          <dd className="break-words">
+                            {masterRecord.salesOrderNumber || "-"}
+                          </dd>
+                        </div>
+                        <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
+                          <dt className="text-muted-foreground">Match</dt>
+                          <dd className="break-words">
+                            {matchedOn
+                              ? `${matchedOn.label}: ${matchedOn.value}`
+                              : "-"}
+                          </dd>
+                        </div>
+                        <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
+                          <dt className="text-muted-foreground">CTN</dt>
+                          <dd className="break-words">
+                            {countryRecord.ctnNumber ||
+                              masterRecord.ctnNumber ||
+                              "-"}
+                          </dd>
+                        </div>
+                        <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
+                          <dt className="text-muted-foreground">Bill</dt>
+                          <dd className="break-words">
+                            {countryRecord.billOfLadingNumber ||
+                              masterRecord.billOfLadingNumber ||
+                              "-"}
+                          </dd>
+                        </div>
+                        <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
+                          <dt className="text-muted-foreground">NS amount</dt>
+                          <dd className="break-words tabular-nums">
+                            {formatAmount(masterRecord.amount)}
+                          </dd>
+                        </div>
+                      </dl>
+                    </div>
+                  </div>
+                </article>
+              )
+            )
+          ) : (
+            <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+              No matched records.
+            </div>
+          )}
+        </div>
+        <div className="hidden min-h-0 overflow-auto pb-3 md:block">
           <Table
-            className="w-full table-fixed text-xs"
-            containerClassName="overflow-x-hidden"
+            className="min-w-[58rem] table-fixed text-xs"
+            containerClassName="overflow-visible"
           >
             <TableHeader>
               <TableRow>
-                <TableHead className="w-8" />
-                <TableHead>Country Record</TableHead>
-                <TableHead>NetSuite Record</TableHead>
-                <TableHead className="w-[17%]">Match</TableHead>
-                <TableHead className="w-32 text-right">Amounts</TableHead>
+                <TableHead className="w-10" />
+                <TableHead>Country</TableHead>
+                <TableHead>NetSuite</TableHead>
+                <TableHead className="w-44">Matched By</TableHead>
+                <TableHead className="w-40 text-right">Amounts</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -983,55 +1316,71 @@ function ReconciliationWorkbench({
                     return (
                       <TableRow
                         key={id}
-                        className="bg-emerald-50/80 transition-colors dark:bg-emerald-950/20"
+                        className="bg-emerald-50/60 transition-colors hover:bg-emerald-50 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/30"
                       >
-                        <TableCell>
+                        <TableCell className="align-top">
                           <CheckCircle2Icon className="size-4 text-emerald-600" />
                         </TableCell>
-                        <TableCell className="align-top break-words">
-                          <div className="font-medium">
-                            {countryRecord.reference ||
-                              countryRecord.invoiceNumber ||
-                              "-"}
-                          </div>
-                          <div className="text-muted-foreground">
-                            CTN: {countryRecord.ctnNumber || "-"}
-                          </div>
-                          <div className="text-muted-foreground">
-                            BL: {countryRecord.billOfLadingNumber || "-"}
-                          </div>
-                        </TableCell>
-                        <TableCell className="align-top break-words">
-                          <div className="font-medium">
-                            {masterRecord.salesOrderNumber || "-"}
-                          </div>
-                          {showCountryColumn ? (
-                            <div
-                              className="truncate text-muted-foreground"
-                              title={masterRecord.countryName || "-"}
-                            >
-                              {masterRecord.countryName || "-"}
+                        <TableCell className="align-top">
+                          <div className="grid gap-1.5 text-muted-foreground">
+                            <div className="grid grid-cols-[4.75rem_minmax(0,1fr)] gap-2">
+                              <span>CTN Num</span>
+                              <span className="break-words text-foreground">
+                                {countryRecord.ctnNumber || "-"}
+                              </span>
                             </div>
-                          ) : null}
-                          <div className="text-muted-foreground">
-                            BL: {masterRecord.billOfLadingNumber || "-"}
-                          </div>
-                          <div className="text-muted-foreground">
-                            CTN: {masterRecord.ctnNumber || "-"}
-                          </div>
-                          <div className="text-muted-foreground">
-                            Status: {masterRecord.status || "-"}
+                            <div className="grid grid-cols-[4.75rem_minmax(0,1fr)] gap-2">
+                              <span>BL Num</span>
+                              <span className="break-words text-foreground">
+                                {countryRecord.billOfLadingNumber || "-"}
+                              </span>
+                            </div>
                           </div>
                         </TableCell>
-                        <TableCell className="align-top break-words">
-                          {matchedOn
-                            ? `${matchedOn.label}: ${matchedOn.value}`
-                            : "-"}
+                        <TableCell className="align-top">
+                          <div className="grid gap-1.5 text-muted-foreground">
+                            <div className="grid grid-cols-[4.75rem_minmax(0,1fr)] gap-2">
+                              <span>CTN Num</span>
+                              <span className="break-words text-foreground">
+                                {masterRecord.ctnNumber || "-"}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-[4.75rem_minmax(0,1fr)] gap-2">
+                              <span>BL Num</span>
+                              <span className="break-words text-foreground">
+                                {masterRecord.billOfLadingNumber || "-"}
+                              </span>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="align-top">
+                          {matchedOn ? (
+                            <div className="grid gap-1">
+                              <span className="text-[0.7rem] font-medium text-muted-foreground">
+                                {matchedOn.label}
+                              </span>
+                              <span className="font-medium break-words">
+                                {matchedOn.value}
+                              </span>
+                            </div>
+                          ) : (
+                            "-"
+                          )}
                         </TableCell>
                         <TableCell className="text-right align-top tabular-nums">
-                          <div>{formatAmount(countryRecord.amount)}</div>
-                          <div className="text-muted-foreground">
-                            NS {formatAmount(masterRecord.amount)}
+                          <div className="grid gap-1">
+                            <div className="flex justify-between gap-3">
+                              <span className="text-muted-foreground">
+                                Country
+                              </span>
+                              <span className="font-semibold">
+                                {formatAmount(countryRecord.amount)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between gap-3">
+                              <span className="text-muted-foreground">NS</span>
+                              <span>{formatAmount(masterRecord.amount)}</span>
+                            </div>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -1197,11 +1546,14 @@ function DashboardMasterTable({
 }: {
   sections: { label: string; records: MonthEndMasterRecord[] }[]
 }) {
+  const records = sections.flatMap((section) => section.records)
+  const total = records.reduce((sum, record) => sum + record.amount, 0)
+
   return (
-    <div className="max-h-[60svh] overflow-x-hidden overflow-y-auto">
+    <div className="h-full min-h-0 overflow-auto md:overflow-x-hidden md:overflow-y-auto">
       <Table
-        className="w-full table-fixed text-xs"
-        containerClassName="overflow-x-hidden"
+        className="min-w-[44rem] table-fixed text-xs md:w-full md:min-w-0"
+        containerClassName="overflow-visible md:overflow-x-hidden"
       >
         <TableHeader>
           <TableRow>
@@ -1215,19 +1567,9 @@ function DashboardMasterTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {sections.map((section) => (
-            <React.Fragment key={section.label}>
-              <TableRow className="h-10 bg-muted/60 hover:bg-muted/60">
-                <TableCell colSpan={5} className="font-semibold">
-                  <div className="flex items-center justify-between gap-3">
-                    <span>{section.label}</span>
-                    <span className="text-muted-foreground tabular-nums">
-                      {section.records.length}
-                    </span>
-                  </div>
-                </TableCell>
-              </TableRow>
-              {section.records.map((record) => (
+          {records.length ? (
+            <>
+              {records.map((record) => (
                 <TableRow key={record.id} className="h-12">
                   <TableCell className="tabular-nums">
                     <span className="block pl-4">
@@ -1252,70 +1594,13 @@ function DashboardMasterTable({
                   </TableCell>
                 </TableRow>
               ))}
-            </React.Fragment>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  )
-}
-
-function DashboardCountryTable({
-  records,
-  countryName,
-}: {
-  records: MonthEndCountryReportRecord[]
-  countryName: string
-}) {
-  function countryCellLabel(record: MonthEndCountryReportRecord) {
-    return (
-      record.sourceCountryName ||
-      lineItemCountryName(record.countryName) ||
-      countryName
-    )
-  }
-
-  return (
-    <div className="max-h-[60svh] overflow-x-hidden overflow-y-auto">
-      <Table
-        className="w-full table-fixed text-xs"
-        containerClassName="overflow-x-hidden"
-      >
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-[20%]">Country</TableHead>
-            <TableHead>Reference</TableHead>
-            <TableHead>CTN</TableHead>
-            <TableHead>Bill of Lading</TableHead>
-            <TableHead className="w-24 text-right">Amount</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {records.length ? (
-            records.map((record) => (
-              <TableRow key={record.id} className="h-12">
-                <TableCell className="min-w-0">
-                  <span
-                    className="block truncate"
-                    title={countryCellLabel(record)}
-                  >
-                    {countryCellLabel(record)}
-                  </span>
-                </TableCell>
-                <TableCell className="font-medium break-words">
-                  {record.reference || record.invoiceNumber || "-"}
-                </TableCell>
-                <TableCell className="break-words">
-                  {record.ctnNumber || "-"}
-                </TableCell>
-                <TableCell className="break-words">
-                  {record.billOfLadingNumber || "-"}
-                </TableCell>
+              <TableRow className="h-12 bg-muted/50 font-semibold hover:bg-muted/50">
+                <TableCell colSpan={4}>Total</TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {formatAmount(record.amount)}
+                  {formatAmount(total)}
                 </TableCell>
               </TableRow>
-            ))
+            </>
           ) : (
             <TableRow>
               <TableCell
@@ -1330,6 +1615,225 @@ function DashboardCountryTable({
       </Table>
     </div>
   )
+}
+
+function DashboardCountryTable({
+  records,
+  countryName,
+}: {
+  records: MonthEndCountryReportRecord[]
+  countryName: string
+}) {
+  const total = records.reduce((sum, record) => sum + record.amount, 0)
+
+  function countryCellLabel(record: MonthEndCountryReportRecord) {
+    return (
+      record.sourceCountryName ||
+      lineItemCountryName(record.countryName) ||
+      countryName
+    )
+  }
+
+  return (
+    <div className="h-full min-h-0 overflow-auto md:overflow-x-hidden md:overflow-y-auto">
+      <Table
+        className="min-w-[44rem] table-fixed text-xs md:w-full md:min-w-0"
+        containerClassName="overflow-visible md:overflow-x-hidden"
+      >
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-[20%]">Country</TableHead>
+            <TableHead>Reference</TableHead>
+            <TableHead>CTN</TableHead>
+            <TableHead>Bill of Lading</TableHead>
+            <TableHead className="w-24 text-right">Amount</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {records.length ? (
+            <>
+              {records.map((record) => (
+                <TableRow key={record.id} className="h-12">
+                  <TableCell className="min-w-0">
+                    <span
+                      className="block truncate"
+                      title={countryCellLabel(record)}
+                    >
+                      {countryCellLabel(record)}
+                    </span>
+                  </TableCell>
+                  <TableCell className="font-medium break-words">
+                    {record.reference || record.invoiceNumber || "-"}
+                  </TableCell>
+                  <TableCell className="break-words">
+                    {record.ctnNumber || "-"}
+                  </TableCell>
+                  <TableCell className="break-words">
+                    {record.billOfLadingNumber || "-"}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatAmount(record.amount)}
+                  </TableCell>
+                </TableRow>
+              ))}
+              <TableRow className="h-12 bg-muted/50 font-semibold hover:bg-muted/50">
+                <TableCell colSpan={4}>Total</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {formatAmount(total)}
+                </TableCell>
+              </TableRow>
+            </>
+          ) : (
+            <TableRow>
+              <TableCell
+                colSpan={5}
+                className="h-24 text-center text-muted-foreground"
+              >
+                No records.
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+function DashboardDataTableSkeleton() {
+  return (
+    <div className="h-full min-h-0 overflow-hidden">
+      <Table
+        className="min-w-[44rem] table-fixed text-xs md:w-full md:min-w-0"
+        containerClassName="overflow-hidden"
+      >
+        <TableHeader>
+          <TableRow>
+            <TableHead>
+              <Skeleton className="h-4 w-20 rounded-md" />
+            </TableHead>
+            <TableHead>
+              <Skeleton className="h-4 w-24 rounded-md" />
+            </TableHead>
+            <TableHead>
+              <Skeleton className="h-4 w-20 rounded-md" />
+            </TableHead>
+            <TableHead>
+              <Skeleton className="h-4 w-28 rounded-md" />
+            </TableHead>
+            <TableHead>
+              <Skeleton className="ml-auto h-4 w-16 rounded-md" />
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {Array.from({ length: 8 }).map((_, rowIndex) => (
+            <TableRow key={rowIndex} className="h-12">
+              {Array.from({ length: 5 }).map((__, columnIndex) => (
+                <TableCell key={columnIndex}>
+                  <Skeleton
+                    className={
+                      "h-4 rounded-md " +
+                      (columnIndex === 4
+                        ? "ml-auto w-16"
+                        : columnIndex === 1 || columnIndex === 3
+                          ? "w-28"
+                          : "w-20")
+                    }
+                  />
+                </TableCell>
+              ))}
+            </TableRow>
+          ))}
+          <TableRow className="h-12 bg-muted/50 hover:bg-muted/50">
+            <TableCell colSpan={4}>
+              <Skeleton className="h-4 w-12 rounded-md" />
+            </TableCell>
+            <TableCell>
+              <Skeleton className="ml-auto h-4 w-20 rounded-md" />
+            </TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+function escapeDashboardCsvValue(value: string | number | undefined) {
+  const text = String(value ?? "")
+
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+}
+
+function dashboardCsvFileName(countryName: string, sectionLabel: string) {
+  const slug = `${countryName}-${sectionLabel}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+
+  return `${slug || "country-dashboard"}.csv`
+}
+
+function downloadDashboardCsv({
+  fileName,
+  csv,
+}: {
+  fileName: string
+  csv: string
+}) {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement("a")
+
+  anchor.href = url
+  anchor.download = fileName
+  document.body.append(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
+function createDashboardMasterCsv(records: MonthEndMasterRecord[]) {
+  const rows = records.map((record) => [
+    formatTransactionDate(record.transactionDate),
+    record.salesOrderNumber,
+    record.billOfLadingNumber,
+    record.ctnNumber,
+    record.status,
+    record.countryName,
+    formatAmount(record.amount),
+  ])
+
+  return [
+    [
+      "Date",
+      "Sales Order",
+      "Bill of Lading",
+      "CTN Number",
+      "Status",
+      "Country",
+      "Amount",
+    ],
+    ...rows,
+  ]
+    .map((row) => row.map(escapeDashboardCsvValue).join(","))
+    .join("\r\n")
+}
+
+function createDashboardCountryCsv(records: MonthEndCountryReportRecord[]) {
+  const rows = records.map((record) => [
+    record.sourceCountryName || record.countryName,
+    record.reference || record.invoiceNumber,
+    record.ctnNumber,
+    record.billOfLadingNumber,
+    formatAmount(record.amount),
+  ])
+
+  return [
+    ["Country", "Reference", "CTN Number", "Bill of Lading", "Amount"],
+    ...rows,
+  ]
+    .map((row) => row.map(escapeDashboardCsvValue).join(","))
+    .join("\r\n")
 }
 
 function CountryNavigationButtons({
@@ -1365,6 +1869,66 @@ function CountryNavigationButtons({
   )
 }
 
+function CountryProcessBreadcrumb({
+  activeView,
+  reconciliationHref,
+  journalHref,
+  dashboardHref,
+}: {
+  activeView: "reconciliation" | "journal" | "dashboard"
+  reconciliationHref: string
+  journalHref: string
+  dashboardHref: string
+}) {
+  const steps = [
+    {
+      value: "reconciliation",
+      label: "Reconciliation",
+      href: reconciliationHref,
+    },
+    {
+      value: "journal",
+      label: "Journal Entry",
+      href: journalHref,
+    },
+    {
+      value: "dashboard",
+      label: "Country Dashboard",
+      href: dashboardHref,
+    },
+  ] as const
+
+  return (
+    <Breadcrumb className="min-w-0">
+      <BreadcrumbList className="flex-nowrap gap-1 text-xs sm:text-sm">
+        {steps.map((step, index) => {
+          const isActive = activeView === step.value
+
+          return (
+            <React.Fragment key={step.value}>
+              {index > 0 ? <BreadcrumbSeparator className="shrink-0" /> : null}
+              <BreadcrumbItem className="min-w-0 shrink-0">
+                {isActive ? (
+                  <BreadcrumbPage className="rounded-full bg-primary/10 px-2.5 py-1 font-medium text-primary">
+                    {step.label}
+                  </BreadcrumbPage>
+                ) : (
+                  <BreadcrumbLink
+                    render={<AppLink href={step.href} />}
+                    className="rounded-full px-2.5 py-1 font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    {step.label}
+                  </BreadcrumbLink>
+                )}
+              </BreadcrumbItem>
+            </React.Fragment>
+          )
+        })}
+      </BreadcrumbList>
+    </Breadcrumb>
+  )
+}
+
 function CountryReconciliationDashboard({
   countryName,
   masterRecords,
@@ -1372,11 +1936,15 @@ function CountryReconciliationDashboard({
   reconciliation,
   reconciledCount,
   rolledInternalIds,
+  leftInvoiceRecordIds,
+  activeSection,
+  onActiveSectionChange,
   onBack,
   onPreviousCountry,
   onNextCountry,
-  onOpenJournal,
-  onOpenReconciliation,
+  reconciliationHref,
+  journalHref,
+  dashboardHref,
 }: {
   countryName: string
   masterRecords: MonthEndMasterRecord[]
@@ -1384,16 +1952,26 @@ function CountryReconciliationDashboard({
   reconciliation: ReturnType<typeof reconcileRecords>
   reconciledCount: number
   rolledInternalIds: string[]
+  leftInvoiceRecordIds: string[]
+  activeSection: CountryDashboardSection
+  onActiveSectionChange: (
+    section: CountryDashboardSection
+  ) => Promise<void> | void
   onBack: () => void
   onPreviousCountry?: () => void
   onNextCountry?: () => void
-  onOpenJournal: () => void
-  onOpenReconciliation: () => void
+  reconciliationHref: string
+  journalHref: string
+  dashboardHref: string
 }) {
+  const [displaySection, setDisplaySection] =
+    React.useState<CountryDashboardSection>(activeSection)
+  const [isTableLoading, setIsTableLoading] = React.useState(false)
   const reconciledMasterIds = new Set(
     reconciliation.matched.map(({ masterRecord }) => masterRecord.id)
   )
   const rolledInternalIdSet = new Set(rolledInternalIds)
+  const leftInvoiceRecordIdSet = new Set(leftInvoiceRecordIds)
   const reconciledRecords = masterRecords.filter((record) =>
     reconciledMasterIds.has(record.id)
   )
@@ -1406,12 +1984,64 @@ function CountryReconciliationDashboard({
   const rolledRecordIds = new Set(rolledRecords.map((record) => record.id))
   const leftInMonthRecords = masterRecords.filter(
     (record) =>
-      !reconciledMasterIds.has(record.id) && !rolledRecordIds.has(record.id)
+      !reconciledMasterIds.has(record.id) &&
+      !rolledRecordIds.has(record.id) &&
+      (leftInvoiceRecordIdSet.size === 0 ||
+        leftInvoiceRecordIdSet.has(record.id))
   )
-  const tabs = [
-    { value: "netsuite", label: "NetSuite", count: masterRecords.length },
-    { value: "country", label: "Country", count: countryRecords.length },
+  const dashboardSections: {
+    value: CountryDashboardSection
+    label: string
+    count: number
+    records: MonthEndMasterRecord[] | MonthEndCountryReportRecord[]
+  }[] = [
+    {
+      value: "netsuite",
+      label: "NetSuite",
+      count: masterRecords.length,
+      records: masterRecords,
+    },
+    {
+      value: "country",
+      label: "Country",
+      count: countryRecords.length,
+      records: countryRecords,
+    },
+    {
+      value: "left",
+      label: "Left in Current Month",
+      count: leftInMonthRecords.length,
+      records: leftInMonthRecords,
+    },
+    {
+      value: "rolled",
+      label: "Rolled",
+      count: rolledRecords.length,
+      records: rolledRecords,
+    },
   ]
+  const activeDashboardSection =
+    dashboardSections.find((section) => section.value === displaySection) ??
+    dashboardSections[0]
+
+  React.useEffect(() => {
+    setDisplaySection(activeSection)
+  }, [activeSection])
+
+  async function chooseDashboardSection(section: CountryDashboardSection) {
+    if (section === displaySection && !isTableLoading) {
+      return
+    }
+
+    setDisplaySection(section)
+    setIsTableLoading(true)
+
+    try {
+      await onActiveSectionChange(section)
+    } finally {
+      setIsTableLoading(false)
+    }
+  }
 
   return (
     <div className="flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
@@ -1425,89 +2055,107 @@ function CountryReconciliationDashboard({
         >
           <ArrowLeftIcon />
         </Button>
-        <div />
+        <CountryProcessBreadcrumb
+          activeView="dashboard"
+          reconciliationHref={reconciliationHref}
+          journalHref={journalHref}
+          dashboardHref={dashboardHref}
+        />
         <div className="flex items-center gap-2">
           <CountryNavigationButtons
             onPrevious={onPreviousCountry}
             onNext={onNextCountry}
           />
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  className="h-9 w-9 rounded-full md:h-9 md:w-9"
-                  aria-label="Country reconciliation actions"
-                />
-              }
-            >
-              <EllipsisVerticalIcon />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-56">
-              <DropdownMenuItem onClick={onOpenReconciliation}>
-                <ListChecksIcon />
-                Reconciliation Report
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onOpenJournal}>
-                <FileOutputIcon />
-                Journal Entry
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-lg border bg-background p-4">
-          <div className="text-sm text-muted-foreground">Reconciled</div>
-          <div className="mt-2 text-3xl font-semibold tabular-nums">
-            {reconciledCount} / {countryRecords.length}
-          </div>
-        </div>
-        <div className="rounded-lg border bg-background p-4">
-          <div className="text-sm text-muted-foreground">Rolled</div>
-          <div className="mt-2 text-3xl font-semibold tabular-nums">
-            {rolledInternalIds.length}
-          </div>
-        </div>
-      </div>
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-3">
+        {dashboardSections.map((section) => {
+          const isActive = activeDashboardSection.value === section.value
+          const sectionCsv =
+            section.value === "country"
+              ? createDashboardCountryCsv(
+                  section.records as MonthEndCountryReportRecord[]
+                )
+              : createDashboardMasterCsv(
+                  section.records as MonthEndMasterRecord[]
+                )
 
-      <Tabs defaultValue="netsuite" className="min-h-0 flex-1 gap-3">
-        <div className="-mx-4 min-w-0 overflow-x-auto px-4 md:mx-0 md:px-0">
-          <TabsList className="h-auto min-h-11 w-max min-w-full flex-nowrap items-center gap-1 rounded-[1.375rem] p-1 md:min-w-0">
-            {tabs.map((tab) => (
-              <TabsTrigger
-                key={tab.value}
-                value={tab.value}
-                className="h-9 flex-none gap-2 rounded-[1.05rem] px-4 py-2 leading-none"
+          return (
+            <div key={section.value} className="group relative min-w-0">
+              <button
+                type="button"
+                className={
+                  "h-full w-full rounded-lg border bg-background p-3 pr-10 text-left transition-colors duration-0 md:p-4 md:pr-10 " +
+                  (isActive
+                    ? "border-primary bg-primary/5"
+                    : "hover:bg-muted/40")
+                }
+                onClick={() => chooseDashboardSection(section.value)}
               >
-                {tab.label}
-                <span className="text-muted-foreground tabular-nums">
-                  {tab.count}
-                </span>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </div>
-        <div className="overflow-hidden rounded-lg border bg-background">
-          <TabsContent value="netsuite">
-            <DashboardMasterTable
-              sections={[
-                { label: "Reconciled", records: reconciledRecords },
-                { label: "Rolled", records: rolledRecords },
-                { label: "Left in Month", records: leftInMonthRecords },
-              ]}
-            />
-          </TabsContent>
-          <TabsContent value="country">
-            <DashboardCountryTable
-              records={countryRecords}
-              countryName={countryName}
-            />
-          </TabsContent>
-        </div>
-      </Tabs>
+                <div className="text-[0.7rem] leading-tight font-medium text-muted-foreground sm:text-sm">
+                  {section.label}
+                </div>
+                <div className="mt-2 text-xl font-semibold tabular-nums sm:text-3xl">
+                  {section.count}
+                </div>
+              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="absolute top-2 right-2 z-10 h-7 w-7 rounded-full opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                      aria-label={`${section.label} actions`}
+                    />
+                  }
+                >
+                  <EllipsisVerticalIcon />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-44">
+                  <DropdownMenuItem
+                    onClick={() =>
+                      downloadDashboardCsv({
+                        fileName: dashboardCsvFileName(
+                          countryName,
+                          section.label
+                        ),
+                        csv: sectionCsv,
+                      })
+                    }
+                  >
+                    <DownloadIcon />
+                    Download CSV
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-hidden rounded-lg border bg-background">
+        {isTableLoading ? (
+          <DashboardDataTableSkeleton />
+        ) : activeDashboardSection.value === "country" ? (
+          <DashboardCountryTable
+            records={countryRecords}
+            countryName={countryName}
+          />
+        ) : (
+          <DashboardMasterTable
+            sections={[
+              {
+                label: activeDashboardSection.label,
+                records:
+                  activeDashboardSection.records as MonthEndMasterRecord[],
+              },
+            ]}
+          />
+        )}
+      </div>
     </div>
   )
 }
@@ -1554,8 +2202,9 @@ function JournalEntryPreview({
   onBack,
   onPreviousCountry,
   onNextCountry,
-  onDashboard,
-  onReconciliation,
+  reconciliationHref,
+  journalHref,
+  dashboardHref,
   onMakeJournalEntry,
 }: {
   countryName: string
@@ -1570,8 +2219,9 @@ function JournalEntryPreview({
   onBack: () => void
   onPreviousCountry?: () => void
   onNextCountry?: () => void
-  onDashboard: () => void
-  onReconciliation: () => void
+  reconciliationHref: string
+  journalHref: string
+  dashboardHref: string
   onMakeJournalEntry: () => Promise<void>
 }) {
   const [isSaving, setIsSaving] = React.useState(false)
@@ -1619,36 +2269,17 @@ function JournalEntryPreview({
         >
           <ArrowLeftIcon />
         </Button>
-        <div />
+        <CountryProcessBreadcrumb
+          activeView="journal"
+          reconciliationHref={reconciliationHref}
+          journalHref={journalHref}
+          dashboardHref={dashboardHref}
+        />
         <div className="flex items-center gap-2">
           <CountryNavigationButtons
             onPrevious={onPreviousCountry}
             onNext={onNextCountry}
           />
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  className="h-9 w-9 rounded-full md:h-9 md:w-9"
-                  aria-label="Journal entry actions"
-                />
-              }
-            >
-              <EllipsisVerticalIcon />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-56">
-              <DropdownMenuItem onClick={onDashboard}>
-                <LayoutDashboardIcon />
-                Country Dashboard
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onReconciliation}>
-                <ListChecksIcon />
-                Reconciliation Report
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </div>
 
@@ -2191,6 +2822,44 @@ export function MonthEndCountryReconciliationView({
     }
   }
 
+  async function leaveInvoices(selectedRecords: MonthEndMasterRecord[]) {
+    if (!record || !activeCountryId) {
+      return
+    }
+
+    const latestRecord = (await getMonthEndRecord(record.period)) ?? record
+    const recordIds = selectedRecords.map((item) => item.id).filter(Boolean)
+    const leaveKey = leftInvoiceKey(activeCountryId)
+    const existingRecordIds = parseApprovedInternalIds(
+      latestRecord.checked[leaveKey]
+    )
+    const leftRecordIds = Array.from(
+      new Set([...existingRecordIds, ...recordIds])
+    )
+    const checked = {
+      ...latestRecord.checked,
+      [leaveKey]: serializeApprovedInternalIds(leftRecordIds),
+    }
+
+    delete checked[journalEntrySnapshotKey(activeCountryId)]
+
+    for (const linkedCountryId of linkedCountryIds.length
+      ? linkedCountryIds
+      : [activeCountryId]) {
+      delete checked[monthEndTaskKey(linkedCountryId, "journal")]
+    }
+
+    const updatedRecord = {
+      ...latestRecord,
+      checked,
+      updatedAt: new Date().toISOString(),
+    }
+
+    await saveMonthEndRecord(updatedRecord)
+    setRecord(updatedRecord)
+    window.dispatchEvent(new Event("month-end:records-updated"))
+  }
+
   async function moveInvoicesToAngolaOot(
     selectedRecords: MonthEndMasterRecord[]
   ) {
@@ -2308,6 +2977,59 @@ export function MonthEndCountryReconciliationView({
     setRecord(updatedRecord)
     window.dispatchEvent(new Event("month-end:records-updated"))
     router.push(reconciliationReportHref)
+  }
+
+  async function clearReconciliationAndStartOver() {
+    if (!record || !activeCountryId) {
+      return
+    }
+
+    const latestRecord = (await getMonthEndRecord(record.period)) ?? record
+    const checked = { ...latestRecord.checked }
+
+    for (const linkedCountryId of workflowCountryIds) {
+      delete checked[monthEndTaskKey(linkedCountryId, "reconcile")]
+      delete checked[monthEndTaskKey(linkedCountryId, "journal")]
+      delete checked[rollApprovalKey(linkedCountryId)]
+      delete checked[leftInvoiceKey(linkedCountryId)]
+      delete checked[journalEntrySnapshotKey(linkedCountryId)]
+    }
+
+    delete checked[rollApprovalKey(activeCountryId)]
+    delete checked[leftInvoiceKey(activeCountryId)]
+    delete checked[journalEntrySnapshotKey(activeCountryId)]
+
+    const updatedRecord = {
+      ...latestRecord,
+      checked,
+      updatedAt: new Date().toISOString(),
+    }
+
+    await saveMonthEndRecord(updatedRecord)
+    setRecord(updatedRecord)
+    window.dispatchEvent(new Event("month-end:records-updated"))
+    router.push(reconciliationReportHref)
+  }
+
+  async function saveCountryDashboardSection(section: CountryDashboardSection) {
+    if (!record || !activeCountryId) {
+      return
+    }
+
+    const latestRecord = (await getMonthEndRecord(record.period)) ?? record
+    const checked = {
+      ...latestRecord.checked,
+      [countryDashboardSectionKey(activeCountryId)]: section,
+    }
+    const updatedRecord = {
+      ...latestRecord,
+      checked,
+      updatedAt: new Date().toISOString(),
+    }
+
+    await saveMonthEndRecord(updatedRecord)
+    setRecord(updatedRecord)
+    window.dispatchEvent(new Event("month-end:records-updated"))
   }
 
   async function makeJournalEntry() {
@@ -2700,6 +3422,14 @@ export function MonthEndCountryReconciliationView({
         record?.checked[rollApprovalKey(activeCountryId)]
       )
     : []
+  const leftInvoiceRecordIds = activeCountryId
+    ? parseApprovedInternalIds(record?.checked[leftInvoiceKey(activeCountryId)])
+    : []
+  const activeDashboardSection = activeCountryId
+    ? parseCountryDashboardSection(
+        record?.checked[countryDashboardSectionKey(activeCountryId)]
+      )
+    : "netsuite"
   const workflowCountryIds = linkedCountryIds.length
     ? linkedCountryIds
     : activeCountryId
@@ -2925,6 +3655,9 @@ export function MonthEndCountryReconciliationView({
               reconciliation={reconciliation}
               reconciledCount={reconciliationCounts.country}
               rolledInternalIds={rolledInternalIds}
+              leftInvoiceRecordIds={leftInvoiceRecordIds}
+              activeSection={activeDashboardSection}
+              onActiveSectionChange={saveCountryDashboardSection}
               onBack={() => router.push(backHref)}
               onPreviousCountry={
                 previousCountryHref
@@ -2934,8 +3667,9 @@ export function MonthEndCountryReconciliationView({
               onNextCountry={
                 nextCountryHref ? () => router.push(nextCountryHref) : undefined
               }
-              onOpenJournal={() => router.push(journalEntryHref)}
-              onOpenReconciliation={() => router.push(reconciliationReportHref)}
+              reconciliationHref={reconciliationReportHref}
+              journalHref={journalEntryHref}
+              dashboardHref={countryDashboardHref}
             />
           ) : resolvedView === "journal" ? (
             <JournalEntryPreview
@@ -2954,8 +3688,9 @@ export function MonthEndCountryReconciliationView({
               onNextCountry={
                 nextCountryHref ? () => router.push(nextCountryHref) : undefined
               }
-              onDashboard={() => router.push(countryDashboardHref)}
-              onReconciliation={() => router.push(reconciliationReportHref)}
+              reconciliationHref={reconciliationReportHref}
+              journalHref={journalEntryHref}
+              dashboardHref={countryDashboardHref}
               onMakeJournalEntry={makeJournalEntry}
             />
           ) : (
@@ -2970,7 +3705,12 @@ export function MonthEndCountryReconciliationView({
                 >
                   <ArrowLeftIcon />
                 </Button>
-                <div />
+                <CountryProcessBreadcrumb
+                  activeView="reconciliation"
+                  reconciliationHref={reconciliationReportHref}
+                  journalHref={journalEntryHref}
+                  dashboardHref={countryDashboardHref}
+                />
                 <div className="flex items-center gap-2">
                   <CountryNavigationButtons
                     onPrevious={
@@ -2998,30 +3738,23 @@ export function MonthEndCountryReconciliationView({
                       <EllipsisVerticalIcon />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="min-w-64">
-                      <DropdownMenuItem
-                        onClick={() => router.push(countryDashboardHref)}
-                      >
-                        <LayoutDashboardIcon />
-                        Country Dashboard
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => router.push(journalEntryHref)}
-                      >
-                        <FileOutputIcon />
-                        Journal Entry
-                      </DropdownMenuItem>
                       {isReconciliationComplete ? (
-                        <>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            variant="destructive"
-                            onClick={reopenReconciliation}
-                          >
-                            <ListChecksIcon />
-                            Reopen Reconciliation
-                          </DropdownMenuItem>
-                        </>
-                      ) : null}
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={reopenReconciliation}
+                        >
+                          <ListChecksIcon />
+                          Reopen Reconciliation
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={clearReconciliationAndStartOver}
+                        >
+                          <ListChecksIcon />
+                          Clear Recon and Start Over
+                        </DropdownMenuItem>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -3109,12 +3842,12 @@ export function MonthEndCountryReconciliationView({
                   missingCountryRecordIds={missingCountryRecordIds}
                   missingMasterRecordIds={missingMasterRecordIds}
                   rolledInternalIds={rolledInternalIds}
+                  leftInvoiceRecordIds={leftInvoiceRecordIds}
                   showCountryColumn={showCountryColumn}
-                  onUploadMaster={openMasterFilePicker}
-                  onUploadCountry={openCountryReportFilePicker}
-                  onDeleteMaster={deleteMasterRecords}
-                  onDeleteCountry={deleteCountryReportRecords}
+                  onDropMasterFile={uploadMasterFile}
+                  onDropCountryFiles={uploadCountryReports}
                   canEditCountryData={requiresCountryReport}
+                  isReadOnly={isReconciliationComplete}
                   countryId={activeCountryId}
                   countryName={
                     countryDisplayName || country?.name || "Unknown country"
@@ -3126,6 +3859,7 @@ export function MonthEndCountryReconciliationView({
                   matchedCountryCount={reconciliationCounts.country}
                   matchedMasterCount={reconciliationCounts.master}
                   onRollInvoices={rollInvoices}
+                  onLeaveInvoices={leaveInvoices}
                   onMoveInvoicesToOot={
                     activeCountryId === "angola"
                       ? moveInvoicesToAngolaOot

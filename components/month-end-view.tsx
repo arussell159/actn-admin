@@ -35,6 +35,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
@@ -290,6 +291,8 @@ export function MonthEndView({ period }: { period?: string } = {}) {
   const [masterUploadMessage, setMasterUploadMessage] = React.useState("")
   const [isUploadingMasterSheet, setIsUploadingMasterSheet] =
     React.useState(false)
+  const [showCloseMonthConfirm, setShowCloseMonthConfirm] =
+    React.useState(false)
   const [hasLoaded, setHasLoaded] = React.useState(false)
   const masterUploadInputRef = React.useRef<HTMLInputElement>(null)
 
@@ -451,6 +454,11 @@ export function MonthEndView({ period }: { period?: string } = {}) {
       total: group.tasks.length,
     }
   })
+  const dashboardSupplementalTaskSummaries = supplementalTaskSummaries.filter(
+    (module) =>
+      module.id !== "other-tasks" &&
+      module.name.trim().toLowerCase() !== "other tasks"
+  )
   const grandTotalTasks = totalTasks + supplementalTaskTotal
   const totalDone = countryDone + supplementalTaskDone
   const completion = grandTotalTasks
@@ -582,6 +590,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     recordRef.current = period ? updatedRecord : null
     setRecord(period ? updatedRecord : null)
     setChecked(period ? updatedRecord.checked : {})
+    setShowCloseMonthConfirm(false)
     if (!period) {
       router.replace("/month-end/new")
     }
@@ -606,6 +615,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     await saveMonthEndRecord(updatedRecord)
     recordRef.current = updatedRecord
     setRecord(updatedRecord)
+    setShowCloseMonthConfirm(false)
     router.replace("/month-end")
     window.dispatchEvent(new Event("month-end:records-updated"))
   }
@@ -650,17 +660,16 @@ export function MonthEndView({ period }: { period?: string } = {}) {
         (country) => country.checkable !== false
       )
       const csvText = await reportFileToCsvText(file, activeRecord.period)
-      const mappedMasterRecords = targetCountries.flatMap(
-        (country) =>
-          isDefaultMasterReportMapping(country.masterReportMapping)
-            ? []
-            : (parseMappedCountryMasterCsv({
-                csvText,
-                monthEndId: activeRecord.id,
-                period: activeRecord.period,
-                targetCountries: [country],
-                mapping: country.masterReportMapping,
-              }) ?? [])
+      const mappedMasterRecords = targetCountries.flatMap((country) =>
+        isDefaultMasterReportMapping(country.masterReportMapping)
+          ? []
+          : (parseMappedCountryMasterCsv({
+              csvText,
+              monthEndId: activeRecord.id,
+              period: activeRecord.period,
+              targetCountries: [country],
+              mapping: country.masterReportMapping,
+            }) ?? [])
       )
       const masterRecords = mappedMasterRecords.length
         ? mappedMasterRecords
@@ -746,24 +755,19 @@ export function MonthEndView({ period }: { period?: string } = {}) {
 
   const monthStatusAction = (
     <div className="hidden shrink-0 items-center gap-2 md:flex">
-      {isClosed ? (
-        <Button variant="outline" className="h-9 px-4" onClick={reopenMonth}>
-          <CheckCircle2Icon />
-          Reopen Month
-        </Button>
-      ) : (
-        <Button className="h-9 px-4" onClick={closeMonth}>
-          <FileCheck2Icon />
-          Close Month
-        </Button>
-      )}
-      <DropdownMenu>
+      <DropdownMenu
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowCloseMonthConfirm(false)
+          }
+        }}
+      >
         <DropdownMenuTrigger
           render={
             <Button
               variant="outline"
               size="icon-sm"
-              className="h-9 w-9"
+              className="h-9 w-9 rounded-full md:h-9 md:w-9"
               aria-label="Month end actions"
             />
           }
@@ -785,6 +789,27 @@ export function MonthEndView({ period }: { period?: string } = {}) {
             <DownloadIcon />
             Roll Invoices CSV ({approvedRollInternalIds.length})
           </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          {isClosed ? (
+            <DropdownMenuItem onClick={reopenMonth}>
+              <CheckCircle2Icon />
+              Reopen Month
+            </DropdownMenuItem>
+          ) : showCloseMonthConfirm ? (
+            <DropdownMenuItem variant="destructive" onClick={closeMonth}>
+              <FileCheck2Icon />
+              Confirm Close Month
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem
+              variant="destructive"
+              closeOnClick={false}
+              onClick={() => setShowCloseMonthConfirm(true)}
+            >
+              <FileCheck2Icon />
+              Close Month
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
       <input
@@ -820,7 +845,10 @@ export function MonthEndView({ period }: { period?: string } = {}) {
           <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
             <SiteHeader title="Create Month End" />
             <div className="grid gap-4 px-4 py-4 lg:px-6">
-              <Button className="w-fit" render={<AppLink href="/month-end/new" />}>
+              <Button
+                className="w-fit"
+                render={<AppLink href="/month-end/new" />}
+              >
                 Create Month End
               </Button>
             </div>
@@ -898,7 +926,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
               </p>
             ) : null}
 
-            <section className="rounded-lg border bg-background p-3 md:hidden">
+            <section className="rounded-lg border bg-linear-to-t from-primary/5 to-card p-3 shadow-sm md:hidden dark:bg-card">
               <div className="grid grid-cols-3 divide-x">
                 <div className="pr-3">
                   <div className="text-[11px] text-muted-foreground">
@@ -955,7 +983,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
             </section>
 
             <section className="hidden gap-4 md:grid md:grid-cols-4">
-              <Card className="rounded-lg shadow-sm">
+              <Card className="rounded-lg bg-linear-to-t from-primary/5 to-card shadow-sm dark:bg-card">
                 <CardHeader className="gap-2">
                   <CardDescription>Progress</CardDescription>
                   <CardTitle className="flex items-end gap-2 text-3xl">
@@ -966,7 +994,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                   <ProgressBar value={completion} />
                 </CardContent>
               </Card>
-              <Card className="relative overflow-visible rounded-lg shadow-sm">
+              <Card className="relative overflow-visible rounded-lg bg-linear-to-t from-primary/5 to-card shadow-sm dark:bg-card">
                 <CardHeader className="!flex flex-row flex-nowrap items-start justify-between gap-3 pr-28">
                   <div className="min-w-0 shrink-0">
                     <CardDescription>Countries</CardDescription>
@@ -981,7 +1009,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                   />
                 </CardHeader>
               </Card>
-              <Card className="rounded-lg shadow-sm">
+              <Card className="rounded-lg bg-linear-to-t from-primary/5 to-card shadow-sm dark:bg-card">
                 <CardHeader>
                   <CardDescription>Waiting on Invoice</CardDescription>
                   <CardTitle className="flex items-center gap-2 text-3xl">
@@ -990,11 +1018,11 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                   </CardTitle>
                 </CardHeader>
               </Card>
-              <Card className="rounded-lg shadow-sm">
+              <Card className="rounded-lg bg-linear-to-t from-primary/5 to-card shadow-sm dark:bg-card">
                 <CardHeader>
                   <div className="grid gap-2">
-                    {supplementalTaskSummaries.length ? (
-                      supplementalTaskSummaries.map((module) => {
+                    {dashboardSupplementalTaskSummaries.length ? (
+                      dashboardSupplementalTaskSummaries.map((module) => {
                         const isComplete =
                           module.total > 0 && module.done === module.total
 
@@ -1004,7 +1032,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                             className={
                               "flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm " +
                               (isComplete
-                                ? "bg-emerald-50/50 text-emerald-700 dark:bg-emerald-950/15 dark:text-emerald-300"
+                                ? "bg-emerald-100 text-emerald-900 ring-1 ring-emerald-300/70 dark:bg-emerald-900/35 dark:text-emerald-100 dark:ring-emerald-600/50"
                                 : "text-foreground")
                             }
                           >
@@ -1015,7 +1043,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                               className={
                                 "shrink-0 font-semibold tabular-nums " +
                                 (isComplete
-                                  ? "text-emerald-700 dark:text-emerald-300"
+                                  ? "text-emerald-900 dark:text-emerald-100"
                                   : "text-muted-foreground")
                               }
                             >
@@ -1118,7 +1146,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                               (isParentRow
                                 ? "bg-muted/40"
                                 : isRowComplete
-                                  ? "border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-950/15"
+                                  ? "border-emerald-300 bg-emerald-100 text-emerald-950 dark:border-emerald-700 dark:bg-emerald-900/35 dark:text-emerald-50"
                                   : "")
                             }
                           >
@@ -1364,7 +1392,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                 isParentRow
                                   ? "bg-muted/40"
                                   : isRowComplete
-                                    ? "bg-emerald-50/50 hover:bg-emerald-50/70 dark:bg-emerald-950/15 dark:hover:bg-emerald-950/25"
+                                    ? "bg-emerald-100 hover:bg-emerald-100/80 dark:bg-emerald-900/35 dark:hover:bg-emerald-900/45"
                                     : undefined
                               }
                             >
