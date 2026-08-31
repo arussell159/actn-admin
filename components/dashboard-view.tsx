@@ -112,6 +112,10 @@ const chartConfig = {
     label: "New Tickets",
     color: "#1f4fd8",
   },
+  closedTickets: {
+    label: "Closed Tickets",
+    color: "#22a347",
+  },
   incomingReplies: {
     label: "Incoming",
     color: "#7aa7ff",
@@ -124,9 +128,9 @@ const chartConfig = {
 
 const ticketVolumeLegend = [
   {
-    key: "outgoingReplies",
-    label: "Outgoing",
-    color: chartConfig.outgoingReplies.color,
+    key: "closedTickets",
+    label: "Closed Tickets",
+    color: chartConfig.closedTickets.color,
     isDashed: false,
   },
   {
@@ -134,12 +138,6 @@ const ticketVolumeLegend = [
     label: "New Tickets",
     color: chartConfig.newTickets.color,
     isDashed: false,
-  },
-  {
-    key: "incomingReplies",
-    label: "Incoming",
-    color: chartConfig.incomingReplies.color,
-    isDashed: true,
   },
 ] as const
 
@@ -519,17 +517,8 @@ export function DashboardView() {
     return hourlyTicketData.slice(-hoursToShow)
   }, [hourlyTicketData, selectedTimeRange])
   const currentHourTicketData = hourlyTicketData[hourlyTicketData.length - 1]
-  const dailyReplyTotals = hourlyTicketData.reduce(
-    (totals, hour) => ({
-      incoming: totals.incoming + (hour.incomingReplies ?? 0),
-      outgoing: totals.outgoing + (hour.outgoingReplies ?? 0),
-    }),
-    {
-      incoming: 0,
-      outgoing: 0,
-    }
-  )
   const newTicketTotal = zohoMetrics?.totals.newTickets ?? 0
+  const closedTicketTotal = zohoMetrics?.totals.closedTickets ?? 0
   const openTicketTotal = tickets.filter((ticket) => {
     const status = `${ticket.status} ${ticket.statusType}`.toLowerCase()
 
@@ -613,13 +602,13 @@ export function DashboardView() {
       icon: MailIcon,
     },
     {
-      label: "Incoming",
-      value: zohoMetrics?.ok ? dailyReplyTotals.incoming.toLocaleString() : "-",
+      label: "Closed Tickets",
+      value: zohoMetrics?.ok ? closedTicketTotal.toLocaleString() : "-",
       icon: DatabaseIcon,
     },
     {
-      label: "Outgoing",
-      value: zohoMetrics?.ok ? dailyReplyTotals.outgoing.toLocaleString() : "-",
+      label: "Open Tickets",
+      value: zohoData?.ok ? openTicketTotal.toLocaleString() : "-",
       icon: DatabaseIcon,
     },
   ]
@@ -631,16 +620,14 @@ export function DashboardView() {
         : "-",
     },
     {
-      label: "Incoming",
+      label: "Closed",
       value: zohoMetrics?.ok
-        ? (currentHourTicketData?.incomingReplies ?? 0).toLocaleString()
+        ? (currentHourTicketData?.closedTickets ?? 0).toLocaleString()
         : "-",
     },
     {
-      label: "Outgoing",
-      value: zohoMetrics?.ok
-        ? (currentHourTicketData?.outgoingReplies ?? 0).toLocaleString()
-        : "-",
+      label: "Open",
+      value: zohoData?.ok ? openTicketTotal.toLocaleString() : "-",
     },
   ]
 
@@ -944,8 +931,8 @@ export function DashboardView() {
                             }
                           />
                           <Bar
-                            dataKey="outgoingReplies"
-                            fill={chartConfig.outgoingReplies.color}
+                            dataKey="closedTickets"
+                            fill={chartConfig.closedTickets.color}
                             fillOpacity={0.8}
                             radius={[4, 4, 0, 0]}
                             maxBarSize={32}
@@ -955,15 +942,6 @@ export function DashboardView() {
                             type="natural"
                             stroke={chartConfig.newTickets.color}
                             strokeWidth={3}
-                            dot={false}
-                            activeDot={{ r: 5 }}
-                          />
-                          <Line
-                            dataKey="incomingReplies"
-                            type="natural"
-                            stroke={chartConfig.incomingReplies.color}
-                            strokeWidth={3}
-                            strokeDasharray="7 5"
                             dot={false}
                             activeDot={{ r: 5 }}
                           />

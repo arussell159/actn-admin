@@ -194,6 +194,7 @@ type ZohoDashboardBundleResult = {
 }
 
 const CACHE_TTL_MS = 15 * 60_000
+const DASHBOARD_BUNDLE_CACHE_TTL_MS = 60_000
 const STALE_CACHE_TTL_MS = 24 * 60 * 60_000
 const RATE_LIMIT_COOLDOWN_MS = 30 * 60_000
 const ZOHO_TICKET_PAGE_LIMIT = 100
@@ -215,10 +216,10 @@ function getCachedResponse<T>(key: string) {
   return cached.data as T
 }
 
-function setCachedResponse(key: string, data: unknown) {
+function setCachedResponse(key: string, data: unknown, maxAgeMs = CACHE_TTL_MS) {
   responseCache.set(key, {
     data,
-    expiresAt: Date.now() + CACHE_TTL_MS,
+    expiresAt: Date.now() + maxAgeMs,
   })
 }
 
@@ -226,17 +227,17 @@ function isZohoRateLimitMessage(message: string) {
   return /too many requests|rate limit|rate-limit/i.test(message)
 }
 
-async function getStoredResponse<T>(key: string) {
+async function getStoredResponse<T>(key: string, maxAgeMs = CACHE_TTL_MS) {
   const cached = getCachedResponse<T>(key)
 
   if (cached) {
     return cached
   }
 
-  const stored = await readZohoDeskCache<T>(key, CACHE_TTL_MS)
+  const stored = await readZohoDeskCache<T>(key, maxAgeMs)
 
   if (stored) {
-    setCachedResponse(key, stored)
+    setCachedResponse(key, stored, maxAgeMs)
   }
 
   return stored
@@ -252,8 +253,12 @@ async function getStaleStoredResponse<T>(key: string) {
   return stored
 }
 
-async function setStoredResponse(key: string, data: unknown) {
-  setCachedResponse(key, data)
+async function setStoredResponse(
+  key: string,
+  data: unknown,
+  maxAgeMs = CACHE_TTL_MS
+) {
+  setCachedResponse(key, data, maxAgeMs)
   await writeZohoDeskCache(key, data)
 }
 
@@ -278,7 +283,7 @@ async function markZohoRateLimited(message: string) {
 }
 
 function dashboardBundleCacheKey(limit: number) {
-  return `dashboard-bundle:v6:${limit}:${openTicketViewId()}:not-team-${excludedTicketTeamId()}`
+  return `dashboard-bundle:v8:${limit}:${openTicketViewId()}:not-team-${excludedTicketTeamId()}:report-tz-${reportTimeZone()}`
 }
 
 function configuredInfoDepartmentId() {
@@ -313,15 +318,57 @@ function personName(
   )
 }
 
-function isToday(value: string | undefined) {
+function reportTimeZone() {
+  return process.env.ZOHO_DESK_REPORT_TIME_ZONE ?? "America/Chicago"
+}
+
+function datePartsInTimeZone(
+  value: string | Date | undefined,
+  timeZone = reportTimeZone()
+) {
   if (!value) {
-    return false
+    return null
   }
 
   const date = new Date(value)
-  const today = new Date()
 
-  return date.toDateString() === today.toDateString()
+  if (Number.isNaN(date.getTime())) {
+    return null
+  }
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date)
+  const partValue = (type: string) =>
+    parts.find((part) => part.type === type)?.value ?? ""
+
+  return {
+    year: partValue("year"),
+    month: partValue("month"),
+    day: partValue("day"),
+    hour: Number(partValue("hour")),
+  }
+}
+
+function dateKeyInTimeZone(
+  value: string | Date | undefined,
+  timeZone = reportTimeZone()
+) {
+  const parts = datePartsInTimeZone(value, timeZone)
+
+  return parts ? `${parts.year}-${parts.month}-${parts.day}` : ""
+}
+
+function isToday(value: string | undefined, timeZone = reportTimeZone()) {
+  return (
+    Boolean(value) &&
+    dateKeyInTimeZone(value, timeZone) === dateKeyInTimeZone(new Date(), timeZone)
+  )
 }
 
 function customerReplyTime(
@@ -379,18 +426,18 @@ function normalizeTicket(ticket: NonNullable<ZohoTicketResponse["data"]>[number]
   }
 }
 
-function hourNumber(value: string | undefined) {
+function hourNumber(value: string | undefined, timeZone = reportTimeZone()) {
   if (!value) {
     return null
   }
 
-  const date = new Date(value)
+  const parts = datePartsInTimeZone(value, timeZone)
 
-  if (Number.isNaN(date.getTime())) {
+  if (!parts || !Number.isFinite(parts.hour)) {
     return null
   }
 
-  return date.getHours()
+  return parts.hour
 }
 
 function emptyHourlyReplyCounts() {
@@ -408,16 +455,17 @@ function incrementHourCount(counts: Map<number, number>, value: string) {
   }
 }
 
-function last24HourSlots() {
-  return Array.from({ length: 24 }, (_, index) => {
-    const date = new Date()
+function last24HourSlots(timeZone = reportTimeZone()) {
+  const now = new Date()
+  const todayKey = dateKeyInTimeZone(now, timeZone)
 
-    date.setHours(date.getHours() - 23 + index, 0, 0, 0)
+  return Array.from({ length: 24 }, (_, index) => {
+    const date = new Date(now.getTime() - (23 - index) * 60 * 60 * 1000)
 
     return {
-      hour: date.getHours(),
-      label: hourLabel(date),
-      isToday: date.toDateString() === new Date().toDateString(),
+      hour: datePartsInTimeZone(date, timeZone)?.hour ?? date.getHours(),
+      label: hourLabel(date, timeZone),
+      isToday: dateKeyInTimeZone(date, timeZone) === todayKey,
     }
   })
 }
@@ -1255,10 +1303,79 @@ function buildDashboardMetricsFromLiveData({
   }
 }
 
+function dashboardMetricHour(
+  item: NonNullable<ZohoDashboardMetricResponse["ticketCount"]>[number]
+) {
+  const numericHour = Number(item.value ?? item.referenceValue ?? "")
+
+  if (Number.isFinite(numericHour)) {
+    return numericHour
+  }
+
+  const dateHour = hourNumber(item.value ?? item.referenceValue ?? "")
+
+  if (dateHour !== null) {
+    return dateHour
+  }
+
+  const matchedHour = String(item.value ?? item.referenceValue ?? "").match(
+    /\b([01]?\d|2[0-3])\b/
+  )
+
+  return matchedHour ? Number(matchedHour[1]) : null
+}
+
+function dashboardTicketCountsByHour(metric: ZohoDashboardMetricResponse) {
+  const counts = new Map<number, number>()
+
+  ;(metric.ticketCount ?? []).forEach((item) => {
+    const hour = dashboardMetricHour(item)
+
+    if (hour !== null) {
+      counts.set(hour, Number(item.count ?? 0))
+    }
+  })
+
+  return counts
+}
+
+function buildDashboardMetricsFromZohoReport({
+  created,
+  solved,
+}: {
+  created: ZohoDashboardMetricResponse
+  solved: ZohoDashboardMetricResponse
+}): ZohoDashboardMetricsResult {
+  const createdCounts = dashboardTicketCountsByHour(created)
+  const solvedCounts = dashboardTicketCountsByHour(solved)
+  const chartData = last24HourSlots().map(({ hour, label, isToday }) => ({
+    hour: label,
+    newTickets: isToday ? (createdCounts.get(hour) ?? 0) : 0,
+    closedTickets: isToday ? (solvedCounts.get(hour) ?? 0) : 0,
+    onHoldTickets: 0,
+    incomingReplies: 0,
+    outgoingReplies: 0,
+  }))
+
+  return {
+    ok: true,
+    chartData,
+    totals: {
+      newTickets: Number(created.totalTicketCount ?? 0),
+      closedTickets: Number(solved.totalTicketCount ?? 0),
+      onHoldTickets: 0,
+    },
+    message: "Connected",
+  }
+}
+
 export async function getZohoDeskDashboardBundle(limit = 400) {
   const requestedLimit = Math.min(Math.max(limit, 1), 400)
   const cacheKey = dashboardBundleCacheKey(requestedLimit)
-  const cached = await getStoredResponse<ZohoDashboardBundleResult>(cacheKey)
+  const cached = await getStoredResponse<ZohoDashboardBundleResult>(
+    cacheKey,
+    DASHBOARD_BUNDLE_CACHE_TTL_MS
+  )
 
   if (cached) {
     return cached
@@ -1364,7 +1481,7 @@ async function refreshZohoDeskDashboardBundle(
   }
 
   const excludedTeamId = excludedTicketTeamId()
-  const [openTicketData, todayTicketData, incomingTicketData, outgoingMetric] =
+  const [openTicketData, todayTicketData, createdMetric, solvedMetric] =
     await Promise.all([
       fetchZohoTickets({
         accessToken: accessTokenResult.accessToken,
@@ -1380,15 +1497,13 @@ async function refreshZohoDeskDashboardBundle(
         sortBy: "-createdTime",
         stopWhenPageIsOutsideToday: "createdTime",
       }),
-      fetchZohoTickets({
-        accessToken: accessTokenResult.accessToken,
-        departmentId: infoDepartmentResult.department.id,
-        limit: requestedLimit,
-        sortBy: "-recentThread",
-        receivedInDays: "15",
-      }),
       getZohoDashboardMetric(
-        "responseCount",
+        "createdTickets",
+        accessTokenResult.accessToken,
+        infoDepartmentResult.department.id
+      ),
+      getZohoDashboardMetric(
+        "solvedTickets",
         accessTokenResult.accessToken,
         infoDepartmentResult.department.id
       ),
@@ -1396,7 +1511,8 @@ async function refreshZohoDeskDashboardBundle(
   const failedMessage =
     (!openTicketData.ok && openTicketData.message) ||
     (!todayTicketData.ok && todayTicketData.message) ||
-    (!outgoingMetric.ok && outgoingMetric.message) ||
+    (!createdMetric.ok && createdMetric.message) ||
+    (!solvedMetric.ok && solvedMetric.message) ||
     ""
 
   if (failedMessage) {
@@ -1440,7 +1556,8 @@ async function refreshZohoDeskDashboardBundle(
   if (
     !openTicketData.ok ||
     !todayTicketData.ok ||
-    !outgoingMetric.ok
+    !createdMetric.ok ||
+    !solvedMetric.ok
   ) {
     return {
       ok: false,
@@ -1470,44 +1587,6 @@ async function refreshZohoDeskDashboardBundle(
       ticketTeamId !== excludedTeamId
     )
   }
-  let incomingSourceTickets = incomingTicketData.ok
-    ? incomingTicketData.tickets
-    : ([] as NonNullable<ZohoTicketResponse["data"]>)
-
-  if (!incomingTicketData.ok && isZohoRateLimitMessage(incomingTicketData.message)) {
-    await markZohoRateLimited(incomingTicketData.message)
-  }
-
-  if (
-    !incomingSourceTickets.some(
-      (ticket) => filterTicket(ticket) && isToday(customerReplyTime(ticket))
-    )
-  ) {
-    const customerRespondedTicketData = await fetchZohoTickets({
-      accessToken: accessTokenResult.accessToken,
-      departmentId: infoDepartmentResult.department.id,
-      limit: requestedLimit,
-      sortBy: "-recentThread",
-      viewId: customerRespondedTicketViewId(),
-    })
-
-    if (customerRespondedTicketData.ok) {
-      const ticketsById = new Map(
-        incomingSourceTickets.map((ticket) => [ticket.id ?? "", ticket])
-      )
-
-      customerRespondedTicketData.tickets.forEach((ticket) => {
-        if (ticket.id) {
-          ticketsById.set(ticket.id, ticket)
-        }
-      })
-
-      incomingSourceTickets = Array.from(ticketsById.values())
-    } else if (isZohoRateLimitMessage(customerRespondedTicketData.message)) {
-      await markZohoRateLimited(customerRespondedTicketData.message)
-    }
-  }
-
   const tickets = openTicketData.tickets
     .filter(
       (ticket) =>
@@ -1518,13 +1597,9 @@ async function refreshZohoDeskDashboardBundle(
   const todayTickets = todayTicketData.tickets
     .filter((ticket) => filterTicket(ticket) && isToday(ticket.createdTime))
     .map(normalizeTicket)
-  const incomingTickets = incomingSourceTickets
-    .filter((ticket) => filterTicket(ticket) && isToday(customerReplyTime(ticket)))
-    .map(normalizeTicket)
-  const metrics = buildDashboardMetricsFromLiveData({
-    todayTickets,
-    incomingTickets,
-    outgoingMetric: outgoingMetric.data,
+  const metrics = buildDashboardMetricsFromZohoReport({
+    created: createdMetric.data,
+    solved: solvedMetric.data,
   })
   const result = {
     ok: true,
@@ -1534,7 +1609,7 @@ async function refreshZohoDeskDashboardBundle(
     message: "Connected",
   }
 
-  await setStoredResponse(cacheKey, result)
+  await setStoredResponse(cacheKey, result, DASHBOARD_BUNDLE_CACHE_TTL_MS)
 
   return result
 }
@@ -1694,9 +1769,10 @@ export async function getZohoDeskDashboardMetrics() {
   return result
 }
 
-function hourLabel(date: Date) {
+function hourLabel(date: Date, timeZone = reportTimeZone()) {
   return date
-    .toLocaleTimeString([], {
+    .toLocaleTimeString("en-US", {
+      timeZone,
       hour: "numeric",
       hour12: true,
     })
