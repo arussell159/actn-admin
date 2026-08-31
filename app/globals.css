@@ -118,6 +118,12 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -160,8 +166,11 @@
 @media (max-width: 767px) {
   html,
   body {
-    height: calc(100dvh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px));
+    height: calc(
+      100dvh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
     overflow: hidden;
+    overscroll-behavior-x: none;
     overscroll-behavior-y: none;
   }
 
@@ -171,21 +180,39 @@
   }
 
   [data-slot="sidebar-wrapper"] {
-    height: calc(100vh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px));
-    height: calc(100dvh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px));
-    min-height: calc(100vh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px));
-    min-height: calc(100dvh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px));
+    height: calc(
+      100vh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
+    height: calc(
+      100dvh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
+    min-height: calc(
+      100vh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
+    min-height: calc(
+      100dvh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
     overflow: hidden;
+    overscroll-behavior-x: none;
   }
 
   [data-slot="sidebar-inset"] {
     box-sizing: border-box;
-    height: calc(100vh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px));
-    height: calc(100dvh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px));
-    min-height: calc(100vh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px));
-    min-height: calc(100dvh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px));
+    height: calc(
+      100vh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
+    height: calc(
+      100dvh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
+    min-height: calc(
+      100vh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
+    min-height: calc(
+      100dvh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
     overflow-x: hidden;
     overflow-y: auto;
+    overscroll-behavior-x: none;
     overscroll-behavior-y: contain;
     padding-top: 0;
     padding-bottom: 0;

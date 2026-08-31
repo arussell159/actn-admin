@@ -13,7 +13,13 @@ export type InformationNode = {
   updatedAt: string
 }
 
+export type TrashedInformationNode = InformationNode & {
+  deletedAt: string
+  originalParentId?: string
+}
+
 const storageKey = "africa-ctn-information-notes"
+const trashStorageKey = "africa-ctn-information-notes-trash"
 const tableName = "information_notes"
 export const informationUpdatedEvent = "information-notes:updated"
 
@@ -108,6 +114,31 @@ export function saveInformationNotes(nodes: InformationNode[]) {
   saveDatabaseInformationNotes(nodes).finally(() => {
     window.dispatchEvent(new Event(informationUpdatedEvent))
   })
+}
+
+export function loadTrashedInformationNotes() {
+  if (typeof window === "undefined") {
+    return []
+  }
+
+  try {
+    const stored = window.localStorage.getItem(trashStorageKey)
+    const parsed = stored
+      ? (JSON.parse(stored) as TrashedInformationNode[])
+      : null
+
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+export function saveTrashedInformationNotes(nodes: TrashedInformationNode[]) {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  window.localStorage.setItem(trashStorageKey, JSON.stringify(nodes))
 }
 
 export async function getInformationNotes() {

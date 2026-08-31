@@ -374,7 +374,9 @@ export function TemplateEditorView() {
       invoiceRequired:
         form.draft.type === "country" ? form.draft.invoiceRequired : undefined,
       requiresPasteReport:
-        form.draft.type === "country" ? form.draft.requiresPasteReport : undefined,
+        form.draft.type === "country"
+          ? form.draft.requiresPasteReport
+          : undefined,
       combinedWithCountryIds,
       updatedAt,
     }
@@ -396,19 +398,19 @@ export function TemplateEditorView() {
         },
         countries: updateCombinedCountryLinks(
           template.countries.map((row, index) => {
-          if (row.id === form.rowId) {
-            return { ...row, ...rowShape }
-          }
-
-          if (index > rowIndex && index < childEndIndex) {
-            return {
-              ...row,
-              indent: Math.max(0, row.indent + indentDelta),
-              updatedAt,
+            if (row.id === form.rowId) {
+              return { ...row, ...rowShape }
             }
-          }
 
-          return row
+            if (index > rowIndex && index < childEndIndex) {
+              return {
+                ...row,
+                indent: Math.max(0, row.indent + indentDelta),
+                updatedAt,
+              }
+            }
+
+            return row
           }),
           form.rowId,
           combinedWithCountryIds,
@@ -677,9 +679,6 @@ export function TemplateEditorView() {
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <CardTitle>Modules</CardTitle>
-                      <CardDescription>
-                        Template sections used by the month-end checklist.
-                      </CardDescription>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Button onClick={() => setShowModuleForm(true)}>
@@ -822,24 +821,24 @@ export function TemplateEditorView() {
               </Card>
             ) : (
               <Card className="rounded-lg shadow-sm">
-                <CardHeader className="gap-3">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
+                <CardHeader>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
                       <Button
-                        variant="ghost"
-                        className="mb-2 -ml-3"
+                        variant="outline"
+                        size="icon-sm"
+                        className="h-9 w-9 shrink-0 rounded-full md:h-9 md:w-9"
+                        aria-label="Back to modules"
                         onClick={() => {
                           setActiveModuleId(null)
                           setItemForm(null)
                         }}
                       >
                         <ArrowLeftIcon />
-                        Modules
                       </Button>
-                      <CardTitle>{activeModule?.name}</CardTitle>
-                      <CardDescription>
-                        Add or edit checklist rows inside this module.
-                      </CardDescription>
+                      <CardTitle className="min-w-0 truncate">
+                        {activeModule?.name}
+                      </CardTitle>
                     </div>
                     <Button onClick={startAddItem}>
                       <PlusIcon />
@@ -1401,6 +1400,17 @@ function CountryFields({
           </Select>
         </Field>
         <Field>
+          <FieldLabel htmlFor="country-row-combined">Combined With</FieldLabel>
+          <CombinedCountrySearchField
+            countries={possibleCombinedCountries}
+            value={form.draft.combinedWithCountryIds}
+            disabled={form.draft.type === "group"}
+            onChange={(combinedWithCountryIds) =>
+              updateDraft({ combinedWithCountryIds })
+            }
+          />
+        </Field>
+        <Field>
           <FieldLabel htmlFor="country-row-paste-report">
             Paste Report
           </FieldLabel>
@@ -1426,17 +1436,6 @@ function CountryFields({
               </SelectGroup>
             </SelectContent>
           </Select>
-        </Field>
-        <Field className="md:col-span-2">
-          <FieldLabel htmlFor="country-row-combined">Combined With</FieldLabel>
-          <CombinedCountrySearchField
-            countries={possibleCombinedCountries}
-            value={form.draft.combinedWithCountryIds}
-            disabled={form.draft.type === "group"}
-            onChange={(combinedWithCountryIds) =>
-              updateDraft({ combinedWithCountryIds })
-            }
-          />
         </Field>
       </FieldGroup>
     </FieldSet>
@@ -1478,18 +1477,19 @@ function CombinedCountrySearchField({
           <Button
             id="country-row-combined"
             variant="outline"
-            className="min-h-10 w-full cursor-pointer justify-between"
+            className="h-10 w-full cursor-pointer justify-between border-transparent bg-input/50 hover:bg-input/50 aria-expanded:bg-input/50 md:h-8 dark:bg-input/30 dark:hover:bg-input/40 dark:aria-expanded:bg-input/40"
             disabled={disabled}
           />
         }
       >
-        <span className="flex min-w-0 flex-1 flex-wrap gap-1 text-left">
+        <span className="min-w-0 flex-1 truncate text-left">
           {selectedCountries.length ? (
-            selectedCountries.map((country) => (
-              <Badge key={country.id} variant="secondary">
-                {country.name}
-              </Badge>
-            ))
+            <>
+              {selectedCountries[0]?.name}
+              {selectedCountries.length > 1
+                ? ` +${selectedCountries.length - 1}`
+                : ""}
+            </>
           ) : (
             <span className="truncate text-muted-foreground">None</span>
           )}
@@ -1557,7 +1557,7 @@ function ParentSearchField({
           <Button
             id="country-row-parent"
             variant="outline"
-            className="w-full cursor-pointer justify-between"
+            className="w-full cursor-pointer justify-between border-transparent bg-input/50 hover:bg-input/50 aria-expanded:bg-input/50 dark:bg-input/30 dark:hover:bg-input/40 dark:aria-expanded:bg-input/40"
           />
         }
       >

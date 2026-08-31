@@ -2,10 +2,16 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { EditIcon, MoreHorizontalIcon, PlusIcon, Trash2Icon } from "lucide-react"
+import {
+  EditIcon,
+  MoreHorizontalIcon,
+  PlusIcon,
+  Trash2Icon,
+} from "lucide-react"
 
 import { AppSidebar } from "@/components/app-sidebar"
 import { AppLink } from "@/components/app-link"
+import { PreviousMonthEndsSkeleton } from "@/components/page-skeletons"
 import { SiteHeader } from "@/components/site-header"
 import { Button } from "@/components/ui/button"
 import {
@@ -75,7 +81,9 @@ export function PreviousMonthEndsView() {
   async function deleteRecord(period: string) {
     const previousRecords = records
 
-    setRecords((current) => current.filter((record) => record.period !== period))
+    setRecords((current) =>
+      current.filter((record) => record.period !== period)
+    )
     setDeleteError("")
 
     try {
@@ -102,21 +110,19 @@ export function PreviousMonthEndsView() {
           <SiteHeader title="Previous Months" />
           <div className="grid gap-4 px-4 py-4 lg:px-6">
             <section className="flex justify-end">
-              <Button className="w-fit" render={<AppLink href="/month-end/new" />}>
-                  <PlusIcon />
-                  New Month End
+              <Button
+                className="w-fit"
+                render={<AppLink href="/month-end/new" />}
+              >
+                <PlusIcon />
+                New Month End
               </Button>
             </section>
             {deleteError ? (
               <p className="text-sm text-destructive">{deleteError}</p>
             ) : null}
             {isLoading ? (
-              <Card className="rounded-lg shadow-sm">
-                <CardHeader>
-                  <CardTitle>Loading saved month ends</CardTitle>
-                  <CardDescription>Reading from Supabase.</CardDescription>
-                </CardHeader>
-              </Card>
+              <PreviousMonthEndsSkeleton />
             ) : records.length ? (
               <Table containerClassName="rounded-lg border bg-background">
                 <TableHeader>
@@ -167,10 +173,7 @@ export function PreviousMonthEndsView() {
                           >
                             <MoreHorizontalIcon />
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent
-                            align="end"
-                            className="min-w-40"
-                          >
+                          <DropdownMenuContent align="end" className="min-w-40">
                             <DropdownMenuItem
                               onClick={() =>
                                 router.push(

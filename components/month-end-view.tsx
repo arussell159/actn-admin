@@ -19,6 +19,7 @@ import {
 
 import { AppLink } from "@/components/app-link"
 import { AppSidebar } from "@/components/app-sidebar"
+import { MonthEndDashboardSkeleton } from "@/components/page-skeletons"
 import { SiteHeader } from "@/components/site-header"
 import { Button } from "@/components/ui/button"
 import { ButtonGroup } from "@/components/ui/button-group"
@@ -817,12 +818,42 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     )
   }
 
+  if (!hasLoaded) {
+    return (
+      <SidebarProvider
+        style={
+          {
+            "--sidebar-width": "calc(var(--spacing) * 72)",
+            "--header-height": "calc(var(--spacing) * 12)",
+            "--mobile-page-bottom-padding":
+              "calc(8rem + env(safe-area-inset-bottom, 0px))",
+          } as React.CSSProperties
+        }
+      >
+        <AppSidebar variant="inset" />
+        <SidebarInset>
+          <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
+            <SiteHeader title="Current Month End" />
+            <div className="@container/month-end flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
+              <section className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <span className="hidden md:block" aria-hidden="true" />
+              </section>
+              <MonthEndDashboardSkeleton />
+            </div>
+          </main>
+        </SidebarInset>
+      </SidebarProvider>
+    )
+  }
+
   return (
     <SidebarProvider
       style={
         {
           "--sidebar-width": "calc(var(--spacing) * 72)",
           "--header-height": "calc(var(--spacing) * 12)",
+          "--mobile-page-bottom-padding":
+            "calc(8rem + env(safe-area-inset-bottom, 0px))",
         } as React.CSSProperties
       }
     >

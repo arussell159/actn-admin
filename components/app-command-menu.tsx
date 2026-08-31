@@ -262,7 +262,10 @@ export function AppCommandMenu() {
     }
 
     syncMonthEndCountryItems()
-    window.addEventListener("month-end:records-updated", syncMonthEndCountryItems)
+    window.addEventListener(
+      "month-end:records-updated",
+      syncMonthEndCountryItems
+    )
     window.addEventListener(
       "month-end:template-updated",
       syncMonthEndCountryItems
@@ -285,6 +288,14 @@ export function AppCommandMenu() {
     setOpen(false)
     setCommandSearch("")
     router.push(href)
+    window.setTimeout(() => {
+      window.dispatchEvent(new Event("information-notes:navigation"))
+      if (href.startsWith("/information")) {
+        window.dispatchEvent(
+          new Event("information-notes:restore-editor-focus")
+        )
+      }
+    }, 0)
   }
 
   function renderCommandItem(item: AppCommandItem) {
@@ -317,7 +328,9 @@ export function AppCommandMenu() {
         placeholder="Search pages, notes, folders, countries..."
       />
       <CommandList>
-        {!hasVisibleResults ? <CommandEmpty>No results found.</CommandEmpty> : null}
+        {!hasVisibleResults ? (
+          <CommandEmpty>No results found.</CommandEmpty>
+        ) : null}
         {visibleNotebookItems.length ? (
           <CommandGroup heading="Notebook">
             {visibleNotebookItems.map(renderCommandItem)}

@@ -5,13 +5,8 @@ import { useRouter } from "next/navigation"
 
 import { AppSidebar } from "@/components/app-sidebar"
 import { NewMonthEndForm } from "@/components/new-month-end-form"
+import { CreateMonthEndSkeleton } from "@/components/page-skeletons"
 import { SiteHeader } from "@/components/site-header"
-import {
-  Card,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { listMonthEndRecords, type MonthEndRecord } from "@/lib/month-end-db"
 
@@ -62,12 +57,7 @@ export function CreateMonthEndView() {
               <h1 className="text-2xl font-semibold">Create Month End</h1>
             </section>
             {isLoading ? (
-              <Card className="rounded-lg shadow-sm">
-                <CardHeader>
-                  <CardTitle>Loading month ends</CardTitle>
-                  <CardDescription>Checking existing records.</CardDescription>
-                </CardHeader>
-              </Card>
+              <CreateMonthEndSkeleton />
             ) : (
               <NewMonthEndForm
                 existingRecords={records}

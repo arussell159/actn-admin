@@ -5,7 +5,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type CSSProperties,
 } from "react"
 import type { Content } from "@tiptap/core"
 import { EditorContent, EditorContext, useEditor } from "@tiptap/react"
@@ -186,17 +185,21 @@ function parseEditorContent(value?: string): Content {
 
 export function SimpleEditor({
   focusSignal = 0,
+  restoreSelectionSignal = 0,
+  restoredSelection,
   value,
   onChange,
+  onSelectionChange,
 }: {
   focusSignal?: number
+  restoreSelectionSignal?: number
+  restoredSelection?: { from: number; to: number }
   value?: string
   onChange?: (value: string) => void
+  onSelectionChange?: (selection: { from: number; to: number }) => void
 }) {
   const isMobile = useIsBreakpoint()
   const [isSearchAndReplaceOpen, setIsSearchAndReplaceOpen] = useState(false)
-  const [hasEditorFocus, setHasEditorFocus] = useState(false)
-  const [mobileKeyboardInset, setMobileKeyboardInset] = useState(0)
   const toolbarRef = useRef<HTMLDivElement>(null)
   const searchAndReplaceButtonRef = useRef<HTMLButtonElement>(null)
 
@@ -242,52 +245,21 @@ export function SimpleEditor({
       }),
     ],
     content: parseEditorContent(value),
-    onFocus: () => setHasEditorFocus(true),
     onBlur: ({ event }) => {
       const nextTarget = event.relatedTarget as Node | null
 
       if (nextTarget && toolbarRef.current?.contains(nextTarget)) {
         return
       }
-
-      setHasEditorFocus(false)
     },
     onUpdate: ({ editor }) => {
       onChange?.(JSON.stringify(editor.getJSON()))
     },
+    onSelectionUpdate: ({ editor }) => {
+      const { from, to } = editor.state.selection
+      onSelectionChange?.({ from, to })
+    },
   })
-
-  useEffect(() => {
-    if (!isMobile) {
-      setMobileKeyboardInset(0)
-      return
-    }
-
-    const visualViewport = window.visualViewport
-
-    function updateKeyboardInset() {
-      if (!visualViewport) {
-        setMobileKeyboardInset(0)
-        return
-      }
-
-      const inset = Math.max(
-        0,
-        window.innerHeight - visualViewport.height - visualViewport.offsetTop
-      )
-
-      setMobileKeyboardInset(inset)
-    }
-
-    updateKeyboardInset()
-    visualViewport?.addEventListener("resize", updateKeyboardInset)
-    visualViewport?.addEventListener("scroll", updateKeyboardInset)
-
-    return () => {
-      visualViewport?.removeEventListener("resize", updateKeyboardInset)
-      visualViewport?.removeEventListener("scroll", updateKeyboardInset)
-    }
-  }, [isMobile])
 
   const openSearchAndReplace = useCallback(() => {
     setIsSearchAndReplaceOpen(true)
@@ -307,18 +279,42 @@ export function SimpleEditor({
     openSearchAndReplace()
   }, [closeSearchAndReplace, isSearchAndReplaceOpen, openSearchAndReplace])
 
-  const mobileToolbarVisible =
-    isMobile &&
-    (hasEditorFocus || isSearchAndReplaceOpen) &&
-    mobileKeyboardInset > 80
-
   useEffect(() => {
     if (!focusSignal || !editor) {
       return
     }
 
-    editor.commands.focus("end")
+    const titleText = editor.state.doc.firstChild?.textContent ?? ""
+    const titleEnd = Math.max(1, titleText.length + 1)
+
+    editor
+      .chain()
+      .focus()
+      .setTextSelection(
+        titleText.trim() === "Untitled Note"
+          ? { from: 1, to: titleEnd }
+          : titleEnd
+      )
+      .run()
   }, [editor, focusSignal])
+
+  useEffect(() => {
+    if (!restoreSelectionSignal || !editor) {
+      return
+    }
+
+    const maxPosition = editor.state.doc.content.size
+    const selection = restoredSelection ?? {
+      from: maxPosition,
+      to: maxPosition,
+    }
+    const from = Math.min(Math.max(selection.from, 1), maxPosition)
+    const to = Math.min(Math.max(selection.to, from), maxPosition)
+
+    window.requestAnimationFrame(() => {
+      editor.chain().focus().setTextSelection({ from, to }).run()
+    })
+  }, [editor, restoreSelectionSignal, restoredSelection])
 
   return (
     <div className="simple-editor-wrapper">
@@ -334,30 +330,7 @@ export function SimpleEditor({
               isMobile={false}
             />
           </Toolbar>
-        ) : (
-          <Toolbar
-            ref={toolbarRef}
-            className={`simple-editor-mobile-toolbar${
-              mobileToolbarVisible ? " simple-editor-mobile-toolbar--visible" : ""
-            }`}
-            style={
-              {
-                "--simple-mobile-keyboard-inset": `${mobileKeyboardInset}px`,
-              } as CSSProperties
-            }
-            onMouseDown={(event) => event.preventDefault()}
-            onPointerDown={(event) => event.preventDefault()}
-          >
-            <MainToolbarContent
-              onHighlighterClick={() => undefined}
-              onLinkClick={() => undefined}
-              onSearchAndReplaceClick={toggleSearchAndReplace}
-              isSearchAndReplaceOpen={isSearchAndReplaceOpen}
-              searchAndReplaceButtonRef={searchAndReplaceButtonRef}
-              isMobile
-            />
-          </Toolbar>
-        )}
+        ) : null}
 
         <SearchAndReplace
           className="simple-editor-search-and-replace"

@@ -3,6 +3,10 @@ import type { Metadata } from "next"
 import { Suspense } from "react"
 
 import { MonthEndPeriodView } from "@/components/month-end-period-view"
+import {
+  AppRouteSkeleton,
+  MonthEndDashboardSkeleton,
+} from "@/components/page-skeletons"
 import { formatMonthEndPageTitle } from "@/lib/page-title"
 
 type Props = {
@@ -22,7 +26,13 @@ export async function generateMetadata({
 
 export default function Page() {
   return (
-    <Suspense>
+    <Suspense
+      fallback={
+        <AppRouteSkeleton>
+          <MonthEndDashboardSkeleton />
+        </AppRouteSkeleton>
+      }
+    >
       <MonthEndPeriodView />
     </Suspense>
   )

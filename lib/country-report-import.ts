@@ -389,7 +389,7 @@ function parseFrabemarInvoiceCsv(rows: string[][]) {
 
 function isCertificateReport(headers: string[]) {
   return (
-    findExactCsvColumn(headers, ["besc"]) >= 0 &&
+    findExactCsvColumn(headers, ["besc", "bescsfg"]) >= 0 &&
     findExactCsvColumn(headers, ["val"]) >= 0 &&
     findExactCsvColumn(headers, ["status"]) >= 0 &&
     findExactCsvColumn(headers, ["bl"]) >= 0
@@ -403,7 +403,7 @@ function parseCertificateReportCsv(rows: string[][]) {
     return undefined
   }
 
-  const bescIndex = findExactCsvColumn(headers, ["besc"])
+  const bescIndex = findExactCsvColumn(headers, ["besc", "bescsfg"])
   const validationIndex = findExactCsvColumn(headers, ["val"])
   const statusIndex = findExactCsvColumn(headers, ["status"])
   const billOfLadingIndex = findExactCsvColumn(headers, ["bl"])

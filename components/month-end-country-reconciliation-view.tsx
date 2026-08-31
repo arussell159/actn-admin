@@ -19,6 +19,7 @@ import {
 
 import { AppLink } from "@/components/app-link"
 import { AppSidebar } from "@/components/app-sidebar"
+import { CountryReconciliationSkeleton } from "@/components/page-skeletons"
 import { SiteHeader } from "@/components/site-header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -1912,9 +1913,7 @@ export function MonthEndCountryReconciliationView({
           ? linkedIds
           : [activeCountryId]) {
           for (const [recordId, transactionDate] of parseMasterTransactionDates(
-            monthEndRecord?.checked[
-              masterTransactionDatesKey(linkedCountryId)
-            ]
+            monthEndRecord?.checked[masterTransactionDatesKey(linkedCountryId)]
           )) {
             transactionDates.set(recordId, transactionDate)
           }
@@ -2028,10 +2027,7 @@ export function MonthEndCountryReconciliationView({
     ])) {
       delete checked[masterTransactionDatesKey(countryId)]
     }
-    Object.assign(
-      checked,
-      getMasterTransactionDateCheckedValues(masterRecords)
-    )
+    Object.assign(checked, getMasterTransactionDateCheckedValues(masterRecords))
 
     delete checked[journalEntrySnapshotKey(activeCountryId)]
 
@@ -2832,9 +2828,7 @@ export function MonthEndCountryReconciliationView({
         <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
           <SiteHeader title={title} />
           {!hasLoaded ? (
-            <div className="px-4 py-4 text-sm text-muted-foreground lg:px-6">
-              Loading...
-            </div>
+            <CountryReconciliationSkeleton />
           ) : resolvedView === "dashboard" ? (
             <CountryReconciliationDashboard
               countryName={
@@ -3009,7 +3003,7 @@ export function MonthEndCountryReconciliationView({
               ) : null}
 
               {!hasLoaded ? (
-                <div className="text-sm text-muted-foreground">Loading...</div>
+                <CountryReconciliationSkeleton />
               ) : !hasCountryReport && !hasMasterRecords ? (
                 <CountryReportUploadStep
                   countryReportLabel={countryReportLabel}

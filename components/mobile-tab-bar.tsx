@@ -398,7 +398,7 @@ export function MobileTabBar() {
             className={cn(
               "overflow-hidden px-0 pb-[calc(env(safe-area-inset-bottom)+1rem)]",
               isCustomizing
-                ? "inset-0 h-svh max-h-none rounded-none"
+                ? "max-h-[95svh] rounded-t-2xl"
                 : "max-h-[82svh] rounded-t-2xl"
             )}
           >
@@ -418,7 +418,7 @@ export function MobileTabBar() {
               </button>
             </SheetHeader>
             {isCustomizing ? (
-              <div className="grid max-h-[calc(100svh-5rem)] gap-6 overflow-auto px-5 pt-4 pb-8">
+              <div className="grid max-h-[calc(95svh-5rem)] gap-6 overflow-auto px-5 pt-4 pb-8">
                 <section className="grid gap-2">
                   <div className="flex items-center justify-between">
                     <h2 className="font-semibold">Dock</h2>

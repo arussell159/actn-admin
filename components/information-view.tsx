@@ -4,35 +4,42 @@ import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   ArrowLeftIcon,
+  ArrowDownAZIcon,
+  ArrowDownZAIcon,
   CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  ClockIcon,
   FilePlus2Icon,
   FileTextIcon,
   FolderIcon,
   FolderPlusIcon,
   HomeIcon,
+  ListCollapseIcon,
+  ListSortAscendingIcon,
   MoreHorizontalIcon,
+  PanelTopCloseIcon,
   PinIcon,
   PinOffIcon,
   PlusIcon,
+  RotateCcwIcon,
   SearchIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react"
 
 import { AppSidebar } from "@/components/app-sidebar"
+import { NotebookSkeleton } from "@/components/page-skeletons"
 import { SiteHeader } from "@/components/site-header"
 import { SimpleEditor } from "@/components/tiptap-templates/simple/simple-editor"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -44,13 +51,50 @@ import {
   createInformationId,
   getInformationNotes,
   informationUpdatedEvent,
+  loadTrashedInformationNotes,
   saveInformationNotes,
+  saveTrashedInformationNotes,
   type InformationNode,
   type InformationNodeType,
+  type TrashedInformationNode,
 } from "@/lib/information-notes"
 import { cn } from "@/lib/utils"
 
 const mobileRootNotesId = "__root_notes__"
+const trashViewId = "__trash__"
+const lastMobileNoteStorageKey = "actn-information-last-mobile-note-v1"
+const desktopNotebookStateStorageKey = "actn-information-desktop-state-v1"
+
+type EditorSelection = {
+  from: number
+  to: number
+}
+
+type DesktopNotebookState = {
+  activeId?: string
+  collapsedFolderIds: string[]
+  selectionByNoteId: Record<string, EditorSelection>
+}
+
+type InformationSortOrder =
+  | "name-asc"
+  | "name-desc"
+  | "updated-desc"
+  | "updated-asc"
+  | "created-desc"
+  | "created-asc"
+
+const informationSortOptions: {
+  value: InformationSortOrder
+  label: string
+}[] = [
+  { value: "name-asc", label: "File name (A to Z)" },
+  { value: "name-desc", label: "File name (Z to A)" },
+  { value: "updated-desc", label: "Modified time (new to old)" },
+  { value: "updated-asc", label: "Modified time (old to new)" },
+  { value: "created-desc", label: "Created time (new to old)" },
+  { value: "created-asc", label: "Created time (old to new)" },
+]
 
 function childNodes(nodes: InformationNode[], parentId?: string) {
   return nodes
@@ -62,6 +106,77 @@ function childNodes(nodes: InformationNode[], parentId?: string) {
 
       return a.title.localeCompare(b.title)
     })
+}
+
+function compareInformationNodes(
+  sortOrder: InformationSortOrder,
+  a: InformationNode,
+  b: InformationNode
+) {
+  if (a.type !== b.type) {
+    return a.type === "folder" ? -1 : 1
+  }
+
+  if (sortOrder === "name-asc" || sortOrder === "name-desc") {
+    const result = a.title.localeCompare(b.title)
+    return sortOrder === "name-asc" ? result : -result
+  }
+
+  const field = sortOrder.startsWith("updated") ? "updatedAt" : "createdAt"
+  const result = new Date(a[field]).getTime() - new Date(b[field]).getTime()
+
+  return sortOrder.endsWith("asc") ? result : -result
+}
+
+function sortedChildNodes(
+  nodes: InformationNode[],
+  sortOrder: InformationSortOrder,
+  parentId?: string
+) {
+  return nodes
+    .filter((node) => node.parentId === parentId)
+    .sort((a, b) => compareInformationNodes(sortOrder, a, b))
+}
+
+function isDesktopViewport() {
+  return (
+    typeof window !== "undefined" &&
+    window.matchMedia("(min-width: 1024px)").matches
+  )
+}
+
+function loadDesktopNotebookState(): DesktopNotebookState | null {
+  if (typeof window === "undefined") {
+    return null
+  }
+
+  try {
+    const stored = window.localStorage.getItem(desktopNotebookStateStorageKey)
+    const parsed = stored ? (JSON.parse(stored) as DesktopNotebookState) : null
+
+    if (!parsed || !Array.isArray(parsed.collapsedFolderIds)) {
+      return null
+    }
+
+    return {
+      activeId: parsed.activeId,
+      collapsedFolderIds: parsed.collapsedFolderIds,
+      selectionByNoteId: parsed.selectionByNoteId ?? {},
+    }
+  } catch {
+    return null
+  }
+}
+
+function saveDesktopNotebookState(state: DesktopNotebookState) {
+  if (typeof window === "undefined" || !isDesktopViewport()) {
+    return
+  }
+
+  window.localStorage.setItem(
+    desktopNotebookStateStorageKey,
+    JSON.stringify(state)
+  )
 }
 
 function descendantsOf(nodes: InformationNode[], nodeId: string) {
@@ -80,6 +195,37 @@ function descendantsOf(nodes: InformationNode[], nodeId: string) {
   }
 
   return ids
+}
+
+function ancestorFolderIds(nodes: InformationNode[], nodeId: string) {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]))
+  const ids: string[] = []
+  let currentNode = nodeById.get(nodeId)
+
+  while (currentNode?.parentId) {
+    const parent = nodeById.get(currentNode.parentId)
+
+    if (!parent) {
+      break
+    }
+
+    if (parent.type === "folder") {
+      ids.push(parent.id)
+    }
+
+    currentNode = parent
+  }
+
+  return ids
+}
+
+function folderIdsToRevealNode(nodes: InformationNode[], nodeId: string) {
+  const node = nodes.find((item) => item.id === nodeId)
+
+  return [
+    ...ancestorFolderIds(nodes, nodeId),
+    ...(node?.type === "folder" ? [node.id] : []),
+  ]
 }
 
 function firstNote(
@@ -115,15 +261,18 @@ function folderDescendants(nodes: InformationNode[], folderId: string) {
 function visibleTreeNodeIds(
   nodes: InformationNode[],
   collapsedFolderIds: Set<string>,
+  sortOrder: InformationSortOrder = "name-asc",
   parentId?: string
 ) {
   const ids: string[] = []
 
-  for (const node of childNodes(nodes, parentId)) {
+  for (const node of sortedChildNodes(nodes, sortOrder, parentId)) {
     ids.push(node.id)
 
     if (node.type === "folder" && !collapsedFolderIds.has(node.id)) {
-      ids.push(...visibleTreeNodeIds(nodes, collapsedFolderIds, node.id))
+      ids.push(
+        ...visibleTreeNodeIds(nodes, collapsedFolderIds, sortOrder, node.id)
+      )
     }
   }
 
@@ -193,7 +342,96 @@ function notePreview(content?: string) {
     parsed.content?.forEach(collectText)
     return text.join(" ").trim()
   } catch {
-    return content.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()
+    return content
+      .replace(/<[^>]*>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+  }
+}
+
+type EditorJsonNode = {
+  type?: string
+  attrs?: Record<string, unknown>
+  text?: string
+  content?: EditorJsonNode[]
+}
+
+function editorNodeText(node?: EditorJsonNode) {
+  if (!node) {
+    return ""
+  }
+
+  const textParts: string[] = []
+
+  function collectText(currentNode: EditorJsonNode) {
+    if (currentNode.text) {
+      textParts.push(currentNode.text)
+    }
+
+    currentNode.content?.forEach(collectText)
+  }
+
+  collectText(node)
+  return textParts.join("").trim()
+}
+
+function parseEditorJson(value?: string): EditorJsonNode {
+  if (!value) {
+    return {
+      type: "doc",
+      content: [{ type: "paragraph", attrs: { textAlign: null } }],
+    }
+  }
+
+  try {
+    const parsed = JSON.parse(value) as EditorJsonNode
+
+    if (parsed && parsed.type === "doc" && Array.isArray(parsed.content)) {
+      return parsed
+    }
+  } catch {}
+
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        attrs: { textAlign: null },
+        content: [{ type: "text", text: value }],
+      },
+    ],
+  }
+}
+
+function editorContentWithTitle(title: string, content?: string) {
+  const body = parseEditorJson(content)
+
+  return JSON.stringify({
+    type: "doc",
+    content: [
+      {
+        type: "heading",
+        attrs: { textAlign: null, level: 1 },
+        content: title ? [{ type: "text", text: title }] : undefined,
+      },
+      ...(body.content ?? []),
+    ],
+  })
+}
+
+function splitEditorTitleAndContent(value: string, fallbackTitle: string) {
+  const document = parseEditorJson(value)
+  const [titleNode, ...bodyContent] = document.content ?? []
+  const title = editorNodeText(titleNode) || fallbackTitle || "Untitled Note"
+
+  return {
+    title,
+    content: JSON.stringify({
+      type: "doc",
+      content: bodyContent.length
+        ? bodyContent
+        : [{ type: "paragraph", attrs: { textAlign: null } }],
+    }),
   }
 }
 
@@ -266,13 +504,17 @@ function MobileFolderTitlePrompt({
 
 function MobileFoldersScreen({
   nodes,
+  trashCount,
   onOpenFolder,
   onOpenRootNotes,
+  onOpenTrash,
   onCreate,
 }: {
   nodes: InformationNode[]
+  trashCount: number
   onOpenFolder: (nodeId: string) => void
   onOpenRootNotes: () => void
+  onOpenTrash: () => void
   onCreate: (type: InformationNodeType, parentId?: string) => void
 }) {
   const rootItems = childNodes(nodes)
@@ -281,8 +523,20 @@ function MobileFoldersScreen({
   const totalNotes = nodes.filter((node) => node.type === "note").length
 
   return (
-    <div className="relative min-h-full bg-muted/60 px-4 pb-24 pt-[calc(env(safe-area-inset-top,0px)+1rem)] md:hidden">
+    <div className="relative min-h-full bg-muted/60 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] pb-24 md:hidden">
       <div className="mb-5 flex items-center justify-end gap-2">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="rounded-full bg-background shadow-sm"
+          aria-label="Open trash"
+          onClick={onOpenTrash}
+        >
+          <Trash2Icon />
+          {trashCount ? (
+            <span className="sr-only">{trashCount} deleted items</span>
+          ) : null}
+        </Button>
         <Button
           variant="ghost"
           size="icon-sm"
@@ -293,7 +547,7 @@ function MobileFoldersScreen({
           <FolderPlusIcon />
         </Button>
       </div>
-      <h1 className="text-[30pt] font-bold leading-tight tracking-tight text-foreground md:text-3xl">
+      <h1 className="text-[30pt] leading-tight font-bold tracking-tight text-foreground md:text-3xl">
         Folders
       </h1>
       <div className="mt-5 overflow-hidden rounded-2xl bg-background">
@@ -312,7 +566,7 @@ function MobileFoldersScreen({
               <span className="text-muted-foreground">{count}</span>
               <ChevronRightIcon className="size-5 shrink-0 text-muted-foreground" />
               {index < rootFolders.length - 1 ? (
-                <span className="absolute left-12 right-0 h-px translate-y-7 bg-border/60" />
+                <span className="absolute right-0 left-12 h-px translate-y-7 bg-border/60" />
               ) : null}
             </button>
           )
@@ -431,13 +685,15 @@ function MobileFolderNotesScreen({
   onMove: (nodeId: string, parentId?: string) => void
 }) {
   const allFolders = nodes.filter((node) => node.type === "folder")
-  const folderBlockedMoveIds = folder ? descendantsOf(nodes, folder.id) : new Set<string>()
+  const folderBlockedMoveIds = folder
+    ? descendantsOf(nodes, folder.id)
+    : new Set<string>()
   const childFolders = folder
     ? childNodes(nodes, folder.id).filter((node) => node.type === "folder")
     : []
 
   return (
-    <div className="relative min-h-full bg-muted/60 px-4 pb-24 pt-[calc(env(safe-area-inset-top,0px)+1rem)] md:hidden">
+    <div className="relative min-h-full bg-muted/60 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] pb-24 md:hidden">
       <div className="mb-5 flex items-center justify-between">
         <Button
           variant="ghost"
@@ -502,7 +758,7 @@ function MobileFolderNotesScreen({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <h1 className="text-[30pt] font-bold leading-tight tracking-tight text-foreground md:text-3xl">
+      <h1 className="text-[30pt] leading-tight font-bold tracking-tight text-foreground md:text-3xl">
         {folder?.title ?? "Notes"}
       </h1>
       <p className="text-muted-foreground">
@@ -528,7 +784,7 @@ function MobileFolderNotesScreen({
                 <span className="text-muted-foreground">{count}</span>
                 <ChevronRightIcon className="size-5 shrink-0 text-muted-foreground" />
                 {index < childFolders.length - 1 ? (
-                  <span className="absolute left-12 right-0 h-px translate-y-7 bg-border/60" />
+                  <span className="absolute right-0 left-12 h-px translate-y-7 bg-border/60" />
                 ) : null}
               </button>
             )
@@ -539,7 +795,7 @@ function MobileFolderNotesScreen({
         {notes.map((note) => (
           <div
             key={note.id}
-            className="flex min-h-16 w-full min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-2xl bg-background px-5 py-3"
+            className="flex min-h-16 w-full max-w-full min-w-0 items-center gap-2 overflow-hidden rounded-2xl bg-background px-5 py-3"
           >
             <button
               type="button"
@@ -550,7 +806,8 @@ function MobileFolderNotesScreen({
                 {note.title}
               </span>
               <span className="mt-1 block max-w-full truncate text-sm text-muted-foreground">
-                {formatShortEditedDate(note.updatedAt)} {notePreview(note.content)}
+                {formatShortEditedDate(note.updatedAt)}{" "}
+                {notePreview(note.content)}
               </span>
             </button>
             <DropdownMenu>
@@ -574,7 +831,9 @@ function MobileFolderNotesScreen({
                       Notebook
                     </DropdownMenuItem>
                     {allFolders
-                      .filter((targetFolder) => targetFolder.id !== note.parentId)
+                      .filter(
+                        (targetFolder) => targetFolder.id !== note.parentId
+                      )
                       .map((targetFolder) => (
                         <DropdownMenuItem
                           key={targetFolder.id}
@@ -693,6 +952,79 @@ function FolderDashboard({
   )
 }
 
+function TrashDashboard({
+  trashedNodes,
+  onRestore,
+}: {
+  trashedNodes: TrashedInformationNode[]
+  onRestore: (nodeId: string) => void
+}) {
+  const topLevelTrashedNodes = trashedNodes
+    .filter(
+      (node) =>
+        !node.parentId ||
+        !trashedNodes.some((trashedNode) => trashedNode.id === node.parentId)
+    )
+    .sort(
+      (a, b) =>
+        new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime()
+    )
+
+  return (
+    <div className="grid gap-4 px-3 pt-3 pb-3 sm:px-0 sm:pt-0 sm:pb-0">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight">Trash</h2>
+          <p className="text-sm text-muted-foreground">
+            Restore deleted notes and folders.
+          </p>
+        </div>
+      </div>
+      <div className="overflow-hidden rounded-lg border bg-background">
+        {topLevelTrashedNodes.length ? (
+          <div className="divide-y">
+            {topLevelTrashedNodes.map((node) => {
+              const deletedChildCount = trashedNodes.filter(
+                (trashedNode) => trashedNode.parentId === node.id
+              ).length
+
+              return (
+                <div
+                  key={node.id}
+                  className="flex items-center justify-between gap-4 px-4 py-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{node.title}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {node.type === "folder"
+                        ? `${deletedChildCount} item${
+                            deletedChildCount === 1 ? "" : "s"
+                          } inside`
+                        : "Note"}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onRestore(node.id)}
+                  >
+                    <RotateCcwIcon />
+                    Restore
+                  </Button>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="px-4 py-8 text-sm text-muted-foreground">
+            Trash is empty.
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function MobileNoteHeader({
   onClose,
   onDelete,
@@ -701,7 +1033,7 @@ function MobileNoteHeader({
   onDelete: () => void
 }) {
   return (
-    <header className="sticky top-0 z-30 flex h-[calc(4rem+env(safe-area-inset-top,0px))] shrink-0 items-end justify-between bg-background px-4 pb-2 pt-[env(safe-area-inset-top,0px)] md:hidden">
+    <header className="sticky top-0 z-30 flex h-[calc(4rem+env(safe-area-inset-top,0px))] shrink-0 items-end justify-between bg-background px-4 pt-[env(safe-area-inset-top,0px)] pb-2 md:hidden">
       <Button
         variant="ghost"
         size="icon-sm"
@@ -747,6 +1079,7 @@ function NoteTree({
   onTogglePin,
   onMove,
   collapsedFolderIds,
+  sortOrder,
   onToggleCollapse,
   editingNodeId,
   titleDraft,
@@ -769,6 +1102,7 @@ function NoteTree({
   onTogglePin: (nodeId: string) => void
   onMove: (nodeId: string, parentId?: string) => void
   collapsedFolderIds: Set<string>
+  sortOrder: InformationSortOrder
   onToggleCollapse: (nodeId: string) => void
   editingNodeId?: string
   titleDraft: string
@@ -782,7 +1116,7 @@ function NoteTree({
   parentId?: string
   level?: number
 }) {
-  const children = childNodes(nodes, parentId)
+  const children = sortedChildNodes(nodes, sortOrder, parentId)
   const allFolders = allNodes.filter((node) => node.type === "folder")
   const fallbackNodeRefs = React.useRef<Record<string, HTMLDivElement | null>>(
     {}
@@ -800,7 +1134,6 @@ function NoteTree({
   return (
     <div className="grid gap-2 lg:gap-1">
       {children.map((node) => {
-        const Icon = node.type === "folder" ? FolderIcon : FileTextIcon
         const isFolder = node.type === "folder"
         const isCollapsed = collapsedFolderIds.has(node.id)
 
@@ -808,11 +1141,11 @@ function NoteTree({
           <div key={node.id}>
             <div
               className={cn(
-                "group flex min-h-12 items-center gap-2 rounded-lg px-1.5 py-1 outline-none transition-colors hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)] focus-visible:bg-accent/70 lg:min-h-0 lg:gap-1 lg:rounded-xl lg:py-0 lg:pl-0 lg:pr-1 lg:hover:bg-muted/70",
+                "group flex min-h-12 items-center gap-2 rounded-lg px-1.5 py-1 transition-colors outline-none hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)] focus-visible:bg-accent/70 lg:min-h-0 lg:gap-0 lg:rounded-md lg:px-1 lg:py-0 lg:hover:bg-muted/70",
                 activeId === node.id &&
                   "bg-[color-mix(in_oklch,var(--muted),var(--foreground)_10%)] lg:bg-muted"
               )}
-              style={{ marginLeft: `${level * 1.25}rem` }}
+              style={{ marginLeft: `${level * 0.95}rem` }}
               draggable
               tabIndex={0}
               ref={(element) => {
@@ -886,9 +1219,11 @@ function NoteTree({
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  className="size-9 shrink-0 hover:bg-transparent lg:size-7"
+                  className="size-9 shrink-0 rounded-sm hover:bg-transparent lg:size-5"
                   aria-label={
-                    isCollapsed ? `Expand ${node.title}` : `Collapse ${node.title}`
+                    isCollapsed
+                      ? `Expand ${node.title}`
+                      : `Collapse ${node.title}`
                   }
                   onClick={(event) => {
                     event.stopPropagation()
@@ -899,15 +1234,19 @@ function NoteTree({
                   {isCollapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
                 </Button>
               ) : (
-                <span className="size-9 shrink-0 lg:size-7" aria-hidden="true" />
+                <span
+                  className="size-9 shrink-0 lg:size-5"
+                  aria-hidden="true"
+                />
               )}
               <Button
                 variant="ghost"
-                className="h-10 min-w-0 flex-1 justify-start px-2 text-[15px] hover:bg-transparent lg:h-8 lg:px-3 lg:text-sm"
-                onClick={() => onSelect(node.id)}
+                className="h-10 min-w-0 flex-1 justify-start px-2 text-[15px] hover:bg-transparent lg:h-7 lg:rounded-sm lg:px-1.5 lg:text-[13px] lg:font-normal"
+                onClick={() => {
+                  onSelect(node.id)
+                }}
                 tabIndex={-1}
               >
-                <Icon />
                 {editingNodeId === node.id ? (
                   <Input
                     value={titleDraft}
@@ -945,7 +1284,10 @@ function NoteTree({
                 >
                   <MoreHorizontalIcon />
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-52 lg:min-w-44">
+                <DropdownMenuContent
+                  align="end"
+                  className="min-w-52 lg:min-w-44"
+                >
                   {node.type === "folder" ? (
                     <>
                       <DropdownMenuItem
@@ -1011,6 +1353,7 @@ function NoteTree({
                 onTogglePin={onTogglePin}
                 onMove={onMove}
                 collapsedFolderIds={collapsedFolderIds}
+                sortOrder={sortOrder}
                 onToggleCollapse={onToggleCollapse}
                 editingNodeId={editingNodeId}
                 titleDraft={titleDraft}
@@ -1036,9 +1379,11 @@ export function InformationView() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [nodes, setNodes] = React.useState<InformationNode[]>([])
+  const [trashedNodes, setTrashedNodes] = React.useState<
+    TrashedInformationNode[]
+  >([])
   const [activeId, setActiveId] = React.useState<string | undefined>()
   const [contentDraft, setContentDraft] = React.useState("")
-  const [editingTitle, setEditingTitle] = React.useState(false)
   const [titleDraft, setTitleDraft] = React.useState("")
   const [editingTreeNodeId, setEditingTreeNodeId] = React.useState<
     string | undefined
@@ -1049,14 +1394,25 @@ export function InformationView() {
   >(null)
   const [folderPromptTitle, setFolderPromptTitle] = React.useState("")
   const [noteSearch, setNoteSearch] = React.useState("")
+  const [isNotebookLoading, setIsNotebookLoading] = React.useState(true)
   const nodesRef = React.useRef<InformationNode[]>([])
   const desktopSearchInputRef = React.useRef<HTMLInputElement | null>(null)
-  const desktopNodeRefs = React.useRef<Record<string, HTMLDivElement | null>>({})
+  const desktopNodeRefs = React.useRef<Record<string, HTMLDivElement | null>>(
+    {}
+  )
   const mobileNoteSelectorRef = React.useRef<HTMLDetailsElement | null>(null)
   const hasInitializedCollapsedFolders = React.useRef(false)
+  const hasLoadedNotes = React.useRef(false)
   const [pendingDesktopNodeFocusId, setPendingDesktopNodeFocusId] =
     React.useState<string>()
   const [editorFocusSignal, setEditorFocusSignal] = React.useState(0)
+  const [editorRestoreSelectionSignal, setEditorRestoreSelectionSignal] =
+    React.useState(0)
+  const [selectionByNoteId, setSelectionByNoteId] = React.useState<
+    Record<string, EditorSelection>
+  >({})
+  const [informationSortOrder, setInformationSortOrder] =
+    React.useState<InformationSortOrder>("name-asc")
   const [collapsedFolderIds, setCollapsedFolderIds] = React.useState(
     () => new Set<string>()
   )
@@ -1065,9 +1421,27 @@ export function InformationView() {
     let isMounted = true
 
     async function loadNotes() {
+      setIsNotebookLoading(true)
       const loaded = await getInformationNotes()
+      const loadedTrash = loadTrashedInformationNotes()
       const requestedNode = searchParams.get("node") ?? undefined
       const requestedView = searchParams.get("view") ?? undefined
+      const desktopState =
+        !requestedNode && !requestedView && isDesktopViewport()
+          ? loadDesktopNotebookState()
+          : null
+      const isMobile =
+        typeof window !== "undefined" &&
+        window.matchMedia("(max-width: 767px)").matches
+      const rememberedNoteId =
+        !requestedNode && !requestedView && isMobile
+          ? window.localStorage.getItem(lastMobileNoteStorageKey)
+          : undefined
+      const rememberedNote = rememberedNoteId
+        ? loaded.find(
+            (node) => node.id === rememberedNoteId && node.type === "note"
+          )
+        : undefined
       const localRequested = requestedNode
         ? nodesRef.current.find((node) => node.id === requestedNode)
         : undefined
@@ -1083,30 +1457,80 @@ export function InformationView() {
       const shouldShowMobileFolders =
         !requestedNode &&
         requestedView !== "notes" &&
-        typeof window !== "undefined" &&
-        window.matchMedia("(max-width: 767px)").matches
+        isMobile &&
+        !rememberedNote
+      const desktopRestoredNode = desktopState?.activeId
+        ? loaded.find((node) => node.id === desktopState.activeId)
+        : undefined
       const initialNode = shouldShowMobileFolders
         ? undefined
         : requestedView === "notes"
           ? undefined
-        : (requested ?? firstNote(loaded) ?? loaded[0])
+          : (requested ??
+            rememberedNote ??
+            desktopRestoredNode ??
+            firstNote(loaded) ??
+            loaded[0])
+      const requestedRevealFolderIds =
+        requestedNode && initialNode && isDesktopViewport()
+          ? folderIdsToRevealNode(nextNodes, initialNode.id)
+          : []
 
       if (isMounted) {
         setNodes(nextNodes)
+        setTrashedNodes(loadedTrash)
         if (!hasInitializedCollapsedFolders.current) {
-          setCollapsedFolderIds(
-            new Set(
-              nextNodes
-                .filter((node) => node.type === "folder")
-                .map((node) => node.id)
-            )
-          )
+          const nextCollapsedFolderIds = desktopState
+            ? new Set(desktopState.collapsedFolderIds)
+            : new Set(
+                nextNodes
+                  .filter((node) => node.type === "folder")
+                  .map((node) => node.id)
+              )
+
+          for (const folderId of requestedRevealFolderIds) {
+            nextCollapsedFolderIds.delete(folderId)
+          }
+
+          setCollapsedFolderIds(nextCollapsedFolderIds)
           hasInitializedCollapsedFolders.current = true
+        } else if (requestedRevealFolderIds.length) {
+          setCollapsedFolderIds((current) => {
+            const next = new Set(current)
+
+            for (const folderId of requestedRevealFolderIds) {
+              next.delete(folderId)
+            }
+
+            return next
+          })
         }
-        setActiveId(requestedView === "notes" ? mobileRootNotesId : initialNode?.id)
+        if (desktopState) {
+          setSelectionByNoteId(desktopState.selectionByNoteId)
+        }
+        setActiveId(
+          requestedView === "trash"
+            ? trashViewId
+            : requestedView === "notes"
+              ? mobileRootNotesId
+              : initialNode?.id
+        )
         setContentDraft(initialNode?.content ?? "")
-        setTitleDraft(requestedView === "notes" ? "Notes" : (initialNode?.title ?? ""))
-        setEditingTitle(false)
+        setTitleDraft(
+          requestedView === "trash"
+            ? "Trash"
+            : requestedView === "notes"
+              ? "Notes"
+              : (initialNode?.title ?? "")
+        )
+        if (initialNode?.type === "note" && isDesktopViewport()) {
+          setEditorRestoreSelectionSignal((signal) => signal + 1)
+        }
+        if (requestedNode && initialNode && isDesktopViewport()) {
+          setPendingDesktopNodeFocusId(initialNode.id)
+        }
+        hasLoadedNotes.current = true
+        setIsNotebookLoading(false)
       }
     }
 
@@ -1122,6 +1546,30 @@ export function InformationView() {
   }, [nodes])
 
   const activeNode = nodes.find((node) => node.id === activeId)
+
+  React.useEffect(() => {
+    if (!hasLoadedNotes.current) {
+      return
+    }
+
+    saveDesktopNotebookState({
+      activeId,
+      collapsedFolderIds: [...collapsedFolderIds],
+      selectionByNoteId,
+    })
+  }, [activeId, collapsedFolderIds, selectionByNoteId])
+
+  React.useEffect(() => {
+    if (
+      activeNode?.type !== "note" ||
+      typeof window === "undefined" ||
+      !window.matchMedia("(max-width: 767px)").matches
+    ) {
+      return
+    }
+
+    window.localStorage.setItem(lastMobileNoteStorageKey, activeNode.id)
+  }, [activeNode])
   const visibleNodes = React.useMemo(() => {
     const query = noteSearch.trim().toLowerCase()
 
@@ -1152,8 +1600,13 @@ export function InformationView() {
     return nodes.filter((node) => visibleIds.has(node.id))
   }, [nodes, noteSearch])
   const desktopVisibleTreeNodeIds = React.useMemo(
-    () => visibleTreeNodeIds(visibleNodes, collapsedFolderIds),
-    [collapsedFolderIds, visibleNodes]
+    () =>
+      visibleTreeNodeIds(
+        visibleNodes,
+        collapsedFolderIds,
+        informationSortOrder
+      ),
+    [collapsedFolderIds, informationSortOrder, visibleNodes]
   )
 
   React.useEffect(() => {
@@ -1168,12 +1621,17 @@ export function InformationView() {
       return
     }
 
+    if (activeNode?.type === "note") {
+      setEditorRestoreSelectionSignal((signal) => signal + 1)
+      return
+    }
+
     const animationFrameId = window.requestAnimationFrame(() => {
       desktopSearchInputRef.current?.focus()
     })
 
     return () => window.cancelAnimationFrame(animationFrameId)
-  }, [searchParams])
+  }, [activeNode?.type, searchParams])
 
   React.useEffect(() => {
     if (!pendingDesktopNodeFocusId) {
@@ -1188,6 +1646,51 @@ export function InformationView() {
     return () => window.cancelAnimationFrame(animationFrameId)
   }, [desktopVisibleTreeNodeIds, pendingDesktopNodeFocusId])
 
+  React.useEffect(() => {
+    function restoreEditorFocusFromCommandMenu() {
+      if (activeNode?.type !== "note" || !isDesktopViewport()) {
+        return
+      }
+
+      window.setTimeout(() => {
+        setEditorRestoreSelectionSignal((signal) => signal + 1)
+      }, 0)
+    }
+
+    window.addEventListener(
+      "information-notes:restore-editor-focus",
+      restoreEditorFocusFromCommandMenu
+    )
+
+    return () =>
+      window.removeEventListener(
+        "information-notes:restore-editor-focus",
+        restoreEditorFocusFromCommandMenu
+      )
+  }, [activeNode?.type])
+
+  function revealActiveNote() {
+    if (!activeNode) {
+      return
+    }
+
+    setCollapsedFolderIds((current) => {
+      const next = new Set(current)
+
+      for (const folderId of ancestorFolderIds(nodes, activeNode.id)) {
+        next.delete(folderId)
+      }
+
+      return next
+    })
+
+    window.setTimeout(() => {
+      desktopNodeRefs.current[activeNode.id]?.scrollIntoView({
+        block: "nearest",
+      })
+    }, 0)
+  }
+
   function emptyNoteContent() {
     return JSON.stringify({
       type: "doc",
@@ -1198,6 +1701,11 @@ export function InformationView() {
   function persist(nextNodes: InformationNode[]) {
     setNodes(nextNodes)
     saveInformationNotes(nextNodes)
+  }
+
+  function persistTrash(nextTrashedNodes: TrashedInformationNode[]) {
+    setTrashedNodes(nextTrashedNodes)
+    saveTrashedInformationNotes(nextTrashedNodes)
   }
 
   function updateInformationRoute(
@@ -1212,15 +1720,11 @@ export function InformationView() {
     router.push(href)
   }
 
-  function selectNode(
-    nodeId: string,
-    mode: "push" | "replace" = "push"
-  ) {
+  function selectNode(nodeId: string, mode: "push" | "replace" = "push") {
     if (!nodeId) {
       setActiveId(undefined)
       setContentDraft("")
       setTitleDraft("")
-      setEditingTitle(false)
       mobileNoteSelectorRef.current?.removeAttribute("open")
       updateInformationRoute("/information", mode)
       window.dispatchEvent(new Event("information-notes:navigation"))
@@ -1232,19 +1736,32 @@ export function InformationView() {
     setActiveId(node?.id ?? nodeId)
     setContentDraft(node?.type === "note" ? (node.content ?? "") : "")
     setTitleDraft(node?.title ?? "")
-    setEditingTitle(false)
     mobileNoteSelectorRef.current?.removeAttribute("open")
-    updateInformationRoute(`/information?node=${encodeURIComponent(nodeId)}`, mode)
+    updateInformationRoute(
+      `/information?node=${encodeURIComponent(nodeId)}`,
+      mode
+    )
     window.dispatchEvent(new Event("information-notes:navigation"))
+    if (node?.type === "note" && !isMobileViewport()) {
+      setEditorFocusSignal((signal) => signal + 1)
+    }
   }
 
   function selectRootNotes(mode: "push" | "replace" = "push") {
     setActiveId(mobileRootNotesId)
     setContentDraft("")
     setTitleDraft("Notes")
-    setEditingTitle(false)
     mobileNoteSelectorRef.current?.removeAttribute("open")
     updateInformationRoute("/information?view=notes", mode)
+    window.dispatchEvent(new Event("information-notes:navigation"))
+  }
+
+  function selectTrash(mode: "push" | "replace" = "push") {
+    setActiveId(trashViewId)
+    setContentDraft("")
+    setTitleDraft("Trash")
+    mobileNoteSelectorRef.current?.removeAttribute("open")
+    updateInformationRoute("/information?view=trash", mode)
     window.dispatchEvent(new Event("information-notes:navigation"))
   }
 
@@ -1267,7 +1784,21 @@ export function InformationView() {
       updatedAt: timestamp,
     }
 
-    persist([...nodes, node])
+    const nextNodes =
+      activeNode?.type === "note"
+        ? nodes.map((item) =>
+            item.id === activeNode.id
+              ? {
+                  ...item,
+                  title: titleDraft.trim() || activeNode.title,
+                  content: contentDraft,
+                  updatedAt: timestamp,
+                }
+              : item
+          )
+        : nodes
+
+    persist([...nextNodes, node])
     if (type === "folder") {
       setCollapsedFolderIds((current) => {
         const next = new Set(current)
@@ -1286,11 +1817,29 @@ export function InformationView() {
     setActiveId(node.id)
     setContentDraft(node.content ?? "")
     setTitleDraft(node.title)
-    setEditingTitle(false)
-    setEditingTreeNodeId(node.id)
+    setEditingTreeNodeId(type === "folder" ? node.id : undefined)
     setTreeTitleDraft(node.title)
+    if (type === "note" && !isMobileViewport()) {
+      setEditorFocusSignal((signal) => signal + 1)
+    }
     updateInformationRoute(`/information?node=${encodeURIComponent(node.id)}`)
     window.dispatchEvent(new Event("information-notes:navigation"))
+  }
+
+  function activeCreateParentId() {
+    if (activeNode?.type === "folder") {
+      return activeNode.id
+    }
+
+    if (activeNode?.type === "note") {
+      return activeNode.parentId ?? ""
+    }
+
+    return ""
+  }
+
+  function startCreateAtActiveFocus(type: InformationNodeType) {
+    startCreate(type, activeCreateParentId())
   }
 
   function isMobileViewport() {
@@ -1352,15 +1901,6 @@ export function InformationView() {
     }
   }
 
-  function saveTitle() {
-    if (!activeNode) {
-      return
-    }
-
-    saveNodeTitle(activeNode.id, titleDraft)
-    setEditingTitle(false)
-  }
-
   function saveActiveNote() {
     if (!activeNode || activeNode.type !== "note") {
       return
@@ -1382,7 +1922,13 @@ export function InformationView() {
       )
     )
     setTitleDraft(cleanTitle)
-    setEditingTitle(false)
+  }
+
+  function updateActiveNoteContent(value: string) {
+    const nextNote = splitEditorTitleAndContent(value, titleDraft)
+
+    setTitleDraft(nextNote.title)
+    setContentDraft(nextNote.content)
   }
 
   function closeMobileNote() {
@@ -1441,6 +1987,14 @@ export function InformationView() {
     setEditorFocusSignal((signal) => signal + 1)
   }
 
+  function collapseAllFolders() {
+    setCollapsedFolderIds(
+      new Set(
+        nodes.filter((node) => node.type === "folder").map((node) => node.id)
+      )
+    )
+  }
+
   function handleDesktopSearchKeyDown(
     event: React.KeyboardEvent<HTMLInputElement>
   ) {
@@ -1460,15 +2014,85 @@ export function InformationView() {
 
   function deleteNode(nodeId: string) {
     const deleteIds = descendantsOf(nodes, nodeId)
+    const timestamp = new Date().toISOString()
+    const nextTrashedNodes = [
+      ...nodes
+        .filter((node) => deleteIds.has(node.id))
+        .map((node) => ({
+          ...node,
+          originalParentId: node.parentId,
+          deletedAt: timestamp,
+        })),
+      ...trashedNodes.filter((node) => !deleteIds.has(node.id)),
+    ]
     const nextNodes = nodes.filter((node) => !deleteIds.has(node.id))
     const nextActive =
       activeId && deleteIds.has(activeId)
         ? (firstNote(nextNodes) ?? nextNodes[0])
         : activeNode
 
+    persistTrash(nextTrashedNodes)
     persist(nextNodes)
     setActiveId(nextActive?.id)
     setContentDraft(nextActive?.content ?? "")
+    setTitleDraft(nextActive?.title ?? "")
+    updateInformationRoute(
+      nextActive
+        ? `/information?node=${encodeURIComponent(nextActive.id)}`
+        : "/information?view=notes",
+      "replace"
+    )
+  }
+
+  function restoreNode(nodeId: string) {
+    const restoreIds = descendantsOf(trashedNodes, nodeId)
+    const restoredNodes = trashedNodes.filter((node) => restoreIds.has(node.id))
+    const remainingTrash = trashedNodes.filter(
+      (node) => !restoreIds.has(node.id)
+    )
+    const activeNodeIds = new Set(nodes.map((node) => node.id))
+    const restoredNodeIds = new Set(restoredNodes.map((node) => node.id))
+    const nextRestoredNodes = restoredNodes
+      .filter((node) => !activeNodeIds.has(node.id))
+      .map(({ deletedAt, originalParentId, ...node }) => ({
+        ...node,
+        parentId:
+          originalParentId &&
+          (activeNodeIds.has(originalParentId) ||
+            restoredNodeIds.has(originalParentId))
+            ? originalParentId
+            : undefined,
+      }))
+
+    if (!nextRestoredNodes.length) {
+      persistTrash(remainingTrash)
+      return
+    }
+
+    const restoredRoot =
+      nextRestoredNodes.find((node) => node.id === nodeId) ??
+      nextRestoredNodes[0]
+
+    persist([...nodes, ...nextRestoredNodes])
+    persistTrash(remainingTrash)
+    setCollapsedFolderIds((current) => {
+      const next = new Set(current)
+
+      for (const folderId of ancestorFolderIds(
+        [...nodes, ...nextRestoredNodes],
+        restoredRoot.id
+      )) {
+        next.delete(folderId)
+      }
+
+      return next
+    })
+    setActiveId(restoredRoot.id)
+    setContentDraft(restoredRoot.content ?? "")
+    setTitleDraft(restoredRoot.title)
+    updateInformationRoute(
+      `/information?node=${encodeURIComponent(restoredRoot.id)}`
+    )
   }
 
   function moveNode(nodeId: string, parentId?: string) {
@@ -1502,7 +2126,12 @@ export function InformationView() {
       return
     }
 
-    if (contentDraft === (activeNode.content ?? "")) {
+    const cleanTitle = titleDraft.trim() || activeNode.title
+
+    if (
+      cleanTitle === activeNode.title &&
+      contentDraft === (activeNode.content ?? "")
+    ) {
       return
     }
 
@@ -1512,14 +2141,19 @@ export function InformationView() {
       persist(
         nodes.map((node) =>
           node.id === activeNode.id
-            ? { ...node, content: contentDraft, updatedAt: timestamp }
+            ? {
+                ...node,
+                title: cleanTitle,
+                content: contentDraft,
+                updatedAt: timestamp,
+              }
             : node
         )
       )
     }, 500)
 
     return () => window.clearTimeout(timeoutId)
-  }, [activeNode, contentDraft, nodes])
+  }, [activeNode, contentDraft, nodes, titleDraft])
 
   React.useEffect(() => {
     async function refresh() {
@@ -1557,7 +2191,6 @@ export function InformationView() {
         target?.closest(
           [
             ".simple-editor-content .ProseMirror",
-            ".simple-editor-mobile-toolbar",
             ".simple-editor-search-and-replace",
             "[data-radix-popper-content-wrapper]",
             "[role='menu']",
@@ -1583,44 +2216,14 @@ export function InformationView() {
     }
   }, [activeNode?.type])
 
-  const noteHeaderTitle = activeNode ? (
-    editingTitle ? (
-      <Input
-        value={titleDraft}
-        onChange={(event) => setTitleDraft(event.target.value)}
-        onBlur={saveTitle}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            saveTitle()
-          }
-
-          if (event.key === "Escape") {
-            setTitleDraft(activeNode.title)
-            setEditingTitle(false)
-          }
-        }}
-        className="h-8 max-w-[min(18rem,65vw)] px-2 text-center text-base font-semibold md:max-w-md md:text-left"
-        autoFocus
-      />
-    ) : (
-      <button
-        type="button"
-        className="min-w-0 max-w-[min(18rem,65vw)] truncate rounded-md px-1 text-center hover:bg-muted md:max-w-md md:text-left"
-        onClick={() => {
-          setTitleDraft(activeNode.title)
-          setEditingTitle(true)
-        }}
-      >
-        {activeNode.title}
-      </button>
-    )
-  ) : (
-    "Notebook"
-  )
   const activeFolderNotes =
     activeNode?.type === "folder"
       ? childNodes(nodes, activeNode.id).filter((node) => node.type === "note")
       : childNodes(nodes).filter((node) => node.type === "note")
+  const currentSortOption =
+    informationSortOptions.find(
+      (option) => option.value === informationSortOrder
+    ) ?? informationSortOptions[0]
 
   return (
     <SidebarProvider
@@ -1649,7 +2252,7 @@ export function InformationView() {
           )}
         >
           <div className="hidden md:block">
-            <SiteHeader title="Notebook" titleContent={noteHeaderTitle} />
+            <SiteHeader title="Notebook" />
           </div>
           {activeNode?.type === "note" ? (
             <MobileNoteHeader
@@ -1674,230 +2277,324 @@ export function InformationView() {
           ) : null}
           <div className="flex min-h-0 flex-1 px-0 py-0 sm:px-4 sm:py-4 lg:px-6">
             <Card className="min-h-0 flex-1 rounded-none bg-transparent py-0 shadow-none ring-0 sm:rounded-lg sm:bg-card sm:shadow-sm sm:ring-1">
-              <CardContent className="grid min-h-0 flex-1 gap-0 p-0 lg:grid-cols-[20rem_minmax(0,1fr)]">
-                <aside className="hidden border-b p-5 lg:block lg:border-r lg:border-b-0">
-                  <div className="mb-4 flex items-center justify-between gap-3">
-                    <span aria-hidden="true" />
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <Button
-                            size="icon-sm"
-                            aria-label="Create note or folder"
-                          />
-                        }
+              {isNotebookLoading ? (
+                <NotebookSkeleton />
+              ) : (
+                <CardContent className="grid min-h-0 flex-1 gap-0 p-0 lg:grid-cols-[20rem_minmax(0,1fr)]">
+                  <aside className="hidden min-h-0 flex-col border-b p-5 lg:flex lg:border-r lg:border-b-0">
+                    <div className="mb-3 flex items-center justify-center gap-1 text-muted-foreground">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="size-8 rounded-md hover:bg-muted hover:text-foreground"
+                        aria-label="Create new note"
+                        title="Create new note"
+                        onClick={() => startCreateAtActiveFocus("note")}
                       >
-                        <PlusIcon />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="min-w-44">
-                        <DropdownMenuItem onClick={() => startCreate("note")}>
-                          <FilePlus2Icon />
-                          Add Note
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => startCreate("folder")}>
-                          <FolderPlusIcon />
-                          Add Folder
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                  <div className="grid gap-4">
-                    <Input
-                      ref={desktopSearchInputRef}
-                      value={noteSearch}
-                      onChange={(event) => setNoteSearch(event.target.value)}
-                      onKeyDown={handleDesktopSearchKeyDown}
-                      placeholder="Search notebook"
-                    />
-
-                    <NoteTree
-                      nodes={visibleNodes}
-                      allNodes={nodes}
-                      activeId={activeId}
-                      onSelect={selectNode}
-                      onCreate={startCreate}
-                      onDelete={deleteNode}
-                      onTogglePin={togglePin}
-                      onMove={moveNode}
-                      collapsedFolderIds={collapsedFolderIds}
-                      onToggleCollapse={toggleFolderCollapse}
-                      editingNodeId={editingTreeNodeId}
-                      titleDraft={treeTitleDraft}
-                      onTitleDraftChange={setTreeTitleDraft}
-                      onCommitTitle={commitTreeTitle}
-                      onCancelTitleEdit={cancelTreeTitleEdit}
-                      focusableNodeIds={desktopVisibleTreeNodeIds}
-                      nodeRefs={desktopNodeRefs}
-                      onFocusNode={focusDesktopTreeNode}
-                      onOpenNoteForTyping={focusDesktopEditor}
-                    />
-                  </div>
-                </aside>
-
-                <section className="flex min-h-0 min-w-0 flex-col p-0 sm:p-5">
-                  <div className="hidden">
-                    <div className="flex items-center gap-2">
-                      <details
-                        ref={mobileNoteSelectorRef}
-                        className="group min-w-0 flex-1"
+                        <FilePlus2Icon />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="size-8 rounded-md hover:bg-muted hover:text-foreground"
+                        aria-label="Create new folder"
+                        title="Create new folder"
+                        onClick={() => startCreateAtActiveFocus("folder")}
                       >
-                        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg border bg-background px-4 text-base font-medium marker:hidden">
-                          <span className="min-w-0 truncate">
-                            {activeNode?.title ?? "Notebook"}
-                          </span>
-                          <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
-                        </summary>
-                        <div className="mt-3 max-h-[52svh] overflow-auto rounded-lg border bg-background p-4 shadow-md">
-                          <Input
-                            value={noteSearch}
-                            onChange={(event) =>
-                              setNoteSearch(event.target.value)
-                            }
-                            placeholder="Search notebook"
-                            className="mb-3"
-                          />
-                          <NoteTree
-                            nodes={visibleNodes}
-                            allNodes={nodes}
-                            activeId={activeId}
-                            onSelect={selectNode}
-                            onCreate={startCreate}
-                            onDelete={deleteNode}
-                            onTogglePin={togglePin}
-                            onMove={moveNode}
-                            collapsedFolderIds={collapsedFolderIds}
-                            onToggleCollapse={toggleFolderCollapse}
-                            editingNodeId={editingTreeNodeId}
-                            titleDraft={treeTitleDraft}
-                            onTitleDraftChange={setTreeTitleDraft}
-                            onCommitTitle={commitTreeTitle}
-                            onCancelTitleEdit={cancelTreeTitleEdit}
-                          />
-                        </div>
-                      </details>
+                        <FolderPlusIcon />
+                      </Button>
                       <DropdownMenu>
                         <DropdownMenuTrigger
                           render={
                             <Button
+                              variant="ghost"
                               size="icon-sm"
-                              className="size-10"
-                              aria-label="Create note or folder"
+                              className="size-8 rounded-md hover:bg-muted hover:text-foreground"
+                              aria-label={`Sort: ${currentSortOption.label}`}
+                              title={`Sort: ${currentSortOption.label}`}
                             />
                           }
                         >
-                          <PlusIcon />
+                          <ListSortAscendingIcon />
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="min-w-44">
-                          <DropdownMenuItem onClick={() => startCreate("note")}>
-                            <FilePlus2Icon />
-                            Add Note
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => startCreate("folder")}
+                        <DropdownMenuContent align="start" className="min-w-52">
+                          <DropdownMenuRadioGroup
+                            value={informationSortOrder}
+                            onValueChange={(value) =>
+                              setInformationSortOrder(
+                                value as InformationSortOrder
+                              )
+                            }
                           >
-                            <FolderPlusIcon />
-                            Add Folder
-                          </DropdownMenuItem>
+                            {informationSortOptions.map((option) => (
+                              <DropdownMenuRadioItem
+                                key={option.value}
+                                value={option.value}
+                              >
+                                {option.value === "name-asc" ? (
+                                  <ArrowDownAZIcon />
+                                ) : option.value === "name-desc" ? (
+                                  <ArrowDownZAIcon />
+                                ) : (
+                                  <ClockIcon />
+                                )}
+                                {option.label}
+                              </DropdownMenuRadioItem>
+                            ))}
+                          </DropdownMenuRadioGroup>
                         </DropdownMenuContent>
                       </DropdownMenu>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="size-8 rounded-md hover:bg-muted hover:text-foreground"
+                        aria-label="Reveal active note"
+                        title="Reveal active note"
+                        onClick={revealActiveNote}
+                      >
+                        <PanelTopCloseIcon />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="size-8 rounded-md hover:bg-muted hover:text-foreground"
+                        aria-label="Collapse all"
+                        title="Collapse all"
+                        onClick={collapseAllFolders}
+                      >
+                        <ListCollapseIcon />
+                      </Button>
                     </div>
-                  </div>
+                    <div className="grid min-h-0 flex-1 content-start gap-4 overflow-auto">
+                      <Input
+                        ref={desktopSearchInputRef}
+                        value={noteSearch}
+                        onChange={(event) => setNoteSearch(event.target.value)}
+                        onKeyDown={handleDesktopSearchKeyDown}
+                        placeholder="Search notebook"
+                      />
 
-                  {activeNode?.type === "note" ? (
-                    <div className="min-h-0 flex-1 overflow-hidden bg-background sm:rounded-lg sm:border">
-                      <div className="px-5 pt-4 md:hidden">
-                        <Input
-                          value={titleDraft}
-                          onChange={(event) => setTitleDraft(event.target.value)}
-                          onBlur={saveActiveNote}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              saveActiveNote()
-                              event.currentTarget.blur()
+                      <NoteTree
+                        nodes={visibleNodes}
+                        allNodes={nodes}
+                        activeId={activeId}
+                        onSelect={selectNode}
+                        onCreate={startCreate}
+                        onDelete={deleteNode}
+                        onTogglePin={togglePin}
+                        onMove={moveNode}
+                        collapsedFolderIds={collapsedFolderIds}
+                        sortOrder={informationSortOrder}
+                        onToggleCollapse={toggleFolderCollapse}
+                        editingNodeId={editingTreeNodeId}
+                        titleDraft={treeTitleDraft}
+                        onTitleDraftChange={setTreeTitleDraft}
+                        onCommitTitle={commitTreeTitle}
+                        onCancelTitleEdit={cancelTreeTitleEdit}
+                        focusableNodeIds={desktopVisibleTreeNodeIds}
+                        nodeRefs={desktopNodeRefs}
+                        onFocusNode={focusDesktopTreeNode}
+                        onOpenNoteForTyping={focusDesktopEditor}
+                      />
+                    </div>
+                    <Button
+                      variant={activeId === trashViewId ? "secondary" : "ghost"}
+                      className="mt-4 h-9 justify-start gap-2 rounded-md px-2 text-sm font-normal"
+                      onClick={() => selectTrash()}
+                    >
+                      <Trash2Icon className="size-4" />
+                      <span className="min-w-0 flex-1 text-left">Trash</span>
+                      {trashedNodes.length ? (
+                        <span className="text-xs text-muted-foreground">
+                          {trashedNodes.length}
+                        </span>
+                      ) : null}
+                    </Button>
+                  </aside>
+
+                  <section className="flex min-h-0 min-w-0 flex-col p-0 sm:p-5">
+                    <div className="hidden">
+                      <div className="flex items-center gap-2">
+                        <details
+                          ref={mobileNoteSelectorRef}
+                          className="group min-w-0 flex-1"
+                        >
+                          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg border bg-background px-4 text-base font-medium marker:hidden">
+                            <span className="min-w-0 truncate">
+                              {activeNode?.title ?? "Notebook"}
+                            </span>
+                            <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+                          </summary>
+                          <div className="mt-3 max-h-[52svh] overflow-auto rounded-lg border bg-background p-4 shadow-md">
+                            <Input
+                              value={noteSearch}
+                              onChange={(event) =>
+                                setNoteSearch(event.target.value)
+                              }
+                              placeholder="Search notebook"
+                              className="mb-3"
+                            />
+                            <NoteTree
+                              nodes={visibleNodes}
+                              allNodes={nodes}
+                              activeId={activeId}
+                              onSelect={selectNode}
+                              onCreate={startCreate}
+                              onDelete={deleteNode}
+                              onTogglePin={togglePin}
+                              onMove={moveNode}
+                              collapsedFolderIds={collapsedFolderIds}
+                              sortOrder={informationSortOrder}
+                              onToggleCollapse={toggleFolderCollapse}
+                              editingNodeId={editingTreeNodeId}
+                              titleDraft={treeTitleDraft}
+                              onTitleDraftChange={setTreeTitleDraft}
+                              onCommitTitle={commitTreeTitle}
+                              onCancelTitleEdit={cancelTreeTitleEdit}
+                            />
+                          </div>
+                        </details>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            render={
+                              <Button
+                                size="icon-sm"
+                                className="size-10"
+                                aria-label="Create note or folder"
+                              />
                             }
+                          >
+                            <PlusIcon />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="min-w-44">
+                            <DropdownMenuItem
+                              onClick={() => startCreate("note")}
+                            >
+                              <FilePlus2Icon />
+                              Add Note
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => startCreate("folder")}
+                            >
+                              <FolderPlusIcon />
+                              Add Folder
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+
+                    {activeId === trashViewId ? (
+                      <TrashDashboard
+                        trashedNodes={trashedNodes}
+                        onRestore={restoreNode}
+                      />
+                    ) : activeNode?.type === "note" ? (
+                      <div className="min-h-0 flex-1 overflow-hidden bg-background sm:-m-5">
+                        <SimpleEditor
+                          key={activeNode.id}
+                          focusSignal={editorFocusSignal}
+                          restoreSelectionSignal={editorRestoreSelectionSignal}
+                          restoredSelection={selectionByNoteId[activeNode.id]}
+                          value={editorContentWithTitle(
+                            titleDraft,
+                            contentDraft
+                          )}
+                          onChange={updateActiveNoteContent}
+                          onSelectionChange={(selection) => {
+                            if (!isDesktopViewport()) {
+                              return
+                            }
+
+                            setSelectionByNoteId((current) => ({
+                              ...current,
+                              [activeNode.id]: selection,
+                            }))
                           }}
-                          className="h-auto rounded-none border-0 bg-transparent px-0 py-1 !text-[24pt] font-bold leading-tight tracking-tight shadow-none focus-visible:ring-0 md:!text-3xl"
-                          aria-label="Note title"
                         />
                       </div>
-                      <SimpleEditor
-                        key={activeNode.id}
-                        focusSignal={editorFocusSignal}
-                        value={contentDraft}
-                        onChange={setContentDraft}
-                      />
-                    </div>
-                  ) : activeNode?.type === "folder" ? (
-                    <>
-                      <MobileFolderNotesScreen
-                        folder={activeNode}
-                        nodes={nodes}
-                        notes={activeFolderNotes}
-                        onBack={() => selectNode("", "replace")}
-                        onOpenNote={selectNode}
-                        onCreateNote={() => startCreate("note", activeNode.id)}
-                        onCreateFolder={() =>
-                          requestCreateFolder(activeNode.id)
-                        }
-                        onDelete={deleteNode}
-                        onMove={moveNode}
-                      />
-                      <div className="hidden px-3 pt-3 pb-3 sm:px-0 sm:pt-0 sm:pb-0 md:block">
-                        <FolderDashboard
+                    ) : activeNode?.type === "folder" ? (
+                      <>
+                        <MobileFolderNotesScreen
                           folder={activeNode}
                           nodes={nodes}
+                          notes={activeFolderNotes}
+                          onBack={() => selectNode("", "replace")}
                           onOpenNote={selectNode}
+                          onCreateNote={() =>
+                            startCreate("note", activeNode.id)
+                          }
+                          onCreateFolder={() =>
+                            requestCreateFolder(activeNode.id)
+                          }
+                          onDelete={deleteNode}
+                          onMove={moveNode}
                         />
-                      </div>
-                    </>
-                  ) : activeId === mobileRootNotesId ? (
-                    <>
-                      <MobileFolderNotesScreen
-                        nodes={nodes}
-                        notes={activeFolderNotes}
-                        onBack={() => selectNode("", "replace")}
-                        onOpenNote={selectNode}
-                        onCreateNote={() => startCreate("note")}
-                        onCreateFolder={() => requestCreateFolder()}
-                        onDelete={deleteNode}
-                        onMove={moveNode}
-                      />
-                      <div className="hidden px-3 pb-3 sm:px-0 sm:pb-0 md:block">
+                        <div className="hidden px-3 pt-3 pb-3 sm:px-0 sm:pt-0 sm:pb-0 md:block">
+                          <FolderDashboard
+                            folder={activeNode}
+                            nodes={nodes}
+                            onOpenNote={selectNode}
+                          />
+                        </div>
+                      </>
+                    ) : activeId === mobileRootNotesId ? (
+                      <>
+                        <MobileFolderNotesScreen
+                          nodes={nodes}
+                          notes={activeFolderNotes}
+                          onBack={() => selectNode("", "replace")}
+                          onOpenNote={selectNode}
+                          onCreateNote={() => startCreate("note")}
+                          onCreateFolder={() => requestCreateFolder()}
+                          onDelete={deleteNode}
+                          onMove={moveNode}
+                        />
+                        <div className="hidden px-3 pb-3 sm:px-0 sm:pb-0 md:block">
+                          <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
+                            <HomeIcon className="size-8" />
+                            <p>
+                              Select a note from the tree or create a new one.
+                            </p>
+                          </div>
+                        </div>
+                      </>
+                    ) : nodes.length ? (
+                      <>
+                        <MobileFoldersScreen
+                          nodes={nodes}
+                          trashCount={trashedNodes.length}
+                          onOpenFolder={selectNode}
+                          onOpenRootNotes={selectRootNotes}
+                          onOpenTrash={selectTrash}
+                          onCreate={(type, parentId) =>
+                            type === "folder"
+                              ? requestCreateFolder(parentId)
+                              : startCreate(type, parentId)
+                          }
+                        />
+                        <div className="hidden px-3 pb-3 sm:px-0 sm:pb-0 md:block">
+                          <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
+                            <HomeIcon className="size-8" />
+                            <p>
+                              Select a note from the tree or create a new one.
+                            </p>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="px-3 pb-3 sm:px-0 sm:pb-0">
                         <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
                           <HomeIcon className="size-8" />
-                          <p>Select a note from the tree or create a new one.</p>
+                          <p>
+                            Select a note from the tree or create a new one.
+                          </p>
                         </div>
                       </div>
-                    </>
-                  ) : nodes.length ? (
-                    <>
-                      <MobileFoldersScreen
-                        nodes={nodes}
-                        onOpenFolder={selectNode}
-                        onOpenRootNotes={selectRootNotes}
-                        onCreate={(type, parentId) =>
-                          type === "folder"
-                            ? requestCreateFolder(parentId)
-                            : startCreate(type, parentId)
-                        }
-                      />
-                      <div className="hidden px-3 pb-3 sm:px-0 sm:pb-0 md:block">
-                        <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
-                          <HomeIcon className="size-8" />
-                          <p>Select a note from the tree or create a new one.</p>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="px-3 pb-3 sm:px-0 sm:pb-0">
-                      <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
-                        <HomeIcon className="size-8" />
-                        <p>Select a note from the tree or create a new one.</p>
-                      </div>
-                    </div>
-                  )}
-                </section>
-              </CardContent>
+                    )}
+                  </section>
+                </CardContent>
+              )}
             </Card>
           </div>
         </main>

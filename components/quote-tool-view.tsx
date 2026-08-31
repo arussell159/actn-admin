@@ -310,7 +310,7 @@ function QuantityControl({
   onChange: (quantity: number) => void
 }) {
   return (
-    <div className="grid w-28 grid-cols-[2rem_1fr_2rem] items-center rounded-2xl border bg-background">
+    <div className="grid w-32 grid-cols-[2.5rem_1fr_2.5rem] items-center rounded-2xl border bg-background md:w-28 md:grid-cols-[2rem_1fr_2rem]">
       <Button
         size="icon"
         variant="ghost"
@@ -751,116 +751,6 @@ export function QuoteToolView() {
                   </Select>
                 </Field>
               </FieldGroup>
-              <div className="mt-6 grid gap-3 md:hidden">
-                {itemSections.map((section) =>
-                  section.items.length ? (
-                    <div
-                      key={section.id}
-                      className="grid gap-3"
-                    >
-                      <QuoteSectionToggle
-                        title={section.title}
-                        count={section.items.length}
-                        open={section.open}
-                        onToggle={() => toggleItemSection(section.id)}
-                      />
-                      {section.open ? (
-                        <div className="grid gap-3">
-                          {section.items.map((item) => {
-                            const quantity =
-                              quantities[item.internalId] ??
-                              (isFeeItem(item) ? 1 : 0)
-                            const unitPrice = itemPrice(item)
-
-                            return (
-                              <div
-                                key={item.internalId}
-                                className="grid gap-3 rounded-lg border bg-background p-3"
-                              >
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <div className="font-medium leading-snug">
-                                      {item.name}
-                                    </div>
-                                  </div>
-                                  <div className="shrink-0 text-right font-medium">
-                                    {formatMoney(unitPrice)}
-                                  </div>
-                                </div>
-                                <div className="flex items-center justify-between gap-3">
-                                  {showBulkUnits ? (
-                                    <div className="text-sm text-muted-foreground">
-                                      <span className="font-medium text-foreground">
-                                        Bulk Units:
-                                      </span>{" "}
-                                      {item.bulkUnits || "-"}
-                                    </div>
-                                  ) : (
-                                    <div />
-                                  )}
-                                  <QuantityControl
-                                    itemName={item.name}
-                                    quantity={quantity}
-                                    onChange={(nextQuantity) =>
-                                      updateQuantity(
-                                        item.internalId,
-                                        nextQuantity
-                                      )
-                                    }
-                                  />
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null
-                )}
-                {primaryItems.map((item) => {
-                  const quantity =
-                    quantities[item.internalId] ?? (isFeeItem(item) ? 1 : 0)
-                  const unitPrice = itemPrice(item)
-
-                  return (
-                    <div
-                      key={item.internalId}
-                      className="grid gap-3 rounded-lg border bg-background p-3"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="font-medium leading-snug">
-                            {item.name}
-                          </div>
-                        </div>
-                        <div className="shrink-0 text-right font-medium">
-                          {formatMoney(unitPrice)}
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        {showBulkUnits ? (
-                          <div className="text-sm text-muted-foreground">
-                            <span className="font-medium text-foreground">
-                              Bulk Units:
-                            </span>{" "}
-                            {item.bulkUnits || "-"}
-                          </div>
-                        ) : (
-                          <div />
-                        )}
-                        <QuantityControl
-                          itemName={item.name}
-                          quantity={quantity}
-                          onChange={(nextQuantity) =>
-                            updateQuantity(item.internalId, nextQuantity)
-                          }
-                        />
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-
               <div className="mt-6 hidden overflow-x-auto rounded-lg border md:block">
                 <table className="w-full min-w-[640px] text-sm">
                   <thead className="bg-muted/50 text-muted-foreground">
@@ -912,7 +802,7 @@ export function QuoteToolView() {
                                     }}
                                     tabIndex={0}
                                     aria-label={`${item.name}, quantity ${quantity}`}
-                                    className="border-b outline-none transition-colors last:border-0 focus-visible:bg-accent/60"
+                                    className="border-b border-l-2 border-l-sky-400 outline-none transition-colors last:border-b-0 focus-visible:bg-accent/60 dark:border-l-sky-500"
                                     onKeyDown={(event) =>
                                       handleDesktopItemKeyDown(event, item)
                                     }
@@ -997,7 +887,7 @@ export function QuoteToolView() {
                   </tbody>
                 </table>
               </div>
-              <div className="mt-4 flex justify-end border-t pt-4">
+              <div className="mt-4 hidden justify-end border-t pt-4 md:flex">
                 <div className="flex min-w-56 justify-between gap-8 text-base font-semibold">
                   <span>Total</span>
                   <span>{formatMoney(subtotal)}</span>
@@ -1005,6 +895,115 @@ export function QuoteToolView() {
               </div>
             </CardContent>
           </Card>
+          <div className="grid gap-3 md:hidden">
+            {itemSections.map((section) =>
+              section.items.length ? (
+                <div key={section.id} className="grid gap-3">
+                  <QuoteSectionToggle
+                    title={section.title}
+                    count={section.items.length}
+                    open={section.open}
+                    onToggle={() => toggleItemSection(section.id)}
+                  />
+                  {section.open ? (
+                    <div className="grid gap-3">
+                      {section.items.map((item) => {
+                        const quantity =
+                          quantities[item.internalId] ??
+                          (isFeeItem(item) ? 1 : 0)
+                        const unitPrice = itemPrice(item)
+
+                        return (
+                          <div
+                            key={item.internalId}
+                            className="grid gap-3 rounded-lg border border-sky-300 bg-background p-3 dark:border-sky-800"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="font-medium leading-snug">
+                                  {item.name}
+                                </div>
+                              </div>
+                              <div className="shrink-0 text-right font-medium">
+                                {formatMoney(unitPrice)}
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              {showBulkUnits ? (
+                                <div className="text-sm text-muted-foreground">
+                                  <span className="font-medium text-foreground">
+                                    Bulk Units:
+                                  </span>{" "}
+                                  {item.bulkUnits || "-"}
+                                </div>
+                              ) : (
+                                <div />
+                              )}
+                              <QuantityControl
+                                itemName={item.name}
+                                quantity={quantity}
+                                onChange={(nextQuantity) =>
+                                  updateQuantity(item.internalId, nextQuantity)
+                                }
+                              />
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null
+            )}
+            {primaryItems.map((item) => {
+              const quantity =
+                quantities[item.internalId] ?? (isFeeItem(item) ? 1 : 0)
+              const unitPrice = itemPrice(item)
+
+              return (
+                <div
+                  key={item.internalId}
+                  className="grid gap-3 rounded-lg border bg-background p-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium leading-snug">
+                        {item.name}
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right font-medium">
+                      {formatMoney(unitPrice)}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    {showBulkUnits ? (
+                      <div className="text-sm text-muted-foreground">
+                        <span className="font-medium text-foreground">
+                          Bulk Units:
+                        </span>{" "}
+                        {item.bulkUnits || "-"}
+                      </div>
+                    ) : (
+                      <div />
+                    )}
+                    <QuantityControl
+                      itemName={item.name}
+                      quantity={quantity}
+                      onChange={(nextQuantity) =>
+                        updateQuantity(item.internalId, nextQuantity)
+                      }
+                    />
+                  </div>
+                </div>
+              )
+            })}
+            <div className="flex justify-end border-t pt-4">
+              <div className="flex min-w-56 justify-between gap-8 text-base font-semibold">
+                <span>Total</span>
+                <span>{formatMoney(subtotal)}</span>
+              </div>
+            </div>
+          </div>
         </main>
       </SidebarInset>
     </SidebarProvider>
