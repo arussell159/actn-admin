@@ -48,11 +48,13 @@ import {
   getMobileNavDockHrefs,
   saveMobileNavDockHrefs,
 } from "@/lib/mobile-nav-settings"
+import {
+  mobileNavActiveIndicatorPendingStorageKey,
+  mobileNavActiveIndicatorStorageKey,
+} from "@/lib/mobile-nav-active-state"
 import { cn } from "@/lib/utils"
 
 const maxDockItems = 4
-const activeIndicatorStorageKey = "actn-mobile-nav-active-index-v1"
-const activeIndicatorPendingStorageKey = "actn-mobile-nav-transition-pending-v1"
 
 const allModuleItems = [
   {
@@ -221,9 +223,11 @@ export function MobileTabBar() {
       }
 
       const shouldAnimateFromStoredIndex =
-        window.sessionStorage.getItem(activeIndicatorPendingStorageKey) === "true"
+        window.sessionStorage.getItem(
+          mobileNavActiveIndicatorPendingStorageKey
+        ) === "true"
       const storedIndex = Number(
-        window.sessionStorage.getItem(activeIndicatorStorageKey)
+        window.sessionStorage.getItem(mobileNavActiveIndicatorStorageKey)
       )
 
       return shouldAnimateFromStoredIndex &&
@@ -271,10 +275,10 @@ export function MobileTabBar() {
     const animationFrameId = window.requestAnimationFrame(() => {
       setDisplayedActiveIndicatorIndex(activeIndicatorIndex)
       window.sessionStorage.setItem(
-        activeIndicatorStorageKey,
+        mobileNavActiveIndicatorStorageKey,
         String(activeIndicatorIndex)
       )
-      window.sessionStorage.removeItem(activeIndicatorPendingStorageKey)
+      window.sessionStorage.removeItem(mobileNavActiveIndicatorPendingStorageKey)
     })
 
     return () => window.cancelAnimationFrame(animationFrameId)
@@ -323,10 +327,13 @@ export function MobileTabBar() {
 
   function prepareActiveIndicatorTransition() {
     window.sessionStorage.setItem(
-      activeIndicatorStorageKey,
+      mobileNavActiveIndicatorStorageKey,
       String(displayedActiveIndicatorIndex)
     )
-    window.sessionStorage.setItem(activeIndicatorPendingStorageKey, "true")
+    window.sessionStorage.setItem(
+      mobileNavActiveIndicatorPendingStorageKey,
+      "true"
+    )
   }
 
   if (!portalTarget) {

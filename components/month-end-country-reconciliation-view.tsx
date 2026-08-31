@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
+  ChevronDownIcon,
   CheckCircle2Icon,
   DownloadIcon,
   EllipsisVerticalIcon,
@@ -1897,35 +1898,67 @@ function CountryProcessBreadcrumb({
       href: dashboardHref,
     },
   ] as const
+  const activeStep = steps.find((step) => step.value === activeView) ?? steps[0]
 
   return (
-    <Breadcrumb className="min-w-0">
-      <BreadcrumbList className="flex-nowrap gap-1 text-xs sm:text-sm">
-        {steps.map((step, index) => {
-          const isActive = activeView === step.value
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          className="flex h-9 min-w-0 max-w-full items-center justify-between gap-2 rounded-full border bg-background px-3 text-sm font-medium text-foreground shadow-xs md:hidden"
+          aria-label="Select country workflow step"
+        >
+          <span className="min-w-0 truncate">{activeStep.label}</span>
+          <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="min-w-56">
+          {steps.map((step) => {
+            const isActive = activeView === step.value
 
-          return (
-            <React.Fragment key={step.value}>
-              {index > 0 ? <BreadcrumbSeparator className="shrink-0" /> : null}
-              <BreadcrumbItem className="min-w-0 shrink-0">
+            return (
+              <DropdownMenuItem
+                key={step.value}
+                render={<AppLink href={step.href} />}
+                className="justify-between"
+              >
+                <span>{step.label}</span>
                 {isActive ? (
-                  <BreadcrumbPage className="rounded-full bg-primary/10 px-2.5 py-1 font-medium text-primary">
-                    {step.label}
-                  </BreadcrumbPage>
-                ) : (
-                  <BreadcrumbLink
-                    render={<AppLink href={step.href} />}
-                    className="rounded-full px-2.5 py-1 font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-                  >
-                    {step.label}
-                  </BreadcrumbLink>
-                )}
-              </BreadcrumbItem>
-            </React.Fragment>
-          )
-        })}
-      </BreadcrumbList>
-    </Breadcrumb>
+                  <CheckCircle2Icon className="text-primary" />
+                ) : null}
+              </DropdownMenuItem>
+            )
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <Breadcrumb className="hidden min-w-0 md:block">
+        <BreadcrumbList className="flex-nowrap gap-1 text-xs sm:text-sm">
+          {steps.map((step, index) => {
+            const isActive = activeView === step.value
+
+            return (
+              <React.Fragment key={step.value}>
+                {index > 0 ? (
+                  <BreadcrumbSeparator className="shrink-0" />
+                ) : null}
+                <BreadcrumbItem className="min-w-0 shrink-0">
+                  {isActive ? (
+                    <BreadcrumbPage className="rounded-full bg-primary/10 px-2.5 py-1 font-medium text-primary">
+                      {step.label}
+                    </BreadcrumbPage>
+                  ) : (
+                    <BreadcrumbLink
+                      render={<AppLink href={step.href} />}
+                      className="rounded-full px-2.5 py-1 font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                    >
+                      {step.label}
+                    </BreadcrumbLink>
+                  )}
+                </BreadcrumbItem>
+              </React.Fragment>
+            )
+          })}
+        </BreadcrumbList>
+      </Breadcrumb>
+    </>
   )
 }
 
@@ -2478,6 +2511,77 @@ function JournalEntryPreview({
   )
 }
 
+function InvoiceJournalPlaceholder({
+  countryName,
+  onBack,
+  onPreviousCountry,
+  onNextCountry,
+  reconciliationHref,
+  journalHref,
+  dashboardHref,
+}: {
+  countryName: string
+  onBack: () => void
+  onPreviousCountry?: () => void
+  onNextCountry?: () => void
+  reconciliationHref: string
+  journalHref: string
+  dashboardHref: string
+}) {
+  return (
+    <div className="flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
+      <div className="grid min-h-9 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-3">
+        <Button
+          variant="outline"
+          size="icon-sm"
+          className="h-9 w-9 rounded-full md:h-9 md:w-9"
+          aria-label="Back to reconciliation report"
+          onClick={onBack}
+        >
+          <ArrowLeftIcon />
+        </Button>
+        <CountryProcessBreadcrumb
+          activeView="journal"
+          reconciliationHref={reconciliationHref}
+          journalHref={journalHref}
+          dashboardHref={dashboardHref}
+        />
+        <div className="flex items-center gap-2">
+          <CountryNavigationButtons
+            onPrevious={onPreviousCountry}
+            onNext={onNextCountry}
+          />
+        </div>
+      </div>
+
+      <div className="grid flex-1 place-items-start md:place-items-center">
+        <section className="w-full max-w-3xl overflow-hidden rounded-lg border bg-background">
+          <div className="border-b p-5">
+            <h2 className="text-xl font-semibold tracking-normal">
+              Journal Entry
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">{countryName}</p>
+          </div>
+          <div className="grid gap-3 p-5">
+            <p className="text-sm leading-6 text-muted-foreground">
+              This country requires an invoice. The journal entry for invoice
+              records will be created later.
+            </p>
+          </div>
+          <div className="flex justify-end gap-2 border-t p-4">
+            <Button variant="outline" onClick={onBack}>
+              Back
+            </Button>
+            <Button render={<AppLink href={dashboardHref} />}>
+              Country Dashboard
+            </Button>
+          </div>
+        </section>
+      </div>
+    </div>
+  )
+}
+
 export function MonthEndCountryReconciliationView({
   period,
   countryId,
@@ -2669,12 +2773,21 @@ export function MonthEndCountryReconciliationView({
   const hasCountryReport = countryReportRecords.length > 0
   const hasMasterRecords = records.length > 0
   const requiresCountryReport = activeCountryId !== ANGOLA_OOT_COUNTRY_ID
+  const isMonthClosed = record?.status === "Closed"
 
   function openMasterFilePicker() {
+    if (isMonthClosed) {
+      return
+    }
+
     window.setTimeout(() => masterInputRef.current?.click(), 0)
   }
 
   function openCountryReportFilePicker() {
+    if (isMonthClosed) {
+      return
+    }
+
     window.setTimeout(() => countryReportInputRef.current?.click(), 0)
   }
 
@@ -2682,7 +2795,7 @@ export function MonthEndCountryReconciliationView({
     fileName: string,
     masterRecords: MonthEndMasterRecord[]
   ) {
-    if (!record || !activeCountryId) {
+    if (!record || !activeCountryId || isMonthClosed) {
       return
     }
 
@@ -2728,7 +2841,7 @@ export function MonthEndCountryReconciliationView({
     fileName: string,
     antaserDocuments?: AntaserJournalDocument[]
   ) {
-    if (!record || !activeCountryId) {
+    if (!record || !activeCountryId || isMonthClosed) {
       return
     }
 
@@ -2771,7 +2884,7 @@ export function MonthEndCountryReconciliationView({
   }
 
   async function rollInvoices(selectedRecords: MonthEndMasterRecord[]) {
-    if (!record || !activeCountryId) {
+    if (!record || !activeCountryId || isMonthClosed) {
       return { savedCount: 0, excludedCount: selectedRecords.length }
     }
 
@@ -2823,7 +2936,7 @@ export function MonthEndCountryReconciliationView({
   }
 
   async function leaveInvoices(selectedRecords: MonthEndMasterRecord[]) {
-    if (!record || !activeCountryId) {
+    if (!record || !activeCountryId || isMonthClosed) {
       return
     }
 
@@ -2863,7 +2976,7 @@ export function MonthEndCountryReconciliationView({
   async function moveInvoicesToAngolaOot(
     selectedRecords: MonthEndMasterRecord[]
   ) {
-    if (!record || activeCountryId !== "angola") {
+    if (!record || isMonthClosed || activeCountryId !== "angola") {
       return { movedCount: 0 }
     }
 
@@ -2953,7 +3066,7 @@ export function MonthEndCountryReconciliationView({
   }
 
   async function reopenReconciliation() {
-    if (!record || !activeCountryId) {
+    if (!record || !activeCountryId || isMonthClosed) {
       return
     }
 
@@ -2980,7 +3093,7 @@ export function MonthEndCountryReconciliationView({
   }
 
   async function clearReconciliationAndStartOver() {
-    if (!record || !activeCountryId) {
+    if (!record || !activeCountryId || isMonthClosed) {
       return
     }
 
@@ -3012,7 +3125,7 @@ export function MonthEndCountryReconciliationView({
   }
 
   async function saveCountryDashboardSection(section: CountryDashboardSection) {
-    if (!record || !activeCountryId) {
+    if (!record || !activeCountryId || isMonthClosed) {
       return
     }
 
@@ -3033,7 +3146,7 @@ export function MonthEndCountryReconciliationView({
   }
 
   async function makeJournalEntry() {
-    if (!record || !activeCountryId) {
+    if (!record || !activeCountryId || isMonthClosed) {
       return
     }
 
@@ -3067,7 +3180,7 @@ export function MonthEndCountryReconciliationView({
   }
 
   async function uploadMasterFile(file: File) {
-    if (!record || !activeCountryId) {
+    if (!record || !activeCountryId || isMonthClosed) {
       setUploadError("Open a valid country record before uploading.")
       return
     }
@@ -3134,7 +3247,7 @@ export function MonthEndCountryReconciliationView({
     sourceLabel: string
     antaserDocuments?: AntaserJournalDocument[]
   }) {
-    if (!record || !country || !activeCountryId) {
+    if (!record || !country || !activeCountryId || isMonthClosed) {
       setUploadError("Open a valid country record before uploading.")
       return
     }
@@ -3207,7 +3320,7 @@ export function MonthEndCountryReconciliationView({
   }
 
   async function deleteMasterRecords() {
-    if (!record || !activeCountryId) {
+    if (!record || !activeCountryId || isMonthClosed) {
       return
     }
 
@@ -3227,7 +3340,7 @@ export function MonthEndCountryReconciliationView({
   }
 
   async function deleteCountryReportRecords() {
-    if (!record || !activeCountryId) {
+    if (!record || !activeCountryId || isMonthClosed) {
       return
     }
 
@@ -3247,6 +3360,11 @@ export function MonthEndCountryReconciliationView({
   }
 
   async function uploadCountryReports(files: File[]) {
+    if (isMonthClosed) {
+      setUploadError("Reopen this month before uploading reports.")
+      return
+    }
+
     setIsUploadingCountryReport(true)
     setUploadError("")
 
@@ -3329,7 +3447,7 @@ export function MonthEndCountryReconciliationView({
   }
 
   async function uploadPastedCountryReport() {
-    if (!record) {
+    if (!record || isMonthClosed) {
       setUploadError("Open a valid country record before uploading.")
       return
     }
@@ -3670,27 +3788,51 @@ export function MonthEndCountryReconciliationView({
               dashboardHref={countryDashboardHref}
             />
           ) : resolvedView === "journal" ? (
-            <JournalEntryPreview
-              countryName={
-                countryDisplayName || country?.name || "Unknown country"
-              }
-              entries={displayedJournalEntries}
-              journalRows={displayedJournalRows}
-              sourceDocumentCount={displayedSourceDocumentCount}
-              onBack={() => router.push(reconciliationReportHref)}
-              onPreviousCountry={
-                previousCountryHref
-                  ? () => router.push(previousCountryHref)
-                  : undefined
-              }
-              onNextCountry={
-                nextCountryHref ? () => router.push(nextCountryHref) : undefined
-              }
-              reconciliationHref={reconciliationReportHref}
-              journalHref={journalEntryHref}
-              dashboardHref={countryDashboardHref}
-              onMakeJournalEntry={makeJournalEntry}
-            />
+            country?.invoiceRequired === true ? (
+              <InvoiceJournalPlaceholder
+                countryName={
+                  countryDisplayName || country?.name || "Unknown country"
+                }
+                onBack={() => router.push(reconciliationReportHref)}
+                onPreviousCountry={
+                  previousCountryHref
+                    ? () => router.push(previousCountryHref)
+                    : undefined
+                }
+                onNextCountry={
+                  nextCountryHref
+                    ? () => router.push(nextCountryHref)
+                    : undefined
+                }
+                reconciliationHref={reconciliationReportHref}
+                journalHref={journalEntryHref}
+                dashboardHref={countryDashboardHref}
+              />
+            ) : (
+              <JournalEntryPreview
+                countryName={
+                  countryDisplayName || country?.name || "Unknown country"
+                }
+                entries={displayedJournalEntries}
+                journalRows={displayedJournalRows}
+                sourceDocumentCount={displayedSourceDocumentCount}
+                onBack={() => router.push(reconciliationReportHref)}
+                onPreviousCountry={
+                  previousCountryHref
+                    ? () => router.push(previousCountryHref)
+                    : undefined
+                }
+                onNextCountry={
+                  nextCountryHref
+                    ? () => router.push(nextCountryHref)
+                    : undefined
+                }
+                reconciliationHref={reconciliationReportHref}
+                journalHref={journalEntryHref}
+                dashboardHref={countryDashboardHref}
+                onMakeJournalEntry={makeJournalEntry}
+              />
+            )
           ) : (
             <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
               <div className="grid min-h-9 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-3">
@@ -3722,43 +3864,45 @@ export function MonthEndCountryReconciliationView({
                         : undefined
                     }
                   />
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={
-                        <Button
-                          variant="outline"
-                          size="icon-sm"
-                          className="h-9 w-9 rounded-full md:h-9 md:w-9"
-                          aria-label="More actions"
-                        />
-                      }
-                    >
-                      <EllipsisVerticalIcon />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="min-w-64">
-                      {isReconciliationComplete ? (
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onClick={reopenReconciliation}
-                        >
-                          <ListChecksIcon />
-                          Reopen Reconciliation
-                        </DropdownMenuItem>
-                      ) : (
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onClick={clearReconciliationAndStartOver}
-                        >
-                          <ListChecksIcon />
-                          Clear Recon and Start Over
-                        </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  {!isMonthClosed ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button
+                            variant="outline"
+                            size="icon-sm"
+                            className="h-9 w-9 rounded-full md:h-9 md:w-9"
+                            aria-label="More actions"
+                          />
+                        }
+                      >
+                        <EllipsisVerticalIcon />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="min-w-64">
+                        {isReconciliationComplete ? (
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onClick={reopenReconciliation}
+                          >
+                            <ListChecksIcon />
+                            Reopen Reconciliation
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onClick={clearReconciliationAndStartOver}
+                          >
+                            <ListChecksIcon />
+                            Clear Recon and Start Over
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : null}
                 </div>
               </div>
 
-              {isPasteReportOpen ? (
+              {isPasteReportOpen && !isMonthClosed ? (
                 <Card className="rounded-lg py-0 shadow-sm">
                   <CardContent className="grid gap-3 p-3">
                     <Textarea
@@ -3821,7 +3965,7 @@ export function MonthEndCountryReconciliationView({
 
               {!hasLoaded ? (
                 <CountryReconciliationSkeleton />
-              ) : requiresCountryReport && !hasCountryReport ? (
+              ) : requiresCountryReport && !hasCountryReport && !isMonthClosed ? (
                 <CountryReportUploadStep
                   countryReportLabel={countryReportLabel}
                   masterCount={records.length}
@@ -3829,9 +3973,17 @@ export function MonthEndCountryReconciliationView({
                   canPasteReport={canPasteReport}
                   isAntaserPackage={activeCountryId?.startsWith("antaser")}
                   onChooseFile={openCountryReportFilePicker}
-                  onPasteReport={() => setIsPasteReportOpen(true)}
+                  onPasteReport={() => {
+                    if (!isMonthClosed) {
+                      setIsPasteReportOpen(true)
+                    }
+                  }}
                   onFiles={uploadCountryReports}
                 />
+              ) : requiresCountryReport && !hasCountryReport ? (
+                <div className="rounded-lg border bg-background p-4 text-sm text-muted-foreground">
+                  Reopen this month to upload a country report.
+                </div>
               ) : hasCountryReport || hasMasterRecords ? (
                 <ReconciliationWorkbench
                   countryRecords={countryReportRecords}
@@ -3845,7 +3997,7 @@ export function MonthEndCountryReconciliationView({
                   onDropMasterFile={uploadMasterFile}
                   onDropCountryFiles={uploadCountryReports}
                   canEditCountryData={requiresCountryReport}
-                  isReadOnly={isReconciliationComplete}
+                  isReadOnly={isReconciliationComplete || isMonthClosed}
                   countryId={activeCountryId}
                   countryName={
                     countryDisplayName || country?.name || "Unknown country"

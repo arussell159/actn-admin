@@ -650,6 +650,8 @@ export function DashboardView() {
         {
           "--sidebar-width": "calc(var(--spacing) * 72)",
           "--header-height": "calc(var(--spacing) * 12)",
+          "--mobile-page-bottom-padding":
+            "calc(10rem + env(safe-area-inset-bottom, 0px))",
         } as React.CSSProperties
       }
     >

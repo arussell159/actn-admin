@@ -14,9 +14,11 @@ import {
 import { Input } from "@/components/ui/input"
 import {
   authPasskeyEnabledKey,
+  isPhoneAuthSession,
   markAuthSessionStarted,
 } from "@/lib/auth-session-timeout"
 import { createClient } from "@/lib/client"
+import { setMobileDashboardActiveNavState } from "@/lib/mobile-nav-active-state"
 import { cn } from "@/lib/utils"
 
 function getLoginErrorMessage(error: { message?: string; code?: string }) {
@@ -71,6 +73,13 @@ export function LoginForm({
 
   function finishLogin() {
     markAuthSessionStarted()
+
+    if (isPhoneAuthSession()) {
+      setMobileDashboardActiveNavState()
+      window.location.assign("/dashboard")
+      return
+    }
+
     window.location.assign(safeNextPath)
   }
 

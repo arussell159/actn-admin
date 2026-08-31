@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import {
-  EditIcon,
+  FileTextIcon,
   MoreHorizontalIcon,
   PlusIcon,
   Trash2Icon,
@@ -181,8 +181,8 @@ export function PreviousMonthEndsView() {
                                 )
                               }
                             >
-                              <EditIcon />
-                              Edit
+                              <FileTextIcon />
+                              View
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               variant="destructive"

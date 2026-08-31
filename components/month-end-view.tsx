@@ -141,6 +141,7 @@ function SingleCheckTaskList({
   tasks,
   checked,
   updateTask,
+  isReadOnly = false,
 }: {
   title: string
   description: string
@@ -148,6 +149,7 @@ function SingleCheckTaskList({
   tasks: TemplateSimpleTask[]
   checked: Record<string, MonthEndValue>
   updateTask: (key: string, value: boolean) => void
+  isReadOnly?: boolean
 }) {
   return (
     <Card className="rounded-lg shadow-sm">
@@ -167,6 +169,7 @@ function SingleCheckTaskList({
               >
                 <Checkbox
                   checked={asBool(checked[key])}
+                  disabled={isReadOnly}
                   onCheckedChange={(value) => updateTask(key, value === true)}
                 />
                 <span>{task.label}</span>
@@ -293,6 +296,8 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     React.useState(false)
   const [showCloseMonthConfirm, setShowCloseMonthConfirm] =
     React.useState(false)
+  const [showReopenMonthConfirm, setShowReopenMonthConfirm] =
+    React.useState(false)
   const [hasLoaded, setHasLoaded] = React.useState(false)
   const masterUploadInputRef = React.useRef<HTMLInputElement>(null)
 
@@ -357,7 +362,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
   }, [period])
 
   React.useEffect(() => {
-    if (!hasLoaded || !recordRef.current) {
+    if (!hasLoaded || !recordRef.current || recordRef.current.status === "Closed") {
       return
     }
 
@@ -490,10 +495,18 @@ export function MonthEndView({ period }: { period?: string } = {}) {
   const activePeriod = record?.period ?? period ?? ""
 
   function updateTask(key: string, value: boolean) {
+    if (isClosed) {
+      return
+    }
+
     setChecked((current) => ({ ...current, [key]: value }))
   }
 
   function startEditNote(rowId: string) {
+    if (isClosed) {
+      return
+    }
+
     setEditingNoteRowId(rowId)
     setNoteDraft(asString(checked[noteKey(rowId)]))
   }
@@ -504,6 +517,11 @@ export function MonthEndView({ period }: { period?: string } = {}) {
   }
 
   function saveNote(rowId: string) {
+    if (isClosed) {
+      cancelEditNote()
+      return
+    }
+
     const cleanNote = noteDraft.trim()
 
     setChecked((current) => {
@@ -521,6 +539,10 @@ export function MonthEndView({ period }: { period?: string } = {}) {
   }
 
   function deleteNote(rowId: string) {
+    if (isClosed) {
+      return
+    }
+
     setChecked((current) => {
       const nextChecked = { ...current }
 
@@ -535,6 +557,10 @@ export function MonthEndView({ period }: { period?: string } = {}) {
   }
 
   function startEditExchangeRate(rowId: string) {
+    if (isClosed) {
+      return
+    }
+
     const exchangeRate = asNumber(checked[exchangeRateKey(rowId)])
 
     setEditingExchangeRateRowId(rowId)
@@ -547,6 +573,11 @@ export function MonthEndView({ period }: { period?: string } = {}) {
   }
 
   function saveExchangeRate(rowId: string) {
+    if (isClosed) {
+      cancelEditExchangeRate()
+      return
+    }
+
     const trimmedValue = exchangeRateDraft.trim()
     const nextValue = Number(trimmedValue)
 
@@ -616,6 +647,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     recordRef.current = updatedRecord
     setRecord(updatedRecord)
     setShowCloseMonthConfirm(false)
+    setShowReopenMonthConfirm(false)
     router.replace("/month-end")
     window.dispatchEvent(new Event("month-end:records-updated"))
   }
@@ -647,7 +679,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
   async function reuploadMasterSheet(file: File) {
     const activeRecord = recordRef.current
 
-    if (!activeRecord) {
+    if (!activeRecord || activeRecord.status === "Closed") {
       return
     }
 
@@ -733,6 +765,10 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     rowIndex: number,
     value: boolean
   ) {
+    if (isClosed) {
+      return
+    }
+
     const targetRows =
       row.checkable === false
         ? template.countries
@@ -759,6 +795,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
         onOpenChange={(open) => {
           if (!open) {
             setShowCloseMonthConfirm(false)
+            setShowReopenMonthConfirm(false)
           }
         }}
       >
@@ -776,7 +813,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-56">
           <DropdownMenuItem
-            disabled={!record || isUploadingMasterSheet}
+            disabled={!record || isClosed || isUploadingMasterSheet}
             onClick={openMasterSheetUpload}
           >
             <UploadIcon />
@@ -790,8 +827,16 @@ export function MonthEndView({ period }: { period?: string } = {}) {
             Roll Invoices CSV ({approvedRollInternalIds.length})
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          {isClosed ? (
-            <DropdownMenuItem onClick={reopenMonth}>
+          {isClosed && showReopenMonthConfirm ? (
+            <DropdownMenuItem closeOnClick={false} onClick={reopenMonth}>
+              <CheckCircle2Icon />
+              Confirm Reopen Month
+            </DropdownMenuItem>
+          ) : isClosed ? (
+            <DropdownMenuItem
+              closeOnClick={false}
+              onClick={() => setShowReopenMonthConfirm(true)}
+            >
               <CheckCircle2Icon />
               Reopen Month
             </DropdownMenuItem>
@@ -1183,7 +1228,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                   </div>
                                 ) : null}
                               </div>
-                              {hasActionTargets ? (
+                              {hasActionTargets && !isClosed ? (
                                 <DropdownMenu>
                                   <DropdownMenuTrigger
                                     render={
@@ -1248,6 +1293,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                       >
                                         <Checkbox
                                           checked={asBool(checked[key])}
+                                          disabled={isClosed}
                                           onCheckedChange={(value) =>
                                             updateTask(key, value === true)
                                           }
@@ -1299,7 +1345,8 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                 ) : (
                                   <button
                                     type="button"
-                                    className="min-h-10 rounded-lg border bg-background px-3 py-2 text-left text-sm text-muted-foreground"
+                                    disabled={isClosed}
+                                    className="min-h-10 rounded-lg border bg-background px-3 py-2 text-left text-sm text-muted-foreground disabled:cursor-default disabled:opacity-100"
                                     onClick={() => startEditNote(row.id)}
                                     aria-label={`Edit notes for ${row.name}`}
                                   >
@@ -1379,7 +1426,8 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                             actionTaskCount > 0 &&
                             actionDoneCount === actionTaskCount
                           const hasActionTargets =
-                            canCheckAll || canUncheckAll || Boolean(rowNote)
+                            !isClosed &&
+                            (canCheckAll || canUncheckAll || Boolean(rowNote))
                           const isRowComplete =
                             !isParentRow &&
                             requiredTasks.length > 0 &&
@@ -1470,7 +1518,8 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                 ) : (
                                   <button
                                     type="button"
-                                    className="block min-h-8 w-full cursor-text truncate rounded-md px-2 py-1 text-left hover:bg-muted/70"
+                                    disabled={isClosed}
+                                    className="block min-h-8 w-full cursor-text truncate rounded-md px-2 py-1 text-left hover:bg-muted/70 disabled:cursor-default disabled:hover:bg-transparent"
                                     onClick={() => startEditNote(row.id)}
                                     aria-label={`Edit notes for ${row.name}`}
                                   >
@@ -1530,7 +1579,8 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                     ) : (
                                       <button
                                         type="button"
-                                        className="block min-h-8 w-28 cursor-text truncate rounded-md px-2 py-1 text-left hover:bg-muted/70"
+                                        disabled={isClosed}
+                                        className="block min-h-8 w-28 cursor-text truncate rounded-md px-2 py-1 text-left hover:bg-muted/70 disabled:cursor-default disabled:hover:bg-transparent"
                                         onClick={() =>
                                           startEditExchangeRate(row.id)
                                         }
@@ -1557,6 +1607,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                       <label className="flex min-h-8 w-fit min-w-20 cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-muted/70">
                                         <Checkbox
                                           checked={asBool(checked[key])}
+                                          disabled={isClosed}
                                           onCheckedChange={(value) =>
                                             updateTask(key, value === true)
                                           }
@@ -1635,6 +1686,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                     tasks={group.tasks}
                     checked={checked}
                     updateTask={updateTask}
+                    isReadOnly={isClosed}
                   />
                 </TabsContent>
               ))}
