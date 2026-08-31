@@ -162,9 +162,9 @@ function isMissingTransactionDateColumnError(error: unknown) {
     typeof error === "object" &&
     error !== null &&
     "code" in error &&
-    error.code === "42703" &&
     "message" in error &&
     typeof error.message === "string" &&
+    (error.code === "42703" || error.code === "PGRST204") &&
     error.message.includes("transaction_date")
   )
 }
