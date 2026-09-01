@@ -524,6 +524,9 @@ export function DashboardView() {
 
     return !status.includes("closed")
   }).length
+  const openTicketsTitle = `Open Tickets (${
+    zohoData?.ok ? openTicketTotal.toLocaleString() : "-"
+  })`
   const agentTicketCounts = React.useMemo(() => {
     const counts = new Map<string, number>()
 
@@ -982,7 +985,9 @@ export function DashboardView() {
 
                 <section className="px-4 lg:px-6">
                   <div className="grid gap-3 md:hidden">
-                    <h2 className="px-1 text-base font-medium">Open Tickets</h2>
+                    <h2 className="px-1 text-base font-medium">
+                      {openTicketsTitle}
+                    </h2>
                     {isInitialZohoLoad ? (
                       <MobileTicketSkeleton />
                     ) : tickets.length ? (
@@ -1048,7 +1053,7 @@ export function DashboardView() {
                   </div>
                   <Card className="hidden md:flex">
                     <CardHeader>
-                      <CardTitle>Open Tickets</CardTitle>
+                      <CardTitle>{openTicketsTitle}</CardTitle>
                     </CardHeader>
                     <CardContent className="overflow-hidden px-0">
                       <Table className="hidden md:table">
