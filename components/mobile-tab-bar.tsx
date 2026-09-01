@@ -100,7 +100,7 @@ const allModuleItems = [
     match: ["/pricing-upload"],
   },
   {
-    label: "Modules",
+    label: "Settings",
     href: "/template-builder",
     icon: Settings2Icon,
     match: ["/template-builder"],
@@ -435,7 +435,7 @@ export function MobileTabBar() {
                 Close
               </SheetClose>
               <SheetTitle className="text-center">
-                {isCustomizing ? "Customize" : "More Modules"}
+                {isCustomizing ? "Customize" : "More Settings"}
               </SheetTitle>
               <button
                 type="button"

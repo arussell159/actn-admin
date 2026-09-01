@@ -396,11 +396,23 @@ create table if not exists public.month_end_country_report_records (
   amount numeric not null default 0,
   source_row_count integer not null default 1,
   parser_key text not null default '',
+  status text not null default '',
+  transaction_date text not null default '',
+  selling_date text not null default '',
   created_at timestamptz not null default now()
 );
 
 alter table public.month_end_country_report_records
 add column if not exists bill_of_lading_number text not null default '';
+
+alter table public.month_end_country_report_records
+add column if not exists status text not null default '';
+
+alter table public.month_end_country_report_records
+add column if not exists transaction_date text not null default '';
+
+alter table public.month_end_country_report_records
+add column if not exists selling_date text not null default '';
 
 create index if not exists month_end_country_report_records_month_country_idx
 on public.month_end_country_report_records(month_end_id, country_id);

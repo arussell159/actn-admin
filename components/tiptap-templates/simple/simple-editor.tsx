@@ -74,8 +74,6 @@ import { handleImageUpload, MAX_FILE_SIZE } from "@/lib/tiptap-utils"
 // --- Styles ---
 import "@/components/tiptap-templates/simple/simple-editor.scss"
 
-import content from "@/components/tiptap-templates/simple/data/content.json"
-
 const SEARCH_AND_REPLACE_SCROLL_OPTIONS: ScrollIntoViewOptions = {
   block: "center",
 }
@@ -173,7 +171,10 @@ const MainToolbarContent = ({
 
 function parseEditorContent(value?: string): Content {
   if (!value) {
-    return content
+    return {
+      type: "doc",
+      content: [{ type: "paragraph", attrs: { textAlign: null } }],
+    }
   }
 
   try {

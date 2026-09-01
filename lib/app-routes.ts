@@ -52,7 +52,7 @@ export const appCommandPages = [
     icon: UploadIcon,
   },
   {
-    title: "Modules",
+    title: "Settings",
     href: "/template-builder",
     section: "Settings",
     keywords: ["template", "builder", "settings"],

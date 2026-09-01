@@ -75,13 +75,7 @@ export function defaultInformationNotes(): InformationNode[] {
             attrs: { textAlign: null, level: 1 },
             content: [{ type: "text", text: "General Notes" }],
           },
-          {
-            type: "paragraph",
-            attrs: { textAlign: null },
-            content: [
-              { type: "text", text: "Start typing misc information here." },
-            ],
-          },
+          { type: "paragraph", attrs: { textAlign: null } },
         ],
       }),
       createdAt: timestamp,

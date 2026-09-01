@@ -884,7 +884,7 @@ export function DashboardView() {
                       ) : (
                         <ChartContainer
                         config={chartConfig}
-                        className="aspect-auto h-[250px] w-full"
+                        className="aspect-auto h-[250px] w-full [&_.recharts-bar-rectangle]:cursor-pointer"
                         initialDimension={{ width: 900, height: 250 }}
                       >
                         <ComposedChart
@@ -937,6 +937,15 @@ export function DashboardView() {
                             dataKey="closedTickets"
                             fill={chartConfig.closedTickets.color}
                             fillOpacity={0.8}
+                            activeBar={{
+                              fill: "#2fc85a",
+                              fillOpacity: 0.18,
+                              stroke: "#16a34a",
+                              strokeOpacity: 1,
+                              strokeWidth: 2,
+                              filter:
+                                "drop-shadow(0 0 6px rgba(34, 163, 71, 0.45))",
+                            }}
                             radius={[4, 4, 0, 0]}
                             maxBarSize={32}
                           />

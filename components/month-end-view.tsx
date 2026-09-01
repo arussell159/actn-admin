@@ -1000,7 +1000,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
               </div>
               <details className="group mt-3 border-t pt-2">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium marker:hidden">
-                  <span>Modules</span>
+                  <span>Settings</span>
                   <span className="text-xs text-muted-foreground tabular-nums">
                     {supplementalTaskDone}/{supplementalTaskTotal}
                   </span>

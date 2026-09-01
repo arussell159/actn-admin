@@ -8,6 +8,9 @@ export type ParsedCountryReportRecord = {
   reference: string
   amount: number
   sourceRowCount: number
+  status?: string
+  transactionDate?: string
+  sellingDate?: string
   sourceCountryName?: string
   targetCountryId?: string
 }
@@ -34,6 +37,27 @@ function parseAmount(value: string | number | undefined) {
   const amount = Number(normalized)
 
   return Number.isFinite(amount) ? amount : 0
+}
+
+function escapeCsvCell(value: string | undefined) {
+  const cell = value ?? ""
+
+  return /[",\r\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell
+}
+
+function tableToCsvRows(rows: string[][]) {
+  return rows
+    .map((row) => row.map((cell) => escapeCsvCell(cell)).join(","))
+    .join("\r\n")
+}
+
+function hasMeaningfulGabonCargoValue(value: string | undefined) {
+  const normalized = (value ?? "")
+    .replace(/[$€\u20ac]/g, "")
+    .trim()
+    .toLowerCase()
+
+  return Boolean(normalized) && !/^-+$/.test(normalized) && normalized !== "0"
 }
 
 function findExactCsvColumn(headers: string[], matches: string[]) {
@@ -97,7 +121,96 @@ function mappedColumnIndex(
     return -1
   }
 
-  return headers.findIndex((item) => item === header)
+  const columnMatch = header.match(/^Column\s+(\d+)$/i)
+
+  if (columnMatch) {
+    const index = Number(columnMatch[1]) - 1
+
+    return Number.isInteger(index) && index >= 0 ? index : -1
+  }
+
+  const exactIndex = headers.findIndex((item) => item === header)
+
+  if (exactIndex >= 0) {
+    return exactIndex
+  }
+
+  const normalizedHeader = header.toLowerCase().replace(/[^a-z0-9]+/g, "")
+
+  return headers.findIndex((item) => {
+    const normalizedItem = item.toLowerCase().replace(/[^a-z0-9]+/g, "")
+
+    return (
+      normalizedItem === normalizedHeader ||
+      normalizedItem.includes(normalizedHeader) ||
+      normalizedHeader.includes(normalizedItem)
+    )
+  })
+}
+
+function usesGenericColumnMapping(mapping: ReportFieldMapping) {
+  return Object.values(mapping.fields).some((value) =>
+    /^Column\s+\d+$/i.test(value ?? "")
+  )
+}
+
+function splitPaymentDescription(value: string) {
+  const parts = value.split(/\s+-\s+/).map((part) => part.trim())
+
+  return {
+    description: parts[0] ?? value.trim(),
+    invoiceNumber: parts[1] ?? "",
+    reference: parts.slice(2).join(" - "),
+  }
+}
+
+function inferRepeatingPaymentRows(text: string) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const rows: string[][] = []
+
+  for (let index = 0; index < lines.length - 2; index += 3) {
+    const descriptionLine = lines[index] ?? ""
+    const dateLine = lines[index + 1] ?? ""
+    const amountLine = lines[index + 2] ?? ""
+
+    if (
+      !/\s+-\s+/.test(descriptionLine) ||
+      !/^\d{1,2}\/\d{1,2}\/\d{4}(?:\s+\d{1,2}:\d{2}:\d{2})?$/.test(
+        dateLine
+      ) ||
+      !/^\d[\d\s.,]*$/.test(amountLine)
+    ) {
+      return undefined
+    }
+
+    const payment = splitPaymentDescription(descriptionLine)
+
+    rows.push([
+      payment.description,
+      payment.invoiceNumber,
+      payment.reference,
+      dateLine,
+      amountLine,
+    ])
+  }
+
+  if (!rows.length || rows.length * 3 !== lines.length) {
+    return undefined
+  }
+
+  return {
+    columns: [
+      "Description",
+      "Invoice Number",
+      "Bill of Lading Number",
+      "Date",
+      "Amount",
+    ],
+    rows,
+  }
 }
 
 export function parseMappedCountryReportCsv(
@@ -108,8 +221,17 @@ export function parseMappedCountryReportCsv(
     return undefined
   }
 
-  const rows = parseCsv(csvText)
-  const [headers, ...dataRows] = rows.slice(mapping.headerRowIndex)
+  const inferredTable = inferRepeatingPaymentRows(csvText)
+  const rows = inferredTable?.rows ?? parseCsv(csvText)
+  const sampleRows = rows.slice(mapping.headerRowIndex)
+  const genericColumnMapping = usesGenericColumnMapping(mapping)
+  const headers = inferredTable
+    ? inferredTable.columns
+    : genericColumnMapping
+      ? sampleRows[0]?.map((_, index) => `Column ${index + 1}`)
+      : sampleRows[0]
+  const dataRows =
+    inferredTable || genericColumnMapping ? sampleRows : sampleRows.slice(1)
 
   if (!headers) {
     return []
@@ -133,8 +255,20 @@ export function parseMappedCountryReportCsv(
     mapping,
     "sourceCountryName"
   )
+  const statusIndex = mappedColumnIndex(headers, mapping, "status")
+  const transactionDateIndex = mappedColumnIndex(
+    headers,
+    mapping,
+    "transactionDate"
+  )
+  const sellingDateIndex = mappedColumnIndex(headers, mapping, "sellingDate")
 
-  if (ctnIndex < 0 && billOfLadingIndex < 0 && referenceIndex < 0) {
+  if (
+    invoiceIndex < 0 &&
+    ctnIndex < 0 &&
+    billOfLadingIndex < 0 &&
+    referenceIndex < 0
+  ) {
     return []
   }
 
@@ -154,6 +288,13 @@ export function parseMappedCountryReportCsv(
     )
     const sourceCountryName =
       sourceCountryIndex >= 0 ? (row[sourceCountryIndex]?.trim() ?? "") : ""
+    const status = statusIndex >= 0 ? (row[statusIndex]?.trim() ?? "") : ""
+    const transactionDate =
+      transactionDateIndex >= 0
+        ? (row[transactionDateIndex]?.trim() ?? "")
+        : ""
+    const sellingDate =
+      sellingDateIndex >= 0 ? (row[sellingDateIndex]?.trim() ?? "") : ""
 
     if (!ctnNumber && !billOfLadingNumber && !reference && !invoiceNumber) {
       continue
@@ -185,10 +326,96 @@ export function parseMappedCountryReportCsv(
         existing?.sourceCountryName ?? "",
         sourceCountryName
       ),
+      status: mergeReportValues(existing?.status ?? "", status),
+      transactionDate: mergeReportValues(
+        existing?.transactionDate ?? "",
+        transactionDate
+      ),
+      sellingDate: mergeReportValues(existing?.sellingDate ?? "", sellingDate),
     })
   }
 
   return Array.from(grouped.values())
+}
+
+export function parseGabonCountryReportCsv(csvText: string) {
+  const rows = parseCsv(csvText)
+  const headerIndex = rows.findIndex((row) => {
+    const normalizedHeaders = row.map((header) =>
+      header.toLowerCase().replace(/[^a-z0-9]+/g, "")
+    )
+
+    return (
+      normalizedHeaders.some((header) => header.includes("purchaseofnoteref")) &&
+      normalizedHeaders.some((header) => header.includes("bietcn")) &&
+      normalizedHeaders.some((header) => header.includes("validationdate")) &&
+      normalizedHeaders.some((header) => header.includes("invoicen")) &&
+      normalizedHeaders.some((header) => header.includes("bln"))
+    )
+  })
+
+  if (headerIndex < 0) {
+    return []
+  }
+
+  const headerRows = rows.slice(0, headerIndex + 1)
+  const headers = rows[headerIndex] ?? []
+  const normalizedHeaders = headers.map((header) =>
+    header.toLowerCase().replace(/[^a-z0-9]+/g, "")
+  )
+  const firstCargoIndex = normalizedHeaders.findIndex(
+    (header) => header === "20"
+  )
+  const amountColumnIndexes = ["formbietc", "fees", "totalcollected"].flatMap(
+    (match) => {
+      const index = normalizedHeaders.findIndex((header) =>
+        header.includes(match)
+      )
+
+      return index >= 0 ? [index] : []
+    }
+  )
+  const lastCargoIndex =
+    amountColumnIndexes.length > 0
+      ? Math.min(...amountColumnIndexes) - 1
+      : -1
+  const cargoColumnIndexes =
+    firstCargoIndex >= 0 && lastCargoIndex >= firstCargoIndex
+      ? Array.from(
+          { length: lastCargoIndex - firstCargoIndex + 1 },
+          (_, index) => firstCargoIndex + index
+        )
+      : []
+  const filteredRows = [
+    ...headerRows,
+    ...rows.slice(headerIndex + 1).filter((row) => {
+      const hasCargoData = cargoColumnIndexes.some((index) =>
+        hasMeaningfulGabonCargoValue(row[index])
+      )
+      const hasMoneyValue = amountColumnIndexes.some(
+        (index) => Math.abs(parseAmount(row[index])) > 0
+      )
+
+      return hasCargoData || hasMoneyValue
+    }),
+  ]
+
+  return (
+    parseMappedCountryReportCsv(tableToCsvRows(filteredRows), {
+      headerRowIndex: headerIndex,
+      fields: {
+        status: "Notes",
+        reference: "Purchase of Note Ref",
+        ctnNumber: "BIETC N",
+        sellingDate: "Selling Date",
+        transactionDate: "Validation Date",
+        invoiceNumber: "Invoice N",
+        billOfLadingNumber: "B/L N",
+        amount: "TOTAL COLLECTED",
+      },
+      extraFields: [],
+    }) ?? []
+  )
 }
 
 function getDatePeriod(value: string | undefined) {

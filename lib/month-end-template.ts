@@ -12,6 +12,7 @@ export type TemplateCountryRow = {
   combinedWithCountryIds?: string[]
   countryReportMapping?: ReportFieldMapping
   masterReportMapping?: ReportFieldMapping
+  aiNotes?: string
   updatedAt?: string
 }
 
@@ -19,6 +20,15 @@ export type ReportFieldMapping = {
   headerRowIndex: number
   fields: Partial<Record<ReportMappingField, string>>
   extraFields?: ReportExtraFieldMapping[]
+  aiTrainingExamples?: ReportMappingAiTrainingExample[]
+}
+
+export type ReportMappingAiTrainingExample = {
+  id: string
+  createdAt: string
+  columns: string[]
+  rows: string[][]
+  assignments: Partial<Record<ReportMappingField, string>>
 }
 
 export type ReportMappingField =
@@ -32,6 +42,7 @@ export type ReportMappingField =
   | "salesOrderNumber"
   | "status"
   | "transactionDate"
+  | "sellingDate"
   | "sourceClass"
   | "sourceInternalId"
   | "sourceCountryName"
@@ -135,7 +146,7 @@ function reportMappingsEqual(
     return false
   }
 
-  return firstExtraFields.every((field, index) => {
+  const extraFieldsEqual = firstExtraFields.every((field, index) => {
     const otherField = secondExtraFields[index]
 
     return (
@@ -144,6 +155,15 @@ function reportMappingsEqual(
       field.sourceColumn === otherField.sourceColumn
     )
   })
+
+  if (!extraFieldsEqual) {
+    return false
+  }
+
+  return (
+    (first.aiTrainingExamples?.length ?? 0) ===
+    (second.aiTrainingExamples?.length ?? 0)
+  )
 }
 
 export function isDefaultCountryReportMapping(
@@ -221,6 +241,20 @@ export const defaultTemplate: MonthEndTemplate = {
       name: "Gabon",
       indent: 1,
       invoiceRequired: true,
+      countryReportMapping: {
+        headerRowIndex: 1,
+        fields: {
+          status: "Notes",
+          reference: "Purchase of Note Ref",
+          ctnNumber: "BIETC N",
+          sellingDate: "Selling Date",
+          transactionDate: "Validation Date",
+          invoiceNumber: "Invoice N",
+          billOfLadingNumber: "B/L N",
+          amount: "TOTAL COLLECTED",
+        },
+        extraFields: [],
+      },
     },
     {
       id: "frabemar-mali",
@@ -344,9 +378,9 @@ export async function getMonthEndTemplate() {
     const supabase = createPublicClient()
     const { data, error } = await supabase
       .from(tableName)
-      .select("template")
+      .select("template, updated_at")
       .eq("id", templateId)
-      .maybeSingle<{ template: MonthEndTemplate | null }>()
+      .maybeSingle<{ template: MonthEndTemplate | null; updated_at: string | null }>()
 
     if (error) {
       return localTemplate
@@ -360,13 +394,41 @@ export async function getMonthEndTemplate() {
       return template
     }
 
-    const template = normalizeTemplate(data.template)
+    const databaseTemplate = normalizeTemplate(data.template)
+    const localUpdatedAt = templateLastUpdatedAt(localTemplate)
+    const databaseUpdatedAt = data.updated_at
+      ? timestampValue(data.updated_at)
+      : templateLastUpdatedAt(databaseTemplate)
+    const template =
+      localUpdatedAt > databaseUpdatedAt ? localTemplate : databaseTemplate
+
+    if (template === localTemplate) {
+      saveDatabaseTemplate(template)
+    }
 
     saveLocalTemplate(template)
     return template
   } catch {
     return localTemplate
   }
+}
+
+function templateLastUpdatedAt(template: MonthEndTemplate) {
+  return Math.max(
+    timestampValue(template.countriesModule?.updatedAt),
+    ...template.countries.map((country) =>
+      timestampValue(country.updatedAt)
+    ),
+    ...template.taskGroups.map((group) =>
+      timestampValue(group.updatedAt)
+    )
+  )
+}
+
+function timestampValue(value: string | undefined | null) {
+  const timestamp = Date.parse(value ?? defaultUpdatedAt)
+
+  return Number.isFinite(timestamp) ? timestamp : Date.parse(defaultUpdatedAt)
 }
 
 function normalizeTemplate(template: MonthEndTemplate): MonthEndTemplate {
@@ -412,6 +474,17 @@ function normalizeTemplate(template: MonthEndTemplate): MonthEndTemplate {
                 row.invoiceRequired ?? defaultRow?.invoiceRequired,
               requiresPasteReport:
                 row.requiresPasteReport ?? defaultRow?.requiresPasteReport,
+              countryReportMapping:
+                row.countryReportMapping &&
+                !isDefaultCountryReportMapping(row.countryReportMapping)
+                  ? row.countryReportMapping
+                  : defaultRow?.countryReportMapping ??
+                    row.countryReportMapping,
+              masterReportMapping:
+                row.masterReportMapping &&
+                !isDefaultMasterReportMapping(row.masterReportMapping)
+                  ? row.masterReportMapping
+                  : defaultRow?.masterReportMapping ?? row.masterReportMapping,
               combinedWithCountryIds:
                 row.combinedWithCountryIds ??
                 defaultRow?.combinedWithCountryIds ??
@@ -449,6 +522,13 @@ function cloneReportMapping(mapping: ReportFieldMapping): ReportFieldMapping {
     headerRowIndex: mapping.headerRowIndex,
     fields: { ...mapping.fields },
     extraFields: mapping.extraFields?.map((field) => ({ ...field })) ?? [],
+    aiTrainingExamples:
+      mapping.aiTrainingExamples?.map((example) => ({
+        ...example,
+        columns: [...example.columns],
+        rows: example.rows.map((row) => [...row]),
+        assignments: { ...example.assignments },
+      })) ?? [],
   }
 }
 

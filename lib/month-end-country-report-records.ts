@@ -30,6 +30,9 @@ type MonthEndCountryReportRecordRow = {
   amount: number
   source_row_count: number
   parser_key: string
+  status?: string
+  transaction_date?: string
+  selling_date?: string
   created_at?: string
 }
 
@@ -71,6 +74,9 @@ function toRecord(
     amount: Number(row.amount) || 0,
     sourceRowCount: row.source_row_count,
     parserKey: row.parser_key,
+    status: row.status ?? "",
+    transactionDate: row.transaction_date ?? "",
+    sellingDate: row.selling_date ?? "",
     createdAt: row.created_at,
   }
 }
@@ -91,7 +97,34 @@ function toRow(
     amount: record.amount,
     source_row_count: record.sourceRowCount,
     parser_key: record.parserKey,
+    status: record.status ?? "",
+    transaction_date: record.transactionDate ?? "",
+    selling_date: record.sellingDate ?? "",
   }
+}
+
+function withoutOptionalCountryReportColumns(row: MonthEndCountryReportRecordRow) {
+  const rest = { ...row }
+
+  delete rest.status
+  delete rest.transaction_date
+  delete rest.selling_date
+
+  return rest
+}
+
+function isMissingOptionalCountryReportColumnError(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    "message" in error &&
+    typeof error.message === "string" &&
+    (error.code === "42703" || error.code === "PGRST204") &&
+    (error.message.includes("transaction_date") ||
+      error.message.includes("selling_date") ||
+      error.message.includes("status"))
+  )
 }
 
 function getLocalRecords() {
@@ -194,6 +227,15 @@ export function makeCountryReportRecords({
         existing?.sourceCountryName ?? "",
         record.sourceCountryName ?? ""
       ),
+      status: mergeReportValues(existing?.status ?? "", record.status ?? ""),
+      transactionDate: mergeReportValues(
+        existing?.transactionDate ?? "",
+        record.transactionDate ?? ""
+      ),
+      sellingDate: mergeReportValues(
+        existing?.sellingDate ?? "",
+        record.sellingDate ?? ""
+      ),
     })
   }
 
@@ -247,7 +289,17 @@ export async function replaceMonthEndCountryReportRecords({
         .from(tableName)
         .upsert(records.map(toRow), { onConflict: "id" })
 
-      if (error) {
+      if (isMissingOptionalCountryReportColumnError(error)) {
+        const { error: retryError } = await supabase
+          .from(tableName)
+          .upsert(records.map(toRow).map(withoutOptionalCountryReportColumns), {
+            onConflict: "id",
+          })
+
+        if (retryError) {
+          throw retryError
+        }
+      } else if (error) {
         throw error
       }
     }

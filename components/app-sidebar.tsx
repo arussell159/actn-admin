@@ -288,7 +288,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 render={<AppLink href="/template-builder" />}
               >
                 <Settings2Icon />
-                <span>Modules</span>
+                <span>Settings</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>

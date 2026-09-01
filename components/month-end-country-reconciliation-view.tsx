@@ -32,11 +32,20 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { Input } from "@/components/ui/input"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import {
   Table,
@@ -73,11 +82,13 @@ import {
   isDefaultCountryReportMapping,
   isDefaultMasterReportMapping,
   loadMonthEndTemplate,
+  type ReportFieldMapping,
   type TemplateCountryRow,
 } from "@/lib/month-end-template"
 import {
   extractWorkbookRows,
   parseMappedCountryReportCsv,
+  parseGabonCountryReportCsv,
   parseCountryReportUploadFile,
   parseCountryReportText,
   type AntaserJournalDocument,
@@ -96,9 +107,72 @@ import {
   rollApprovalKey,
   serializeApprovedInternalIds,
 } from "@/lib/month-end-roll-invoices"
+import { parseCsv } from "@/lib/csv"
 
 const ANGOLA_OOT_COUNTRY_ID = "angola-oot"
 const ANGOLA_OOT_COUNTRY_NAME = "Angola OOT"
+
+const countryReportAiFields = [
+  {
+    id: "invoiceNumber",
+    label: "Invoice Number",
+    aliases: ["invoice", "invoicenumber", "salesorder", "salesordernumber"],
+  },
+  {
+    id: "ctnNumber",
+    label: "CTN / ECTN Number",
+    aliases: ["ctn", "ectn", "besc", "ctnnumber", "ectnnumber"],
+  },
+  {
+    id: "billOfLadingNumber",
+    label: "Bill of Lading Number",
+    aliases: ["billoflading", "billofladingnumber", "bl", "blnumber"],
+  },
+  {
+    id: "reference",
+    label: "Country Report Reference",
+    aliases: ["reference", "documentnumber", "bookingnumber"],
+  },
+  {
+    id: "amount",
+    label: "Primary Country Amount",
+    aliases: ["amount", "price", "total", "debit", "credit"],
+  },
+  {
+    id: "secondaryAmount",
+    label: "Secondary Country Amount",
+    aliases: ["amount2", "secondaryamount", "fees", "fee"],
+  },
+  {
+    id: "tertiaryAmount",
+    label: "Third Country Amount",
+    aliases: ["amount3", "tertiaryamount", "tax", "vat"],
+  },
+  {
+    id: "status",
+    label: "Country Report Status",
+    aliases: ["status", "notes", "note"],
+  },
+  {
+    id: "transactionDate",
+    label: "Validation Date",
+    aliases: ["validationdate", "validatedat", "date"],
+  },
+  {
+    id: "sellingDate",
+    label: "Selling Date",
+    aliases: ["sellingdate", "solddate", "saleDate"],
+  },
+  {
+    id: "sourceCountryName",
+    label: "Source Country Name",
+    aliases: ["country", "countryname", "sourcecountry"],
+  },
+] satisfies {
+  id: keyof ReportFieldMapping["fields"]
+  label: string
+  aliases: string[]
+}[]
 
 function formatAmount(amount: number) {
   return new Intl.NumberFormat("en-US", {
@@ -133,6 +207,34 @@ function formatTransactionDate(value: string | undefined) {
     : `${parsedDate.getMonth() + 1}/${parsedDate.getDate()}/${parsedDate.getFullYear()}`
 }
 
+function datePeriodKey(value: string | undefined, dayFirst = false) {
+  const rawValue = (value ?? "").trim()
+
+  if (!rawValue) {
+    return ""
+  }
+
+  const slashDate = rawValue.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})/)
+
+  if (slashDate) {
+    const first = Number(slashDate[1])
+    const second = Number(slashDate[2])
+    const yearValue = Number(slashDate[3])
+    const year = yearValue < 100 ? 2000 + yearValue : yearValue
+    const month = dayFirst || first > 12 ? second : first
+
+    if (month >= 1 && month <= 12) {
+      return `${year}-${String(month).padStart(2, "0")}`
+    }
+  }
+
+  const parsedDate = new Date(rawValue.replace(/\s+tt\b/i, ""))
+
+  return Number.isNaN(parsedDate.getTime())
+    ? ""
+    : `${parsedDate.getFullYear()}-${String(parsedDate.getMonth() + 1).padStart(2, "0")}`
+}
+
 function pluralize(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`
 }
@@ -153,6 +255,47 @@ type CountryDashboardSection = "netsuite" | "country" | "left" | "rolled"
 
 function countryDashboardSectionKey(rowId: string) {
   return `${rowId}__country_dashboard_section`
+}
+
+function resolvedCountryReportRowsKey(rowId: string) {
+  return `${rowId}__resolved_country_report_rows`
+}
+
+type ResolvedCountryReportRow = {
+  id: string
+  reason: string
+  note: string
+  resolvedAt: string
+}
+
+const countryReportReconcileReasonOptions = [
+  "Validated in previous month",
+  "Already rolled",
+  "Other",
+]
+
+function parseResolvedCountryReportRows(value: unknown) {
+  if (typeof value !== "string" || !value) {
+    return []
+  }
+
+  try {
+    const parsed = JSON.parse(value)
+
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+
+    return parsed.filter(
+      (item): item is ResolvedCountryReportRow =>
+        typeof item === "object" &&
+        item !== null &&
+        "id" in item &&
+        typeof item.id === "string"
+    )
+  } catch {}
+
+  return []
 }
 
 function parseCountryDashboardSection(value: unknown): CountryDashboardSection {
@@ -226,6 +369,84 @@ async function reportFileToCsvText(file: File, period?: string) {
   return file.text()
 }
 
+function escapeCsvCell(value: string) {
+  if (/[",\r\n]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`
+  }
+
+  return value
+}
+
+function tableToCsv(columns: string[], rows: string[][]) {
+  return [columns, ...rows]
+    .map((row) => row.map((cell) => escapeCsvCell(cell ?? "")).join(","))
+    .join("\r\n")
+}
+
+function reportTextLines(csvText: string) {
+  return csvText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
+async function parseCountryReportWithAiMapping({
+  csvText,
+  fileName,
+  mapping,
+}: {
+  csvText: string
+  fileName: string
+  mapping: ReportFieldMapping
+}) {
+  const response = await fetch("/api/report-mapping/ai-suggest", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      mappingKind: "countryReport",
+      fields: countryReportAiFields,
+      sampleFields: [],
+      savedAssignments: mapping.fields,
+      trainingExamples: mapping.aiTrainingExamples ?? [],
+      preview: {
+        fileName,
+        fileType: "Country report upload",
+        textLines: reportTextLines(csvText),
+        rows: parseCsv(csvText),
+      },
+    }),
+  })
+
+  if (!response.ok) {
+    return []
+  }
+
+  const payload = (await response.json()) as {
+    suggestions?: ReportFieldMapping["fields"]
+    table?: {
+      columns?: string[]
+      rows?: string[][]
+    }
+  }
+  const columns = payload.table?.columns ?? []
+  const rows = payload.table?.rows ?? []
+
+  if (!columns.length || !rows.length) {
+    return []
+  }
+
+  return (
+    parseMappedCountryReportCsv(tableToCsv(columns, rows), {
+      ...mapping,
+      headerRowIndex: 0,
+      fields: {
+        ...mapping.fields,
+        ...(payload.suggestions ?? {}),
+      },
+    }) ?? []
+  )
+}
+
 function lineItemCountryName(value: string | undefined) {
   const countryName = (value ?? "").trim()
 
@@ -249,11 +470,196 @@ function normalizeMatchKey(value: string | undefined | null) {
     .replace(/[^a-z0-9]+/g, "")
 }
 
+type MasterDisplayRow =
+  | {
+      kind: "record"
+      id: string
+      record: MonthEndMasterRecord
+      records: MonthEndMasterRecord[]
+    }
+  | {
+      kind: "group"
+      id: string
+      record: MonthEndMasterRecord
+      records: MonthEndMasterRecord[]
+    }
+
+function isGabonOutOfTerritoryClass(record: MonthEndMasterRecord) {
+  return (
+    normalizeMatchKey(record.sourceClass) ===
+    normalizeMatchKey("Gabon Out of Territory")
+  )
+}
+
+function gabonNonOutOfTerritoryPairKey(record: MonthEndMasterRecord) {
+  if (isGabonOutOfTerritoryClass(record)) {
+    return ""
+  }
+
+  const createdFrom = normalizeMatchKey(record.salesOrderNumber)
+  const billOfLadingNumber = normalizeMatchKey(record.billOfLadingNumber)
+
+  if (!createdFrom || !billOfLadingNumber) {
+    return ""
+  }
+
+  return `${createdFrom}__${billOfLadingNumber}`
+}
+
+function getGabonPairIssueByRecordId(
+  countryId: string | undefined,
+  masterRows: { record: MonthEndMasterRecord }[]
+): Map<string, string> {
+  const issuesByRecordId = new Map<string, string>()
+
+  if (countryId !== "frabemar-gabon") {
+    return issuesByRecordId
+  }
+
+  const recordsByPairKey = new Map<string, MonthEndMasterRecord[]>()
+
+  for (const { record } of masterRows) {
+    if (isGabonOutOfTerritoryClass(record)) {
+      continue
+    }
+
+    const pairKey = gabonNonOutOfTerritoryPairKey(record)
+
+    if (!pairKey) {
+      issuesByRecordId.set(
+        record.id,
+        "Missing Created From or Bill of Lading"
+      )
+      continue
+    }
+
+    recordsByPairKey.set(pairKey, [
+      ...(recordsByPairKey.get(pairKey) ?? []),
+      record,
+    ])
+  }
+
+  for (const records of recordsByPairKey.values()) {
+    if (records.length === 2) {
+      continue
+    }
+
+    for (const record of records) {
+      issuesByRecordId.set(record.id, `Expected 2 records, found ${records.length}`)
+    }
+  }
+
+  return issuesByRecordId
+}
+
+function getGabonNonOutOfTerritoryPairCountByRecordId(
+  masterRecords: MonthEndMasterRecord[]
+) {
+  const recordsByPairKey = new Map<string, MonthEndMasterRecord[]>()
+
+  for (const record of masterRecords) {
+    const pairKey = gabonNonOutOfTerritoryPairKey(record)
+
+    if (!pairKey) {
+      continue
+    }
+
+    recordsByPairKey.set(pairKey, [
+      ...(recordsByPairKey.get(pairKey) ?? []),
+      record,
+    ])
+  }
+
+  const countByRecordId = new Map<string, number>()
+
+  for (const records of recordsByPairKey.values()) {
+    for (const record of records) {
+      countByRecordId.set(record.id, records.length)
+    }
+  }
+
+  return countByRecordId
+}
+
+function makeMasterDisplayRows(
+  countryId: string | undefined,
+  masterRows: { record: MonthEndMasterRecord }[],
+  gabonPairIssueByRecordId?: Map<string, string>
+): MasterDisplayRow[] {
+  if (countryId !== "frabemar-gabon") {
+    return masterRows.map(({ record }) => ({
+      kind: "record",
+      id: record.id,
+      record,
+      records: [record],
+    }))
+  }
+
+  const recordsByPairKey = new Map<string, MonthEndMasterRecord[]>()
+
+  for (const { record } of masterRows) {
+    const pairKey = gabonNonOutOfTerritoryPairKey(record)
+
+    if (!pairKey) {
+      continue
+    }
+
+    recordsByPairKey.set(pairKey, [
+      ...(recordsByPairKey.get(pairKey) ?? []),
+      record,
+    ])
+  }
+
+  const consumedPairKeys = new Set<string>()
+  const displayRows: MasterDisplayRow[] = []
+
+  for (const { record } of masterRows) {
+    const pairKey = gabonNonOutOfTerritoryPairKey(record)
+    const pairRecords = pairKey ? recordsByPairKey.get(pairKey) : undefined
+
+    if (!pairKey || pairRecords?.length !== 2) {
+      displayRows.push({
+        kind: "record",
+        id: record.id,
+        record,
+        records: [record],
+      })
+      continue
+    }
+
+    if (consumedPairKeys.has(pairKey)) {
+      continue
+    }
+
+    consumedPairKeys.add(pairKey)
+    displayRows.push({
+      kind: "group",
+      id: `gabon-pair-${pairKey}`,
+      record: pairRecords[0],
+      records: pairRecords,
+    })
+  }
+
+  return displayRows.sort((first, second) => {
+    const firstHasIssue =
+      first.kind === "record" && gabonPairIssueByRecordId?.has(first.record.id)
+    const secondHasIssue =
+      second.kind === "record" && gabonPairIssueByRecordId?.has(second.record.id)
+
+    if (firstHasIssue === secondHasIssue) {
+      return 0
+    }
+
+    return firstHasIssue ? -1 : 1
+  })
+}
+
 function matchCandidates(
   masterRecord: MonthEndMasterRecord,
-  countryRecord: MonthEndCountryReportRecord
+  countryRecord: MonthEndCountryReportRecord,
+  countryId?: string
 ) {
-  return [
+  const candidates = [
     {
       label: "BL",
       masterValue: masterRecord.billOfLadingNumber,
@@ -273,6 +679,43 @@ function matchCandidates(
       countryValues: [countryRecord.invoiceNumber, countryRecord.reference],
     },
   ]
+
+  return countryId === "frabemar-gabon"
+    ? candidates.filter((candidate) => candidate.label !== "CTN")
+    : candidates
+}
+
+function normalizedReferenceParts(value: string | undefined | null) {
+  return (value ?? "")
+    .split(/[\s,;/|]+/)
+    .map((part) => normalizeMatchKey(part))
+    .filter(Boolean)
+}
+
+function referencesMatch(
+  masterValue: string | undefined | null,
+  countryValue: string | undefined | null
+) {
+  const masterKey = normalizeMatchKey(masterValue)
+  const countryKey = normalizeMatchKey(countryValue)
+
+  if (!masterKey || !countryKey) {
+    return false
+  }
+
+  if (masterKey === countryKey) {
+    return true
+  }
+
+  const masterParts = normalizedReferenceParts(masterValue)
+  const countryParts = normalizedReferenceParts(countryValue)
+
+  return (
+    masterParts.includes(countryKey) ||
+    countryParts.includes(masterKey) ||
+    ((masterKey.length >= 6 || countryKey.length >= 6) &&
+      (masterKey.includes(countryKey) || countryKey.includes(masterKey)))
+  )
 }
 
 function formatCombinedCountryName(countries: TemplateCountryRow[]) {
@@ -290,17 +733,16 @@ function formatCombinedCountryName(countries: TemplateCountryRow[]) {
 
 function matchDetail(
   masterRecord: MonthEndMasterRecord,
-  countryRecord: MonthEndCountryReportRecord
+  countryRecord: MonthEndCountryReportRecord,
+  countryId?: string
 ) {
-  for (const candidate of matchCandidates(masterRecord, countryRecord)) {
-    const masterKey = normalizeMatchKey(candidate.masterValue)
-
-    if (!masterKey) {
-      continue
-    }
-
+  for (const candidate of matchCandidates(
+    masterRecord,
+    countryRecord,
+    countryId
+  )) {
     const countryValue = candidate.countryValues.find(
-      (value) => normalizeMatchKey(value) === masterKey
+      (value) => referencesMatch(candidate.masterValue, value)
     )
 
     if (countryValue) {
@@ -314,12 +756,20 @@ function matchDetail(
   return undefined
 }
 
-function masterReferenceCandidates(masterRecord: MonthEndMasterRecord) {
-  return [
+function masterReferenceCandidates(
+  masterRecord: MonthEndMasterRecord,
+  countryId?: string
+) {
+  const candidates = [
     { label: "BL", value: masterRecord.billOfLadingNumber },
     { label: "CTN", value: masterRecord.ctnNumber },
     { label: "Invoice", value: masterRecord.salesOrderNumber },
-  ].flatMap((candidate) => {
+  ]
+
+  return (countryId === "frabemar-gabon"
+    ? candidates.filter((candidate) => candidate.label !== "CTN")
+    : candidates
+  ).flatMap((candidate) => {
     const normalizedValue = normalizeMatchKey(candidate.value)
 
     return normalizedValue
@@ -328,29 +778,145 @@ function masterReferenceCandidates(masterRecord: MonthEndMasterRecord) {
   })
 }
 
+function canAutoReconcileCountryRecord(
+  countryRecord: MonthEndCountryReportRecord,
+  countryId?: string
+) {
+  if (countryId !== "frabemar-gabon") {
+    return true
+  }
+
+  return Boolean(countryRecord.transactionDate?.trim())
+}
+
+function canAutoReconcileMasterRecord({
+  masterRecord,
+  countryId,
+  gabonPairCountByRecordId,
+}: {
+  masterRecord: MonthEndMasterRecord
+  countryId?: string
+  gabonPairCountByRecordId: Map<string, number>
+}) {
+  if (countryId !== "frabemar-gabon") {
+    return true
+  }
+
+  return (gabonPairCountByRecordId.get(masterRecord.id) ?? 1) <= 2
+}
+
+function isGabonFormRecord(record: MonthEndMasterRecord) {
+  const sourceClass = normalizeMatchKey(record.sourceClass)
+
+  return sourceClass.includes("form")
+}
+
+function isGabonTariffRecord(record: MonthEndMasterRecord) {
+  const sourceClass = normalizeMatchKey(record.sourceClass)
+
+  return sourceClass.includes("tariff")
+}
+
+function isCurrentMonthBlankValidationGabonRecord(
+  countryRecord: MonthEndCountryReportRecord,
+  countryId: string | undefined,
+  period: string | undefined
+) {
+  return (
+    countryId === "frabemar-gabon" &&
+    !countryRecord.transactionDate?.trim() &&
+    Boolean(countryRecord.sellingDate?.trim()) &&
+    datePeriodKey(countryRecord.sellingDate, true) === period
+  )
+}
+
 function reconcileRecords({
   masterRecords,
   countryRecords,
+  countryId,
+  period,
 }: {
   masterRecords: MonthEndMasterRecord[]
   countryRecords: MonthEndCountryReportRecord[]
+  countryId?: string
+  period?: string
 }) {
   const matchedMasterIds = new Set<string>()
   const matchedCountryIds = new Set<string>()
+  const autoRolledMasterIds = new Set<string>()
+  const autoLeftMasterIds = new Set<string>()
+  const gabonPairCountByRecordId =
+    countryId === "frabemar-gabon"
+      ? getGabonNonOutOfTerritoryPairCountByRecordId(masterRecords)
+      : new Map<string, number>()
   const matched = countryRecords.flatMap((countryRecord) => {
+    if (
+      isCurrentMonthBlankValidationGabonRecord(countryRecord, countryId, period)
+    ) {
+      const matchingMasterRecords = masterRecords.filter((item) => {
+        if (matchedMasterIds.has(item.id)) {
+          return false
+        }
+
+        return Boolean(matchDetail(item, countryRecord, countryId))
+      })
+
+      if (matchingMasterRecords.length === 2) {
+        for (const masterRecord of matchingMasterRecords) {
+          matchedMasterIds.add(masterRecord.id)
+
+          if (isGabonFormRecord(masterRecord)) {
+            autoLeftMasterIds.add(masterRecord.id)
+          }
+
+          if (isGabonTariffRecord(masterRecord)) {
+            autoRolledMasterIds.add(masterRecord.id)
+          }
+        }
+
+        matchedCountryIds.add(countryRecord.id)
+
+        return matchingMasterRecords.map((masterRecord) => ({
+          id: `${masterRecord.id}__${countryRecord.id}`,
+          masterRecord,
+          countryRecord,
+          matchedOn: {
+            label: "Gabon BL",
+            value:
+              masterRecord.billOfLadingNumber ||
+              countryRecord.billOfLadingNumber,
+          },
+        }))
+      }
+    }
+
+    if (!canAutoReconcileCountryRecord(countryRecord, countryId)) {
+      return []
+    }
+
     const masterRecord = masterRecords.find((item) => {
       if (matchedMasterIds.has(item.id)) {
         return false
       }
 
-      return Boolean(matchDetail(item, countryRecord))
+      if (
+        !canAutoReconcileMasterRecord({
+          masterRecord: item,
+          countryId,
+          gabonPairCountByRecordId,
+        })
+      ) {
+        return false
+      }
+
+      return Boolean(matchDetail(item, countryRecord, countryId))
     })
 
     if (!masterRecord) {
       return []
     }
 
-    const matchedOn = matchDetail(masterRecord, countryRecord)
+    const matchedOn = matchDetail(masterRecord, countryRecord, countryId)
 
     matchedMasterIds.add(masterRecord.id)
     matchedCountryIds.add(countryRecord.id)
@@ -367,7 +933,7 @@ function reconcileRecords({
   const masterReferenceCounts = new Map<string, number>()
 
   for (const masterRecord of masterRecords) {
-    for (const reference of masterReferenceCandidates(masterRecord)) {
+    for (const reference of masterReferenceCandidates(masterRecord, countryId)) {
       masterReferenceCounts.set(
         reference.key,
         (masterReferenceCounts.get(reference.key) ?? 0) + 1
@@ -381,7 +947,10 @@ function reconcileRecords({
   >()
 
   for (const match of matched) {
-    for (const reference of masterReferenceCandidates(match.masterRecord)) {
+    for (const reference of masterReferenceCandidates(
+      match.masterRecord,
+      countryId
+    )) {
       matchedCountryByReference.set(reference.key, match.countryRecord)
     }
   }
@@ -392,7 +961,20 @@ function reconcileRecords({
       return []
     }
 
-    const linkedReference = masterReferenceCandidates(masterRecord).find(
+    if (
+      !canAutoReconcileMasterRecord({
+        masterRecord,
+        countryId,
+        gabonPairCountByRecordId,
+      })
+    ) {
+      return []
+    }
+
+    const linkedReference = masterReferenceCandidates(
+      masterRecord,
+      countryId
+    ).find(
       (reference) =>
         (masterReferenceCounts.get(reference.key) ?? 0) > 1 &&
         matchedCountryByReference.has(reference.key)
@@ -424,6 +1006,8 @@ function reconcileRecords({
   return {
     matched: [...matched, ...linkedReferenceMatches],
     linkedMasterRecordIds,
+    autoRolledMasterIds,
+    autoLeftMasterIds,
     missingFromNetSuite: countryRecords.filter(
       (record) => !matchedCountryIds.has(record.id)
     ),
@@ -441,6 +1025,7 @@ function ReconciliationWorkbench({
   missingMasterRecordIds,
   rolledInternalIds,
   leftInvoiceRecordIds,
+  resolvedCountryReportRows,
   showCountryColumn,
   onDropMasterFile,
   onDropCountryFiles,
@@ -454,6 +1039,8 @@ function ReconciliationWorkbench({
   matchedMasterCount,
   onRollInvoices,
   onLeaveInvoices,
+  onReconcileCountryRows,
+  onProceed,
   onMoveInvoicesToOot,
 }: {
   countryRecords: MonthEndCountryReportRecord[]
@@ -463,6 +1050,7 @@ function ReconciliationWorkbench({
   missingMasterRecordIds: Set<string>
   rolledInternalIds: string[]
   leftInvoiceRecordIds: string[]
+  resolvedCountryReportRows: ResolvedCountryReportRow[]
   showCountryColumn: boolean
   onDropMasterFile: (file: File) => void
   onDropCountryFiles: (files: File[]) => void
@@ -478,22 +1066,51 @@ function ReconciliationWorkbench({
     records: MonthEndMasterRecord[]
   ) => Promise<{ savedCount: number; excludedCount: number }>
   onLeaveInvoices: (records: MonthEndMasterRecord[]) => Promise<void>
+  onReconcileCountryRows: (
+    records: MonthEndCountryReportRecord[],
+    reason: string,
+    note: string
+  ) => Promise<void>
+  onProceed: () => Promise<void>
   onMoveInvoicesToOot?: (
     records: MonthEndMasterRecord[]
   ) => Promise<{ movedCount: number }>
 }) {
+  const [selectedCountryRecordIds, setSelectedCountryRecordIds] =
+    React.useState(() => new Set<string>())
   const [selectedMasterRecordIds, setSelectedMasterRecordIds] = React.useState(
     () => new Set<string>()
   )
+  const lastCountrySelectionAnchorIdRef = React.useRef<string | null>(null)
+  const isShiftClickingCountryRowRef = React.useRef(false)
   const lastMasterSelectionAnchorIdRef = React.useRef<string | null>(null)
   const isShiftClickingMasterRowRef = React.useRef(false)
   const [isRollingInvoices, setIsRollingInvoices] = React.useState(false)
+  const [isReconcilingCountryRows, setIsReconcilingCountryRows] =
+    React.useState(false)
+  const [isProceeding, setIsProceeding] = React.useState(false)
   const [isMovingInvoicesToOot, setIsMovingInvoicesToOot] =
     React.useState(false)
   const [rollInvoiceMessage, setRollInvoiceMessage] = React.useState("")
+  const [countryReconcileMessage, setCountryReconcileMessage] =
+    React.useState("")
+  const [isCountryReconcileDialogOpen, setIsCountryReconcileDialogOpen] =
+    React.useState(false)
+  const [countryReconcileReason, setCountryReconcileReason] =
+    React.useState("")
+  const [countryReconcileReasonSearch, setCountryReconcileReasonSearch] =
+    React.useState("")
+  const [isCountryReasonDropdownOpen, setIsCountryReasonDropdownOpen] =
+    React.useState(false)
+  const [countryReconcileNote, setCountryReconcileNote] = React.useState("")
   const [hiddenMasterRecordIds, setHiddenMasterRecordIds] = React.useState(
     () => new Set<string>()
   )
+  const [expandedMasterGroupIds, setExpandedMasterGroupIds] = React.useState(
+    () => new Set<string>()
+  )
+  const countryReconcileReasonRef = React.useRef<HTMLInputElement>(null)
+  const countryReconcileNoteRef = React.useRef<HTMLInputElement>(null)
   const [dragTarget, setDragTarget] = React.useState<
     "country" | "master" | null
   >(null)
@@ -501,8 +1118,21 @@ function ReconciliationWorkbench({
   const visibleMasterIds = new Set(masterRecords.map((record) => record.id))
   const rolledInternalIdSet = new Set(rolledInternalIds)
   const leftInvoiceRecordIdSet = new Set(leftInvoiceRecordIds)
+  const resolvedCountryRecordIdSet = new Set(
+    resolvedCountryReportRows.map((record) => record.id)
+  )
+  const filteredCountryReconcileReasonOptions =
+    countryReportReconcileReasonOptions.filter((option) =>
+      option
+        .toLowerCase()
+        .includes(countryReconcileReasonSearch.trim().toLowerCase())
+    )
   const countryRows = countryRecords
-    .filter((record) => missingCountryRecordIds.has(record.id))
+    .filter(
+      (record) =>
+        missingCountryRecordIds.has(record.id) &&
+        !resolvedCountryRecordIdSet.has(record.id)
+    )
     .map((record) => ({
       record,
     }))
@@ -571,9 +1201,25 @@ function ReconciliationWorkbench({
   const allMasterRowsSelected =
     masterRows.length > 0 &&
     masterRows.every(({ record }) => selectedMasterRecordIds.has(record.id))
+  const allCountryRowsSelected =
+    countryRows.length > 0 &&
+    countryRows.every(({ record }) => selectedCountryRecordIds.has(record.id))
+  const selectedCountryRecords = countryRows
+    .map(({ record }) => record)
+    .filter((record) => selectedCountryRecordIds.has(record.id))
   const selectedMasterRecords = masterRows
     .map(({ record }) => record)
     .filter((record) => selectedMasterRecordIds.has(record.id))
+  const canProceed = countryRows.length === 0 && masterRows.length === 0
+  const gabonPairIssueByRecordId = getGabonPairIssueByRecordId(
+    countryId,
+    masterRows
+  )
+  const masterDisplayRows = makeMasterDisplayRows(
+    countryId,
+    masterRows,
+    gabonPairIssueByRecordId
+  )
 
   function countryCellLabel(record: MonthEndCountryReportRecord) {
     return (
@@ -597,6 +1243,62 @@ function ReconciliationWorkbench({
 
       return next
     })
+  }
+
+  function toggleAllCountryRows(checked: boolean) {
+    setSelectedCountryRecordIds((current) => {
+      const next = new Set(current)
+
+      for (const { record } of countryRows) {
+        if (checked) {
+          next.add(record.id)
+        } else {
+          next.delete(record.id)
+        }
+      }
+
+      return next
+    })
+  }
+
+  function toggleCountryRow(
+    recordId: string,
+    checked: boolean,
+    shiftKey = false
+  ) {
+    setSelectedCountryRecordIds((current) => {
+      const next = new Set(current)
+      const anchorRecordId = lastCountrySelectionAnchorIdRef.current
+      const countryRowIds = countryRows.map(({ record }) => record.id)
+      const anchorIndex = anchorRecordId
+        ? countryRowIds.indexOf(anchorRecordId)
+        : -1
+      const recordIndex = countryRowIds.indexOf(recordId)
+
+      if (shiftKey && anchorIndex >= 0 && recordIndex >= 0) {
+        const startIndex = Math.min(anchorIndex, recordIndex)
+        const endIndex = Math.max(anchorIndex, recordIndex)
+
+        for (const rangeRecordId of countryRowIds.slice(
+          startIndex,
+          endIndex + 1
+        )) {
+          if (checked) {
+            next.add(rangeRecordId)
+          } else {
+            next.delete(rangeRecordId)
+          }
+        }
+      } else if (checked) {
+        next.add(recordId)
+      } else {
+        next.delete(recordId)
+      }
+
+      return next
+    })
+    lastCountrySelectionAnchorIdRef.current = recordId
+    isShiftClickingCountryRowRef.current = false
   }
 
   function toggleMasterRow(
@@ -639,8 +1341,134 @@ function ReconciliationWorkbench({
     isShiftClickingMasterRowRef.current = false
   }
 
+  function toggleMasterRecords(records: MonthEndMasterRecord[], checked: boolean) {
+    setSelectedMasterRecordIds((current) => {
+      const next = new Set(current)
+
+      for (const record of records) {
+        if (checked) {
+          next.add(record.id)
+        } else {
+          next.delete(record.id)
+        }
+      }
+
+      return next
+    })
+    lastMasterSelectionAnchorIdRef.current = records.at(-1)?.id ?? null
+    isShiftClickingMasterRowRef.current = false
+  }
+
+  function toggleMasterGroup(groupId: string) {
+    setExpandedMasterGroupIds((current) => {
+      const next = new Set(current)
+
+      if (next.has(groupId)) {
+        next.delete(groupId)
+      } else {
+        next.add(groupId)
+      }
+
+      return next
+    })
+  }
+
+  function focusCountryReconcileNote() {
+    window.setTimeout(() => {
+      countryReconcileNoteRef.current?.focus()
+    }, 0)
+  }
+
+  function selectCountryReconcileReason(reason: string) {
+    setCountryReconcileReason(reason)
+    setCountryReconcileReasonSearch(reason)
+    setIsCountryReasonDropdownOpen(false)
+  }
+
+  function commitCountryReconcileReason() {
+    const search = countryReconcileReasonSearch.trim()
+    const exactMatch = countryReportReconcileReasonOptions.find(
+      (option) => option.toLowerCase() === search.toLowerCase()
+    )
+    const nextReason =
+      exactMatch ?? filteredCountryReconcileReasonOptions[0] ?? ""
+
+    if (nextReason) {
+      selectCountryReconcileReason(nextReason)
+    }
+
+    return nextReason
+  }
+
+  function openCountryReconcileDialog() {
+    if (!selectedCountryRecords.length) {
+      return
+    }
+
+    setCountryReconcileReason("")
+    setCountryReconcileReasonSearch("")
+    setCountryReconcileNote("")
+    setIsCountryReconcileDialogOpen(true)
+    setIsCountryReasonDropdownOpen(true)
+    window.setTimeout(() => {
+      countryReconcileReasonRef.current?.focus()
+    }, 0)
+  }
+
+  async function saveCountryReconciliation() {
+    if (
+      !selectedCountryRecords.length ||
+      !countryReconcileReason ||
+      !countryReconcileNote.trim()
+    ) {
+      return
+    }
+
+    setIsReconcilingCountryRows(true)
+    setCountryReconcileMessage("")
+
+    try {
+      await onReconcileCountryRows(
+        selectedCountryRecords,
+        countryReconcileReason,
+        countryReconcileNote.trim()
+      )
+      setSelectedCountryRecordIds(new Set())
+      setCountryReconcileReason("")
+      setCountryReconcileReasonSearch("")
+      setCountryReconcileNote("")
+      setIsCountryReconcileDialogOpen(false)
+      setCountryReconcileMessage(
+        `${selectedCountryRecords.length} country report row${selectedCountryRecords.length === 1 ? "" : "s"} reconciled.`
+      )
+    } catch {
+      setCountryReconcileMessage("Could not save the selected country rows.")
+    } finally {
+      setIsReconcilingCountryRows(false)
+    }
+  }
+
+  async function proceedToNextStep() {
+    if (!canProceed) {
+      return
+    }
+
+    setIsProceeding(true)
+    setRollInvoiceMessage("")
+
+    try {
+      await onProceed()
+    } finally {
+      setIsProceeding(false)
+    }
+  }
+
   async function rollSelectedInvoices() {
     const rollingRecordIds = selectedMasterRecords.map((record) => record.id)
+    const shouldProceedAfterRoll =
+      countryRows.length === 0 &&
+      selectedMasterRecords.length > 0 &&
+      selectedMasterRecords.length === masterRows.length
 
     setIsRollingInvoices(true)
     setRollInvoiceMessage("")
@@ -657,10 +1485,18 @@ function ReconciliationWorkbench({
 
     try {
       const result = await onRollInvoices(selectedMasterRecords)
+      const canProceedAfterRoll =
+        shouldProceedAfterRoll && result.excludedCount === 0
       const savedLabel = `${result.savedCount} invoice${result.savedCount === 1 ? "" : "s"} added`
       const excludedLabel = result.excludedCount
         ? ` ${result.excludedCount} selected record${result.excludedCount === 1 ? " was" : "s were"} excluded because no Internal ID was provided by NetSuite.`
         : ""
+
+      if (canProceedAfterRoll) {
+        setIsProceeding(true)
+        await onProceed()
+        return
+      }
 
       setRollInvoiceMessage(`${savedLabel}.${excludedLabel}`)
     } catch (error) {
@@ -676,11 +1512,16 @@ function ReconciliationWorkbench({
       setRollInvoiceMessage("Could not save the selected invoice IDs.")
     } finally {
       setIsRollingInvoices(false)
+      setIsProceeding(false)
     }
   }
 
   async function leaveSelectedInvoices() {
     const leavingRecordIds = selectedMasterRecords.map((record) => record.id)
+    const shouldProceedAfterLeave =
+      countryRows.length === 0 &&
+      selectedMasterRecords.length > 0 &&
+      selectedMasterRecords.length === masterRows.length
 
     if (!leavingRecordIds.length) {
       return
@@ -700,6 +1541,12 @@ function ReconciliationWorkbench({
 
     try {
       await onLeaveInvoices(selectedMasterRecords)
+      if (shouldProceedAfterLeave) {
+        setIsProceeding(true)
+        await onProceed()
+        return
+      }
+
       setRollInvoiceMessage(
         `${leavingRecordIds.length} invoice${leavingRecordIds.length === 1 ? "" : "s"} left in month end.`
       )
@@ -714,6 +1561,8 @@ function ReconciliationWorkbench({
         return next
       })
       setRollInvoiceMessage("Could not save the selected left invoices.")
+    } finally {
+      setIsProceeding(false)
     }
   }
 
@@ -772,7 +1621,127 @@ function ReconciliationWorkbench({
   }
 
   return (
-    <div className="grid min-h-0 gap-3 xl:gap-4">
+    <>
+      <Dialog
+        open={isCountryReconcileDialogOpen}
+        onOpenChange={setIsCountryReconcileDialogOpen}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reconcile Country Rows</DialogTitle>
+            <DialogDescription>
+              {selectedCountryRecords.length} selected
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div className="relative">
+              <Input
+                ref={countryReconcileReasonRef}
+                value={countryReconcileReasonSearch}
+                onChange={(event) => {
+                  setCountryReconcileReasonSearch(event.target.value)
+                  setCountryReconcileReason("")
+                  setIsCountryReasonDropdownOpen(true)
+                }}
+                onFocus={() => setIsCountryReasonDropdownOpen(true)}
+                onBlur={() => {
+                  window.setTimeout(() => {
+                    setIsCountryReasonDropdownOpen(false)
+                  }, 100)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault()
+                    if (commitCountryReconcileReason()) {
+                      focusCountryReconcileNote()
+                    }
+                  }
+
+                  if (event.key === "Tab") {
+                    commitCountryReconcileReason()
+                    setIsCountryReasonDropdownOpen(false)
+                  }
+
+                  if (event.key === "Escape") {
+                    setIsCountryReasonDropdownOpen(false)
+                  }
+                }}
+                role="combobox"
+                aria-expanded={isCountryReasonDropdownOpen}
+                aria-controls="country-reconcile-reason-options"
+                aria-autocomplete="list"
+                placeholder="Select a reason"
+                autoComplete="off"
+              />
+              {isCountryReasonDropdownOpen ? (
+                <div
+                  id="country-reconcile-reason-options"
+                  role="listbox"
+                  className="absolute top-full left-0 z-50 mt-1 max-h-52 w-full overflow-y-auto rounded-2xl border bg-popover p-1 text-sm text-popover-foreground shadow-lg"
+                >
+                  {filteredCountryReconcileReasonOptions.length ? (
+                    filteredCountryReconcileReasonOptions.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        tabIndex={-1}
+                        role="option"
+                        aria-selected={countryReconcileReason === option}
+                        className="flex min-h-8 w-full items-center rounded-xl px-2.5 py-1 text-left transition-colors hover:bg-accent hover:text-accent-foreground aria-selected:bg-accent aria-selected:text-accent-foreground"
+                        onMouseDown={(event) => {
+                          event.preventDefault()
+                          selectCountryReconcileReason(option)
+                          focusCountryReconcileNote()
+                        }}
+                      >
+                        {option}
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-2.5 py-2 text-muted-foreground">
+                      No reasons found.
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+            <Input
+              ref={countryReconcileNoteRef}
+              value={countryReconcileNote}
+              onChange={(event) => setCountryReconcileNote(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault()
+                  saveCountryReconciliation()
+                }
+              }}
+              placeholder="Type note, then press Enter"
+              disabled={!countryReconcileReason || isReconcilingCountryRows}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsCountryReconcileDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={saveCountryReconciliation}
+              disabled={
+                !countryReconcileReason ||
+                !countryReconcileNote.trim() ||
+                isReconcilingCountryRows
+              }
+            >
+              Reconcile
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <div className="grid min-h-0 gap-3 xl:gap-4">
       <div className="grid min-h-0 items-stretch gap-4 lg:min-h-[calc(100svh-var(--header-height)-5.5rem)] lg:grid-cols-2">
         <section
           className={
@@ -802,28 +1771,68 @@ function ReconciliationWorkbench({
         >
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold tracking-normal">Country</h2>
+            {!isReadOnly && selectedCountryRecords.length ? (
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 rounded-full"
+                disabled={isReconcilingCountryRows}
+                onClick={openCountryReconcileDialog}
+              >
+                <CheckCircle2Icon />
+                Reconcile ({selectedCountryRecords.length})
+              </Button>
+            ) : null}
           </div>
           <div className="grid min-h-0 gap-2 overflow-y-auto pb-3 md:hidden">
             {countryRows.length ? (
               countryRows.map(({ record }) => (
                 <article
                   key={record.id}
-                  className="rounded-lg border bg-muted/20 p-3 text-sm"
+                  className={
+                    "rounded-lg border bg-muted/20 p-3 text-sm transition-colors " +
+                    (isReadOnly
+                      ? ""
+                      : selectedCountryRecordIds.has(record.id)
+                        ? "border-primary bg-primary/5"
+                        : "")
+                  }
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="font-semibold break-words">
-                        {record.ctnNumber || "-"}
+                  <div className="flex items-start gap-3">
+                    <Checkbox
+                      checked={selectedCountryRecordIds.has(record.id)}
+                      onCheckedChange={(checked) =>
+                        toggleCountryRow(
+                          record.id,
+                          checked === true,
+                          isShiftClickingCountryRowRef.current
+                        )
+                      }
+                      aria-label={`Select country report row ${record.reference || record.ctnNumber || record.id}`}
+                      className="mt-0.5 shrink-0 after:-inset-2"
+                      disabled={isReadOnly}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        isShiftClickingCountryRowRef.current = event.shiftKey
+                      }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="font-semibold break-words">
+                            {record.ctnNumber || "-"}
+                          </div>
+                          <div className="mt-1 grid grid-cols-[2.5rem_minmax(0,1fr)] gap-2 text-xs">
+                            <span className="text-muted-foreground">BL</span>
+                            <span className="break-words">
+                              {record.billOfLadingNumber || "-"}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-right text-sm font-semibold tabular-nums">
+                          {formatAmount(record.amount)}
+                        </div>
                       </div>
-                      <div className="mt-1 grid grid-cols-[2.5rem_minmax(0,1fr)] gap-2 text-xs">
-                        <span className="text-muted-foreground">BL</span>
-                        <span className="break-words">
-                          {record.billOfLadingNumber || "-"}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="shrink-0 text-right text-sm font-semibold tabular-nums">
-                      {formatAmount(record.amount)}
                     </div>
                   </div>
                 </article>
@@ -841,6 +1850,15 @@ function ReconciliationWorkbench({
             >
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-8">
+                    <Checkbox
+                      checked={allCountryRowsSelected}
+                      onCheckedChange={(checked) =>
+                        toggleAllCountryRows(checked === true)
+                      }
+                      aria-label="Select all unmatched country report rows"
+                    />
+                  </TableHead>
                   <TableHead className="w-[20%]">Country</TableHead>
                   <TableHead>Reference</TableHead>
                   <TableHead>CTN</TableHead>
@@ -851,7 +1869,31 @@ function ReconciliationWorkbench({
               <TableBody>
                 {countryRows.length ? (
                   countryRows.map(({ record }) => (
-                    <TableRow key={record.id} className="h-12">
+                    <TableRow
+                      key={record.id}
+                      aria-selected={selectedCountryRecordIds.has(record.id)}
+                      className="h-12"
+                    >
+                      <TableCell className="w-8">
+                        <Checkbox
+                          checked={selectedCountryRecordIds.has(record.id)}
+                          onCheckedChange={(checked) =>
+                            toggleCountryRow(
+                              record.id,
+                              checked === true,
+                              isShiftClickingCountryRowRef.current
+                            )
+                          }
+                          aria-label={`Select country report row ${record.reference || record.ctnNumber || record.id}`}
+                          className="after:-inset-2"
+                          disabled={isReadOnly}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            isShiftClickingCountryRowRef.current =
+                              event.shiftKey
+                          }}
+                        />
+                      </TableCell>
                       <TableCell className="min-w-0">
                         <span
                           className="block truncate"
@@ -877,7 +1919,7 @@ function ReconciliationWorkbench({
                 ) : (
                   <TableRow>
                     <TableCell
-                      colSpan={5}
+                      colSpan={6}
                       className="h-24 text-center text-sm text-muted-foreground"
                     >
                       No country-only records.
@@ -887,6 +1929,11 @@ function ReconciliationWorkbench({
               </TableBody>
             </Table>
           </div>
+          {countryReconcileMessage ? (
+            <p className="px-1 pb-2 text-xs text-muted-foreground">
+              {countryReconcileMessage}
+            </p>
+          ) : null}
           <div className="-mx-3 -mb-3 flex h-12 items-center justify-between border-t bg-muted/50 px-4 text-xs font-medium">
             <div className="flex items-center gap-2">
               <span>Matched</span>
@@ -968,13 +2015,15 @@ function ReconciliationWorkbench({
                     Roll Invoices ({selectedMasterRecords.length})
                   </Button>
                 </>
-              ) : !isReadOnly && masterRows.length === 0 ? (
+              ) : !isReadOnly && canProceed ? (
                 <Button
                   type="button"
                   size="sm"
                   className="h-8 rounded-full"
-                  disabled={isRollingInvoices || isMovingInvoicesToOot}
-                  onClick={rollSelectedInvoices}
+                  disabled={
+                    isRollingInvoices || isMovingInvoicesToOot || isProceeding
+                  }
+                  onClick={proceedToNextStep}
                 >
                   <ArrowRightIcon />
                   Proceed
@@ -986,18 +2035,25 @@ function ReconciliationWorkbench({
             <>
               <div className="grid min-h-0 gap-2 overflow-y-auto pb-3 md:hidden">
                 {masterRows.length ? (
-                  masterRows.map(({ record }) => (
-                    <article
-                      key={record.id}
-                      className={
-                        "rounded-lg border bg-muted/20 p-3 text-sm transition-colors " +
-                        (isReadOnly
-                          ? ""
-                          : selectedMasterRecordIds.has(record.id)
-                            ? "border-primary bg-primary/5"
-                            : "")
-                      }
-                    >
+                  masterRows.map(({ record }) => {
+                    const gabonPairIssue =
+                      gabonPairIssueByRecordId.get(record.id)
+
+                    return (
+                      <article
+                        key={record.id}
+                        className={
+                          "rounded-lg border p-3 text-sm transition-colors " +
+                          (gabonPairIssue
+                            ? "border-red-300 bg-red-50 text-red-950 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-100 "
+                            : "bg-muted/20 ") +
+                          (isReadOnly
+                            ? ""
+                            : selectedMasterRecordIds.has(record.id)
+                              ? "border-primary bg-primary/5"
+                              : "")
+                        }
+                      >
                       <div className="flex items-start gap-3">
                         <Checkbox
                           checked={selectedMasterRecordIds.has(record.id)}
@@ -1027,6 +2083,11 @@ function ReconciliationWorkbench({
                                   ? record.billOfLadingNumber || "-"
                                   : record.salesOrderNumber || "-"}
                               </div>
+                              {gabonPairIssue ? (
+                                <div className="mt-1 text-xs font-semibold text-red-700 dark:text-red-300">
+                                  {gabonPairIssue}
+                                </div>
+                              ) : null}
                             </div>
                             <div className="shrink-0 text-right text-sm font-semibold tabular-nums">
                               {formatAmount(record.amount)}
@@ -1072,7 +2133,8 @@ function ReconciliationWorkbench({
                         </div>
                       </div>
                     </article>
-                  ))
+                    )
+                  })
                 ) : (
                   <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
                     No NetSuite-only records.
@@ -1086,7 +2148,7 @@ function ReconciliationWorkbench({
                 >
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-8">
+                      <TableHead className="w-14">
                         <Checkbox
                           checked={allMasterRowsSelected}
                           onCheckedChange={(checked) =>
@@ -1113,64 +2175,214 @@ function ReconciliationWorkbench({
                   </TableHeader>
                   <TableBody>
                     {masterRows.length ? (
-                      masterRows.map(({ record }) => (
-                        <TableRow
-                          key={record.id}
-                          aria-selected={selectedMasterRecordIds.has(record.id)}
-                          className="h-12"
-                        >
-                          <TableCell className="w-8">
-                            <Checkbox
-                              checked={selectedMasterRecordIds.has(record.id)}
-                              onCheckedChange={(checked) =>
-                                toggleMasterRow(
-                                  record.id,
-                                  checked === true,
-                                  isShiftClickingMasterRowRef.current
-                                )
+                      masterDisplayRows.map((displayRow) => {
+                        const record = displayRow.record
+                        const isGroup = displayRow.kind === "group"
+                        const isExpanded =
+                          isGroup && expandedMasterGroupIds.has(displayRow.id)
+                        const selectedCount = displayRow.records.filter(
+                          (groupRecord) =>
+                            selectedMasterRecordIds.has(groupRecord.id)
+                        ).length
+                        const allGroupRecordsSelected =
+                          selectedCount === displayRow.records.length
+                        const gabonPairIssue =
+                          !isGroup && gabonPairIssueByRecordId.get(record.id)
+
+                        return (
+                          <React.Fragment key={displayRow.id}>
+                            <TableRow
+                              aria-selected={selectedCount > 0}
+                              className={
+                                isGroup
+                                  ? "h-12 cursor-pointer"
+                                  : gabonPairIssue
+                                    ? "h-12 border-l-4 border-l-red-500 bg-red-50 text-red-950 dark:bg-red-950/30 dark:text-red-100"
+                                  : "h-12"
                               }
-                              aria-label={`Select NetSuite record ${record.salesOrderNumber || record.id}`}
-                              className="after:-inset-2"
-                              disabled={isReadOnly}
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                isShiftClickingMasterRowRef.current =
-                                  event.shiftKey
+                              onClick={() => {
+                                if (isGroup) {
+                                  toggleMasterGroup(displayRow.id)
+                                }
                               }}
-                            />
-                          </TableCell>
-                          <TableCell className="break-words tabular-nums">
-                            {formatTransactionDate(record.transactionDate)}
-                          </TableCell>
-                          {showAngolaNetSuiteReferences ? (
-                            <>
+                            >
+                              <TableCell className="w-14">
+                                <div className="flex items-center gap-2">
+                                  <Checkbox
+                                    checked={
+                                      isGroup
+                                        ? allGroupRecordsSelected
+                                        : selectedMasterRecordIds.has(record.id)
+                                    }
+                                    aria-checked={
+                                      isGroup &&
+                                      selectedCount > 0 &&
+                                      !allGroupRecordsSelected
+                                        ? "mixed"
+                                        : undefined
+                                    }
+                                    onCheckedChange={(checked) => {
+                                      if (isGroup) {
+                                        toggleMasterRecords(
+                                          displayRow.records,
+                                          checked === true
+                                        )
+                                        return
+                                      }
+
+                                      toggleMasterRow(
+                                        record.id,
+                                        checked === true,
+                                        isShiftClickingMasterRowRef.current
+                                      )
+                                    }}
+                                    aria-label={
+                                      isGroup
+                                        ? `Select paired NetSuite records for ${record.salesOrderNumber || record.id}`
+                                        : `Select NetSuite record ${record.salesOrderNumber || record.id}`
+                                    }
+                                    className="after:-inset-2"
+                                    disabled={isReadOnly}
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      isShiftClickingMasterRowRef.current =
+                                        event.shiftKey
+                                    }}
+                                  />
+                                  {isGroup ? (
+                                    <button
+                                      type="button"
+                                      aria-label={
+                                        isExpanded
+                                          ? "Collapse paired NetSuite records"
+                                          : "Expand paired NetSuite records"
+                                      }
+                                      aria-expanded={isExpanded}
+                                      className="flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        toggleMasterGroup(displayRow.id)
+                                      }}
+                                    >
+                                      <ChevronDownIcon
+                                        className={
+                                          "size-4 transition-transform " +
+                                          (isExpanded ? "" : "-rotate-90")
+                                        }
+                                      />
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </TableCell>
+                              <TableCell className="break-words tabular-nums">
+                                {isExpanded
+                                  ? ""
+                                  : formatTransactionDate(record.transactionDate)}
+                              </TableCell>
+                              {showAngolaNetSuiteReferences ? (
+                                <>
+                                  <TableCell className="break-words">
+                                    {isExpanded
+                                      ? ""
+                                      : record.billOfLadingNumber || "-"}
+                                  </TableCell>
+                                  <TableCell className="break-words">
+                                    {isExpanded ? "" : record.ctnNumber || "-"}
+                                  </TableCell>
+                                </>
+                              ) : (
+                                <>
+                                  <TableCell className="font-medium break-words">
+                                    {isExpanded
+                                      ? ""
+                                      : record.salesOrderNumber || "-"}
+                                  </TableCell>
+                                  <TableCell className="break-words">
+                                    {isExpanded
+                                      ? ""
+                                      : (showCtnReference
+                                          ? record.ctnNumber
+                                          : record.billOfLadingNumber) || "-"}
+                                  </TableCell>
+                                </>
+                              )}
                               <TableCell className="break-words">
-                                {record.billOfLadingNumber || "-"}
+                                {isExpanded ? "" : record.status || "-"}
                               </TableCell>
-                              <TableCell className="break-words">
-                                {record.ctnNumber || "-"}
+                              <TableCell className="text-right tabular-nums">
+                                {isExpanded ? "" : formatAmount(record.amount)}
                               </TableCell>
-                            </>
-                          ) : (
-                            <>
-                              <TableCell className="font-medium break-words">
-                                {record.salesOrderNumber || "-"}
-                              </TableCell>
-                              <TableCell className="break-words">
-                                {(showCtnReference
-                                  ? record.ctnNumber
-                                  : record.billOfLadingNumber) || "-"}
-                              </TableCell>
-                            </>
-                          )}
-                          <TableCell className="break-words">
-                            {record.status || "-"}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {formatAmount(record.amount)}
-                          </TableCell>
-                        </TableRow>
-                      ))
+                            </TableRow>
+                            {isGroup && isExpanded
+                              ? displayRow.records.map((childRecord) => (
+                                  <TableRow
+                                    key={childRecord.id}
+                                    aria-selected={selectedMasterRecordIds.has(
+                                      childRecord.id
+                                    )}
+                                    className="h-12 border-l-4 border-l-border"
+                                  >
+                                    <TableCell className="w-14 pl-9">
+                                      <Checkbox
+                                        checked={selectedMasterRecordIds.has(
+                                          childRecord.id
+                                        )}
+                                        onCheckedChange={(checked) =>
+                                          toggleMasterRow(
+                                            childRecord.id,
+                                            checked === true,
+                                            isShiftClickingMasterRowRef.current
+                                          )
+                                        }
+                                        aria-label={`Select NetSuite record ${childRecord.salesOrderNumber || childRecord.id}`}
+                                        className="after:-inset-2"
+                                        disabled={isReadOnly}
+                                        onClick={(event) => {
+                                          event.stopPropagation()
+                                          isShiftClickingMasterRowRef.current =
+                                            event.shiftKey
+                                        }}
+                                      />
+                                    </TableCell>
+                                    <TableCell className="break-words pl-4 tabular-nums">
+                                      {formatTransactionDate(
+                                        childRecord.transactionDate
+                                      )}
+                                    </TableCell>
+                                    {showAngolaNetSuiteReferences ? (
+                                      <>
+                                        <TableCell className="break-words">
+                                          {childRecord.billOfLadingNumber || "-"}
+                                        </TableCell>
+                                        <TableCell className="break-words">
+                                          {childRecord.ctnNumber || "-"}
+                                        </TableCell>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <TableCell className="pl-4 font-medium break-words">
+                                          {childRecord.salesOrderNumber || "-"}
+                                        </TableCell>
+                                        <TableCell className="break-words">
+                                          {(showCtnReference
+                                            ? childRecord.ctnNumber
+                                            : childRecord.billOfLadingNumber) ||
+                                            "-"}
+                                        </TableCell>
+                                      </>
+                                    )}
+                                    <TableCell className="break-words">
+                                      {childRecord.status || "-"}
+                                    </TableCell>
+                                    <TableCell className="text-right tabular-nums">
+                                      {formatAmount(childRecord.amount)}
+                                    </TableCell>
+                                  </TableRow>
+                                ))
+                              : null}
+                          </React.Fragment>
+                        )
+                      })
                     ) : (
                       <TableRow>
                         <TableCell
@@ -1396,7 +2608,8 @@ function ReconciliationWorkbench({
           </Table>
         </div>
       </section>
-    </div>
+      </div>
+    </>
   )
 }
 
@@ -1999,22 +3212,26 @@ function CountryReconciliationDashboard({
   )
   const rolledInternalIdSet = new Set(rolledInternalIds)
   const leftInvoiceRecordIdSet = new Set(leftInvoiceRecordIds)
+  const autoRolledRecordIdSet = reconciliation.autoRolledMasterIds
+  const autoLeftRecordIdSet = reconciliation.autoLeftMasterIds
   const reconciledRecords = masterRecords.filter((record) =>
     reconciledMasterIds.has(record.id)
   )
   const rolledRecords = masterRecords.filter(
     (record) =>
-      !reconciledMasterIds.has(record.id) &&
-      Boolean(record.sourceInternalId) &&
-      rolledInternalIdSet.has(record.sourceInternalId)
+      autoRolledRecordIdSet.has(record.id) ||
+      (!reconciledMasterIds.has(record.id) &&
+        Boolean(record.sourceInternalId) &&
+        rolledInternalIdSet.has(record.sourceInternalId))
   )
   const rolledRecordIds = new Set(rolledRecords.map((record) => record.id))
   const leftInMonthRecords = masterRecords.filter(
     (record) =>
-      !reconciledMasterIds.has(record.id) &&
-      !rolledRecordIds.has(record.id) &&
-      (leftInvoiceRecordIdSet.size === 0 ||
-        leftInvoiceRecordIdSet.has(record.id))
+      autoLeftRecordIdSet.has(record.id) ||
+      (!reconciledMasterIds.has(record.id) &&
+        !rolledRecordIds.has(record.id) &&
+        (leftInvoiceRecordIdSet.size === 0 ||
+          leftInvoiceRecordIdSet.has(record.id)))
   )
   const dashboardSections: {
     value: CountryDashboardSection
@@ -2610,9 +3827,31 @@ export function MonthEndCountryReconciliationView({
     React.useState(false)
   const masterInputRef = React.useRef<HTMLInputElement>(null)
   const countryReportInputRef = React.useRef<HTMLInputElement>(null)
+  const pasteReportTextareaRef = React.useRef<HTMLTextAreaElement>(null)
+  const pasteReportActionsRef = React.useRef<HTMLDivElement>(null)
+  const shouldScrollPastedReportRef = React.useRef(false)
   const activeCountryId = countryId
     ? getCanonicalCountryId(countryId)
     : undefined
+
+  function keepPasteReportControlsReachable() {
+    window.requestAnimationFrame(() => {
+      const textarea = pasteReportTextareaRef.current
+
+      if (textarea) {
+        const endPosition = textarea.value.length
+
+        textarea.scrollTop = textarea.scrollHeight
+        textarea.setSelectionRange(endPosition, endPosition)
+        textarea.focus()
+      }
+
+      pasteReportActionsRef.current?.scrollIntoView({
+        block: "nearest",
+        inline: "nearest",
+      })
+    })
+  }
 
   React.useEffect(() => {
     let isMounted = true
@@ -2741,8 +3980,10 @@ export function MonthEndCountryReconciliationView({
       reconcileRecords({
         masterRecords: records,
         countryRecords: countryReportRecords,
+        countryId: activeCountryId,
+        period: record?.period,
       }),
-    [countryReportRecords, records]
+    [activeCountryId, countryReportRecords, record?.period, records]
   )
   const reconciliationCounts = React.useMemo(
     () => ({
@@ -2813,6 +4054,7 @@ export function MonthEndCountryReconciliationView({
     Object.assign(checked, getMasterTransactionDateCheckedValues(masterRecords))
 
     delete checked[journalEntrySnapshotKey(activeCountryId)]
+    delete checked[resolvedCountryReportRowsKey(activeCountryId)]
 
     for (const linkedCountryId of linkedCountryIds.length
       ? linkedCountryIds
@@ -2859,6 +4101,7 @@ export function MonthEndCountryReconciliationView({
     }
 
     delete checked[journalEntrySnapshotKey(activeCountryId)]
+    delete checked[resolvedCountryReportRowsKey(activeCountryId)]
 
     for (const linkedCountryId of linkedCountryIds.length
       ? linkedCountryIds
@@ -2902,12 +4145,6 @@ export function MonthEndCountryReconciliationView({
       ...latestRecord.checked,
       [approvalKey]: serializeApprovedInternalIds(approvedInternalIds),
     }
-
-    for (const linkedCountryId of linkedCountryIds.length
-      ? linkedCountryIds
-      : [activeCountryId]) {
-      checked[monthEndTaskKey(linkedCountryId, "reconcile")] = true
-    }
     const updatedRecord = {
       ...latestRecord,
       checked,
@@ -2917,11 +4154,6 @@ export function MonthEndCountryReconciliationView({
     await saveMonthEndRecord(updatedRecord)
     setRecord(updatedRecord)
     window.dispatchEvent(new Event("month-end:records-updated"))
-    router.push(
-      country?.invoiceRequired === true
-        ? countryDashboardHref
-        : journalEntryHref
-    )
 
     return {
       savedCount: newInternalIds.length,
@@ -2965,6 +4197,84 @@ export function MonthEndCountryReconciliationView({
     await saveMonthEndRecord(updatedRecord)
     setRecord(updatedRecord)
     window.dispatchEvent(new Event("month-end:records-updated"))
+  }
+
+  async function reconcileCountryRows(
+    selectedRecords: MonthEndCountryReportRecord[],
+    reason: string,
+    note: string
+  ) {
+    if (!record || !activeCountryId || isMonthClosed) {
+      return
+    }
+
+    const latestRecord = (await getMonthEndRecord(record.period)) ?? record
+    const resolvedKey = resolvedCountryReportRowsKey(activeCountryId)
+    const existingResolvedRows = parseResolvedCountryReportRows(
+      latestRecord.checked[resolvedKey]
+    )
+    const selectedRecordIds = new Set(selectedRecords.map((item) => item.id))
+    const nextResolvedRows = [
+      ...existingResolvedRows.filter((item) => !selectedRecordIds.has(item.id)),
+      ...selectedRecords.map((item) => ({
+        id: item.id,
+        reason,
+        note,
+        resolvedAt: new Date().toISOString(),
+      })),
+    ]
+    const checked = {
+      ...latestRecord.checked,
+      [resolvedKey]: JSON.stringify(nextResolvedRows),
+    }
+
+    delete checked[journalEntrySnapshotKey(activeCountryId)]
+
+    for (const linkedCountryId of linkedCountryIds.length
+      ? linkedCountryIds
+      : [activeCountryId]) {
+      delete checked[monthEndTaskKey(linkedCountryId, "journal")]
+    }
+
+    const updatedRecord = {
+      ...latestRecord,
+      checked,
+      updatedAt: new Date().toISOString(),
+    }
+
+    await saveMonthEndRecord(updatedRecord)
+    setRecord(updatedRecord)
+    window.dispatchEvent(new Event("month-end:records-updated"))
+  }
+
+  async function proceedFromReconciliation() {
+    if (!record || !activeCountryId || isMonthClosed) {
+      return
+    }
+
+    const latestRecord = (await getMonthEndRecord(record.period)) ?? record
+    const checked = { ...latestRecord.checked }
+
+    for (const linkedCountryId of linkedCountryIds.length
+      ? linkedCountryIds
+      : [activeCountryId]) {
+      checked[monthEndTaskKey(linkedCountryId, "reconcile")] = true
+    }
+
+    const updatedRecord = {
+      ...latestRecord,
+      checked,
+      updatedAt: new Date().toISOString(),
+    }
+
+    await saveMonthEndRecord(updatedRecord)
+    setRecord(updatedRecord)
+    window.dispatchEvent(new Event("month-end:records-updated"))
+    router.push(
+      country?.invoiceRequired === true
+        ? countryDashboardHref
+        : journalEntryHref
+    )
   }
 
   async function moveInvoicesToAngolaOot(
@@ -3100,11 +4410,26 @@ export function MonthEndCountryReconciliationView({
       delete checked[rollApprovalKey(linkedCountryId)]
       delete checked[leftInvoiceKey(linkedCountryId)]
       delete checked[journalEntrySnapshotKey(linkedCountryId)]
+      delete checked[resolvedCountryReportRowsKey(linkedCountryId)]
+      delete checked[sourceFileNameKey(linkedCountryId, "country")]
     }
 
     delete checked[rollApprovalKey(activeCountryId)]
     delete checked[leftInvoiceKey(activeCountryId)]
     delete checked[journalEntrySnapshotKey(activeCountryId)]
+    delete checked[resolvedCountryReportRowsKey(activeCountryId)]
+    delete checked[sourceFileNameKey(activeCountryId, "country")]
+
+    await Promise.all(
+      Array.from(new Set([activeCountryId, ...workflowCountryIds])).map(
+        (countryId) =>
+          replaceMonthEndCountryReportRecords({
+            monthEndId: record.id,
+            countryId,
+            records: [],
+          })
+      )
+    )
 
     const updatedRecord = {
       ...latestRecord,
@@ -3114,6 +4439,7 @@ export function MonthEndCountryReconciliationView({
 
     await saveMonthEndRecord(updatedRecord)
     setRecord(updatedRecord)
+    setCountryReportRecords([])
     window.dispatchEvent(new Event("month-end:records-updated"))
     router.push(reconciliationReportHref)
   }
@@ -3369,17 +4695,43 @@ export function MonthEndCountryReconciliationView({
         : undefined
       const parsedGroups = await Promise.all(
         files.map(async (file) => {
-          const mappedRecords = isDefaultCountryReportMapping(
-            activeCountry?.countryReportMapping
-          )
-            ? undefined
-            : parseMappedCountryReportCsv(
-                await reportFileToCsvText(file, record?.period),
-                activeCountry?.countryReportMapping
-              )
+          const savedMapping = activeCountry?.countryReportMapping
+          const shouldUseSavedMapping =
+            Boolean(savedMapping) && !isDefaultCountryReportMapping(savedMapping)
+          const csvText = await reportFileToCsvText(file, record?.period)
+          const gabonRecords =
+            activeCountryId === "frabemar-gabon"
+              ? parseGabonCountryReportCsv(csvText)
+              : []
 
-          if (mappedRecords?.length) {
-            return { records: mappedRecords }
+          if (gabonRecords.length) {
+            return { records: gabonRecords }
+          }
+
+          const mappedRecords = shouldUseSavedMapping
+            ? parseMappedCountryReportCsv(csvText, savedMapping)
+            : undefined
+
+          if (shouldUseSavedMapping) {
+            if (mappedRecords?.length) {
+              return { records: mappedRecords }
+            }
+
+            const aiMappedRecords = savedMapping
+              ? await parseCountryReportWithAiMapping({
+                  csvText,
+                  fileName: file.name,
+                  mapping: savedMapping,
+                })
+              : []
+
+            if (aiMappedRecords.length) {
+              return { records: aiMappedRecords }
+            }
+
+            throw new Error(
+              `The saved ${activeCountry?.name ?? "country"} report mapping did not find any rows in ${file.name}, even after AI normalized the upload. Reopen the mapping, upload this sample, adjust the columns, and save it.`
+            )
           }
 
           return parseCountryReportUploadFile(file, { period: record?.period })
@@ -3450,19 +4802,60 @@ export function MonthEndCountryReconciliationView({
     setUploadError("")
 
     try {
+      const template = await getMonthEndTemplate()
+      const activeCountry = activeCountryId
+        ? template.countries.find((item) => item.id === activeCountryId)
+        : undefined
+      const savedMapping = activeCountry?.countryReportMapping
+      const shouldUseSavedMapping =
+        Boolean(savedMapping) && !isDefaultCountryReportMapping(savedMapping)
+      const gabonRecords =
+        activeCountryId === "frabemar-gabon"
+          ? parseGabonCountryReportCsv(pastedReportText)
+          : []
+      const mappedRecords = shouldUseSavedMapping
+        ? parseMappedCountryReportCsv(pastedReportText, savedMapping)
+        : undefined
+      const aiMappedRecords =
+        !gabonRecords.length &&
+        shouldUseSavedMapping &&
+        savedMapping &&
+        !mappedRecords?.length
+          ? await parseCountryReportWithAiMapping({
+              csvText: pastedReportText,
+              fileName: "Pasted report",
+              mapping: savedMapping,
+            })
+          : []
+
+      if (
+        !gabonRecords.length &&
+        shouldUseSavedMapping &&
+        !mappedRecords?.length &&
+        !aiMappedRecords.length
+      ) {
+        throw new Error(
+          `The saved ${activeCountry?.name ?? "country"} report mapping did not find any rows in the pasted report, even after AI normalized it. Reopen the mapping, paste this sample, adjust the columns, and save it.`
+        )
+      }
+
       await saveParsedCountryReportRecords({
-        parsedRecords: parseCountryReportText(pastedReportText, {
-          period: record.period,
-        }),
+        parsedRecords: gabonRecords.length
+          ? gabonRecords
+          : mappedRecords?.length
+            ? mappedRecords
+            : aiMappedRecords.length
+              ? aiMappedRecords
+              : parseCountryReportText(pastedReportText, {
+                  period: record.period,
+                }),
         sourceLabel: "Pasted report",
       })
       setPastedReportText("")
       setIsPasteReportOpen(false)
     } catch (error) {
       setUploadError(
-        error instanceof Error
-          ? error.message
-          : "Could not upload that pasted report."
+        getUploadErrorMessage(error, "Could not read the pasted report.")
       )
     } finally {
       setIsUploadingCountryReport(false)
@@ -3534,6 +4927,11 @@ export function MonthEndCountryReconciliationView({
     : []
   const leftInvoiceRecordIds = activeCountryId
     ? parseApprovedInternalIds(record?.checked[leftInvoiceKey(activeCountryId)])
+    : []
+  const resolvedCountryReportRows = activeCountryId
+    ? parseResolvedCountryReportRows(
+        record?.checked[resolvedCountryReportRowsKey(activeCountryId)]
+      )
     : []
   const activeDashboardSection = activeCountryId
     ? parseCountryDashboardSection(
@@ -3897,17 +5295,28 @@ export function MonthEndCountryReconciliationView({
               </div>
 
               {isPasteReportOpen && !isMonthClosed ? (
-                <Card className="rounded-lg py-0 shadow-sm">
-                  <CardContent className="grid gap-3 p-3">
+                <Card className="max-h-[min(70vh,42rem)] overflow-hidden rounded-lg py-0 shadow-sm">
+                  <CardContent className="flex max-h-[min(70vh,42rem)] min-h-0 flex-col gap-3 p-3">
                     <Textarea
+                      ref={pasteReportTextareaRef}
                       value={pastedReportText}
-                      onChange={(event) =>
+                      onChange={(event) => {
                         setPastedReportText(event.target.value)
-                      }
+                        if (shouldScrollPastedReportRef.current) {
+                          shouldScrollPastedReportRef.current = false
+                          keepPasteReportControlsReachable()
+                        }
+                      }}
+                      onPaste={() => {
+                        shouldScrollPastedReportRef.current = true
+                      }}
                       placeholder="Paste report data"
-                      className="min-h-48 resize-y font-mono text-sm"
+                      className="min-h-48 flex-1 resize-none overflow-auto rounded-lg [field-sizing:fixed] font-mono text-sm"
                     />
-                    <div className="flex justify-end gap-2">
+                    <div
+                      ref={pasteReportActionsRef}
+                      className="-mx-3 -mb-3 flex shrink-0 justify-end gap-2 border-t bg-card px-3 py-3"
+                    >
                       <Button
                         variant="outline"
                         onClick={() => {
@@ -3987,6 +5396,7 @@ export function MonthEndCountryReconciliationView({
                   missingMasterRecordIds={missingMasterRecordIds}
                   rolledInternalIds={rolledInternalIds}
                   leftInvoiceRecordIds={leftInvoiceRecordIds}
+                  resolvedCountryReportRows={resolvedCountryReportRows}
                   showCountryColumn={showCountryColumn}
                   onDropMasterFile={uploadMasterFile}
                   onDropCountryFiles={uploadCountryReports}
@@ -4004,6 +5414,8 @@ export function MonthEndCountryReconciliationView({
                   matchedMasterCount={reconciliationCounts.master}
                   onRollInvoices={rollInvoices}
                   onLeaveInvoices={leaveInvoices}
+                  onReconcileCountryRows={reconcileCountryRows}
+                  onProceed={proceedFromReconciliation}
                   onMoveInvoicesToOot={
                     activeCountryId === "angola"
                       ? moveInvoicesToAngolaOot

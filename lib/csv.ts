@@ -1,8 +1,54 @@
+function countDelimiter(line: string, delimiter: string) {
+  let count = 0
+  let inQuotes = false
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]
+    const nextChar = line[index + 1]
+
+    if (char === '"' && inQuotes && nextChar === '"') {
+      index += 1
+      continue
+    }
+
+    if (char === '"') {
+      inQuotes = !inQuotes
+      continue
+    }
+
+    if (char === delimiter && !inQuotes) {
+      count += 1
+    }
+  }
+
+  return count
+}
+
+function detectCsvDelimiter(text: string) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 10)
+  const delimiters = [",", ";", "\t"]
+  const scores = delimiters.map((delimiter) => ({
+    delimiter,
+    score: lines.reduce(
+      (total, line) => total + countDelimiter(line, delimiter),
+      0
+    ),
+  }))
+  const best = scores.sort((first, second) => second.score - first.score)[0]
+
+  return best && best.score > 0 ? best.delimiter : ","
+}
+
 export function parseCsv(text: string) {
   const rows: string[][] = []
   let field = ""
   let row: string[] = []
   let inQuotes = false
+  const delimiter = detectCsvDelimiter(text)
 
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index]
@@ -19,7 +65,7 @@ export function parseCsv(text: string) {
       continue
     }
 
-    if (char === "," && !inQuotes) {
+    if (char === delimiter && !inQuotes) {
       row.push(field)
       field = ""
       continue

@@ -23,12 +23,13 @@ import {
   ChevronsUpDownIcon,
   FileSpreadsheetIcon,
   GripVerticalIcon,
-  InfoIcon,
+  Loader2Icon,
   MoreHorizontalIcon,
   PencilIcon,
   PlusIcon,
   SaveIcon,
   SearchIcon,
+  SparklesIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react"
@@ -54,6 +55,11 @@ import {
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import {
+  NavigationMenu,
+  NavigationMenuItem,
+  NavigationMenuList,
+} from "@/components/ui/navigation-menu"
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -66,6 +72,7 @@ import {
   SelectTrigger,
 } from "@/components/ui/select"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Table,
@@ -77,11 +84,6 @@ import {
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
-import {
   defaultCountryReportMapping,
   defaultMasterReportMapping,
   getMonthEndTemplate,
@@ -89,12 +91,14 @@ import {
   makeTemplateId,
   saveMonthEndTemplate,
   type MonthEndTemplate,
+  type ReportMappingAiTrainingExample,
   type ReportFieldMapping,
   type ReportMappingField,
   type TemplateCountryRow,
   type TemplateModuleLevel,
   type TemplateSimpleTask,
 } from "@/lib/month-end-template"
+import { cn } from "@/lib/utils"
 import {
   extractPdfText,
   extractWorkbookRows,
@@ -125,6 +129,29 @@ type ReportSampleField = {
   sourceColumn: string
   label: string
   previewValues: string[]
+}
+
+type ReportSamplePreview = {
+  fileName: string
+  fileType: string
+  source: "upload" | "paste"
+  message: string
+  diagnostics: string[]
+  rows: string[][]
+  textLines: string[]
+  imageDataUrl?: string
+}
+
+type ReportMappingSampleResult = {
+  headerRowIndex: number
+  headers: string[]
+  fields: ReportSampleField[]
+  preview: ReportSamplePreview
+}
+
+type ReportMappingAiTable = {
+  columns?: string[]
+  rows?: string[][]
 }
 
 type ReportMappingSamples = Record<
@@ -213,6 +240,24 @@ const countryReportMappingFields = [
     label: "Third Country Amount",
     description: "Optional third amount column added into the report total.",
     aliases: ["amount3", "tertiaryamount", "tax", "vat"],
+  },
+  {
+    id: "status",
+    label: "Country Report Status",
+    description: "Status from the country report row.",
+    aliases: ["status", "notes", "note"],
+  },
+  {
+    id: "transactionDate",
+    label: "Validation Date",
+    description: "Validation date used for country report filtering.",
+    aliases: ["validationdate", "validatedat", "date"],
+  },
+  {
+    id: "sellingDate",
+    label: "Selling Date",
+    description: "Selling date used for Gabon current-month handling.",
+    aliases: ["sellingdate", "solddate", "saledate"],
   },
   {
     id: "sourceCountryName",
@@ -819,17 +864,37 @@ export function TemplateEditorView() {
     })
   }
 
+  function updateCountryAiNotes(countryId: string, aiNotes: string) {
+    const updatedAt = new Date().toISOString()
+
+    persist({
+      ...template,
+      countriesModule: {
+        ...template.countriesModule,
+        updatedAt,
+      },
+      countries: template.countries.map((country) =>
+        country.id === countryId
+          ? {
+              ...country,
+              aiNotes,
+              updatedAt,
+            }
+          : country
+      ),
+    })
+  }
+
   async function loadMappingSample(
     file: File,
     mappingKind: "countryReport" | "masterReport"
-  ) {
-    const extension = file.name.split(".").pop()?.toLowerCase()
+  ): Promise<ReportMappingSampleResult> {
+    const upload = await readMappingUpload(file)
     const sampleText =
-      extension === "pdf" || file.type === "application/pdf"
-        ? await extractPdfText(file)
-        : extension === "xlsx" || extension === "xls"
-          ? await extractWorkbookRows(file)
-          : await file.text()
+      upload.text ||
+      [file.name, file.type, file.size ? `${file.size} bytes` : ""]
+        .filter(Boolean)
+        .join("\n")
     const sample = analyzeReportSample(sampleText)
     const mappedSample =
       mappingKind === "countryReport"
@@ -838,6 +903,17 @@ export function TemplateEditorView() {
             await parseCountryReportSampleFile(file)
           )
         : sample
+    const sampleResult = {
+      ...mappedSample,
+      preview: buildReportSamplePreview({
+        fileName: file.name,
+        fileType: file.type || "Unknown file type",
+        source: "upload",
+        text: sampleText,
+        imageDataUrl: upload.imageDataUrl,
+        diagnostics: upload.diagnostics,
+      }),
+    }
 
     if (activeCountryId) {
       setMappingHeaders((current) => ({
@@ -850,13 +926,13 @@ export function TemplateEditorView() {
       }))
     }
 
-    return mappedSample
+    return sampleResult
   }
 
   async function loadMappingSampleText(
     csvText: string,
     mappingKind: "countryReport" | "masterReport"
-  ) {
+  ): Promise<ReportMappingSampleResult> {
     const sample = analyzeReportSample(csvText)
     const mappedSample =
       mappingKind === "countryReport"
@@ -865,6 +941,16 @@ export function TemplateEditorView() {
             parseCountryReportSampleText(csvText)
           )
         : sample
+    const sampleResult = {
+      ...mappedSample,
+      preview: buildReportSamplePreview({
+        fileName: "Pasted report sample",
+        fileType: "Pasted text",
+        source: "paste",
+        text: csvText,
+        diagnostics: [],
+      }),
+    }
 
     if (activeCountryId) {
       setMappingHeaders((current) => ({
@@ -877,7 +963,7 @@ export function TemplateEditorView() {
       }))
     }
 
-    return mappedSample
+    return sampleResult
   }
 
   function reorderCountryRow(event: DragEndEvent) {
@@ -1024,36 +1110,32 @@ export function TemplateEditorView() {
       <AppSidebar variant="inset" />
       <SidebarInset>
         <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
-          <SiteHeader title="Modules" />
+          <SiteHeader title="Settings" />
           <div className="grid gap-4 px-4 py-4 lg:px-6">
             {!activeModuleId ? (
-              <Card className="rounded-lg shadow-sm">
-                <CardHeader className="gap-3">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <CardTitle>Modules</CardTitle>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button onClick={() => setShowModuleForm(true)}>
-                        <PlusIcon />
-                        Add New Module
-                      </Button>
-                    </div>
+              <section className="grid gap-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <h1 className="text-lg font-semibold">Settings</h1>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={() => setShowModuleForm(true)}>
+                      <PlusIcon />
+                      Add New Setting
+                    </Button>
                   </div>
-                </CardHeader>
-                <CardContent className="grid gap-4">
+                </div>
+                <div className="grid gap-4">
                   {showModuleForm ? (
                     <Card role="dialog" className="rounded-lg shadow-none">
                       <CardHeader>
-                        <CardTitle>Add New Module</CardTitle>
+                        <CardTitle>Add New Setting</CardTitle>
                       </CardHeader>
                       <CardContent>
                         <FieldSet>
-                          <FieldLegend>Module Details</FieldLegend>
+                          <FieldLegend>Setting Details</FieldLegend>
                           <FieldGroup className="grid gap-4 md:grid-cols-2">
                             <Field>
                               <FieldLabel htmlFor="module-name">
-                                Module Name
+                                Setting Name
                               </FieldLabel>
                               <Input
                                 id="module-name"
@@ -1064,7 +1146,7 @@ export function TemplateEditorView() {
                                     name: event.target.value,
                                   }))
                                 }
-                                placeholder="New module name"
+                                placeholder="New setting name"
                               />
                             </Field>
                             <LevelField
@@ -1104,7 +1186,7 @@ export function TemplateEditorView() {
                   <Table containerClassName="rounded-lg border bg-background">
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Module Name</TableHead>
+                        <TableHead>Setting Name</TableHead>
                         <TableHead>Level</TableHead>
                         <TableHead>Last Modified</TableHead>
                         <TableHead className="w-12" />
@@ -1155,7 +1237,7 @@ export function TemplateEditorView() {
                                   onClick={() => startEditModule(module.id)}
                                 >
                                   <PencilIcon />
-                                  Edit Module
+                                  Edit Setting
                                 </DropdownMenuItem>
                                 {protectedModuleIds.has(module.id) ? null : (
                                   <DropdownMenuItem
@@ -1173,48 +1255,46 @@ export function TemplateEditorView() {
                       ))}
                     </TableBody>
                   </Table>
-                </CardContent>
-              </Card>
+                </div>
+              </section>
             ) : (
-              <Card className="rounded-lg shadow-sm">
-                <CardHeader>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <Button
-                        variant="outline"
-                        size="icon-sm"
-                        className="h-9 w-9 shrink-0 rounded-full md:h-9 md:w-9"
-                        aria-label={
-                          activeCountry
-                            ? "Back to countries"
-                            : "Back to modules"
+              <section className="grid gap-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      className="h-9 w-9 shrink-0 rounded-full md:h-9 md:w-9"
+                      aria-label={
+                        activeCountry
+                          ? "Back to countries"
+                          : "Back to settings"
+                      }
+                      onClick={() => {
+                        if (activeCountry) {
+                          requestCloseActiveCountry()
+                          return
                         }
-                        onClick={() => {
-                          if (activeCountry) {
-                            requestCloseActiveCountry()
-                            return
-                          }
 
-                          setActiveModuleId(null)
-                          setItemForm(null)
-                          setActiveCountryId(null)
-                        }}
-                      >
-                        <ArrowLeftIcon />
-                      </Button>
-                      <CardTitle className="min-w-0 truncate">
-                        {activeCountry?.name ?? activeModule?.name}
-                      </CardTitle>
-                    </div>
-                    {activeCountry ? null : (
-                      <Button onClick={startAddItem}>
-                        <PlusIcon />
-                        Add New
-                      </Button>
-                    )}
+                        setActiveModuleId(null)
+                        setItemForm(null)
+                        setActiveCountryId(null)
+                      }}
+                    >
+                      <ArrowLeftIcon />
+                    </Button>
+                    <h1 className="min-w-0 truncate text-lg font-semibold">
+                      {activeCountry?.name ?? activeModule?.name}
+                    </h1>
                   </div>
-                </CardHeader>
-                <CardContent className="grid gap-4">
+                  {activeCountry ? null : (
+                    <Button onClick={startAddItem}>
+                      <PlusIcon />
+                      Add New
+                    </Button>
+                  )}
+                </div>
+                <div className="grid gap-4">
                   {itemForm ? (
                     itemForm.mode === "edit-country" ? null : (
                       <ItemFormPanel
@@ -1253,6 +1333,9 @@ export function TemplateEditorView() {
                           mapping
                         )
                       }
+                      onSaveAiNotes={(aiNotes) =>
+                        updateCountryAiNotes(activeCountry.id, aiNotes)
+                      }
                     />
                   ) : activeModuleId === countriesModuleId ? (
                     <CountriesTable
@@ -1277,8 +1360,8 @@ export function TemplateEditorView() {
                       onDeleteTask={deleteTask}
                     />
                   ) : null}
-                </CardContent>
-              </Card>
+                </div>
+              </section>
             )}
           </div>
         </main>
@@ -1301,14 +1384,14 @@ function ModuleDetailsPanel({
   return (
     <Card className="rounded-lg shadow-none">
       <CardHeader>
-        <CardTitle>Module Details</CardTitle>
+        <CardTitle>Setting Details</CardTitle>
       </CardHeader>
       <CardContent>
         <FieldSet>
-          <FieldLegend>Module Settings</FieldLegend>
+          <FieldLegend>Setting Configuration</FieldLegend>
           <FieldGroup className="grid gap-4 md:grid-cols-2">
             <Field>
-              <FieldLabel htmlFor="module-detail-tab">Module Title</FieldLabel>
+              <FieldLabel htmlFor="module-detail-tab">Setting Title</FieldLabel>
               <Input
                 id="module-detail-tab"
                 value={draft.tab}
@@ -1339,7 +1422,7 @@ function ModuleDetailsPanel({
           </Button>
           <Button onClick={onSave}>
             <SaveIcon />
-            Save Module Details
+            Save Setting Details
           </Button>
         </div>
       </CardContent>
@@ -1588,6 +1671,8 @@ type CountryMappingPanelHandle = {
   discardMappings: () => void
 }
 
+type CountrySettingsSection = "country-information" | "report-mapping" | "ai-rules"
+
 const CountryMappingPanel = React.forwardRef<
   CountryMappingPanelHandle,
   {
@@ -1608,23 +1693,16 @@ const CountryMappingPanel = React.forwardRef<
     onLoadSample: (
       file: File,
       mappingKind: "countryReport" | "masterReport"
-    ) => Promise<{
-      headerRowIndex: number
-      headers: string[]
-      fields: ReportSampleField[]
-    }>
+    ) => Promise<ReportMappingSampleResult>
     onLoadSampleText: (
       csvText: string,
       mappingKind: "countryReport" | "masterReport"
-    ) => Promise<{
-      headerRowIndex: number
-      headers: string[]
-      fields: ReportSampleField[]
-    }>
+    ) => Promise<ReportMappingSampleResult>
     onSaveMapping: (
       mappingType: "countryReportMapping" | "masterReportMapping",
       mapping?: ReportFieldMapping
     ) => void
+    onSaveAiNotes: (aiNotes: string) => void
   }
 >(function CountryMappingPanel(
   {
@@ -1642,33 +1720,107 @@ const CountryMappingPanel = React.forwardRef<
     onLoadSample,
     onLoadSampleText,
     onSaveMapping,
+    onSaveAiNotes,
   },
   ref
 ) {
   const [activeMappingTab, setActiveMappingTab] =
     React.useState("country-report")
+  const [activeSettingsSection, setActiveSettingsSection] =
+    React.useState<CountrySettingsSection>("report-mapping")
   const [showResetConfirm, setShowResetConfirm] = React.useState(false)
+  const [isEditingAiNotes, setIsEditingAiNotes] = React.useState(false)
+  const [isSavingAiNotes, setIsSavingAiNotes] = React.useState(false)
+  const [aiNotesDraft, setAiNotesDraft] = React.useState(country.aiNotes ?? "")
   const countryReportMappingRef = React.useRef<ReportMappingCardHandle>(null)
   const masterReportMappingRef = React.useRef<ReportMappingCardHandle>(null)
   const activeMappingRef =
     activeMappingTab === "master-report"
       ? masterReportMappingRef
       : countryReportMappingRef
+  const activeSampleMode =
+    activeMappingTab === "master-report" || !country.requiresPasteReport
+      ? "upload"
+      : "paste"
+  const countryAiRules = getCountryAiRules(country)
+  const hasUnsavedAiNotes = aiNotesDraft !== (country.aiNotes ?? "")
+  const countrySettingsItems: Array<{
+    id: CountrySettingsSection
+    label: string
+  }> = [
+    ...(detailsForm
+      ? [{ id: "country-information" as const, label: "Country Information" }]
+      : []),
+    { id: "report-mapping", label: "Report Mapping" },
+    { id: "ai-rules", label: "AI Rules & Notes" },
+  ]
+
+  React.useEffect(() => {
+    setAiNotesDraft(country.aiNotes ?? "")
+    setIsEditingAiNotes(false)
+    setIsSavingAiNotes(false)
+    setActiveSettingsSection("report-mapping")
+  }, [country.id, country.aiNotes])
+
+  React.useEffect(() => {
+    if (!detailsForm && activeSettingsSection === "country-information") {
+      setActiveSettingsSection("report-mapping")
+    }
+  }, [activeSettingsSection, detailsForm])
+
+  async function saveAiNotes() {
+    const trimmedDraft = aiNotesDraft.trim()
+
+    setIsSavingAiNotes(true)
+
+    try {
+      const response = await fetch("/api/country-ai-notes/refine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          countryId: country.id,
+          countryName: country.name,
+          rules: countryAiRules,
+          currentNotes: country.aiNotes ?? "",
+          editText: trimmedDraft,
+        }),
+      })
+      const payload = (await response.json()) as {
+        notes?: string
+      }
+      const nextNotes = (payload.notes ?? trimmedDraft).trim()
+
+      setAiNotesDraft(nextNotes)
+      onSaveAiNotes(nextNotes)
+      setIsEditingAiNotes(false)
+    } catch {
+      onSaveAiNotes(trimmedDraft)
+      setIsEditingAiNotes(false)
+    } finally {
+      setIsSavingAiNotes(false)
+    }
+  }
 
   React.useImperativeHandle(ref, () => ({
     hasUnsavedChanges() {
       return (
         countryReportMappingRef.current?.hasUnsavedChanges() === true ||
-        masterReportMappingRef.current?.hasUnsavedChanges() === true
+        masterReportMappingRef.current?.hasUnsavedChanges() === true ||
+        hasUnsavedAiNotes
       )
     },
     saveMappings() {
       countryReportMappingRef.current?.saveMapping()
       masterReportMappingRef.current?.saveMapping()
+      if (hasUnsavedAiNotes) {
+        saveAiNotes()
+      }
     },
     discardMappings() {
       countryReportMappingRef.current?.discardChanges()
       masterReportMappingRef.current?.discardChanges()
+      setAiNotesDraft(country.aiNotes ?? "")
+      setIsEditingAiNotes(false)
     },
   }))
 
@@ -1691,32 +1843,48 @@ const CountryMappingPanel = React.forwardRef<
           </div>
         </div>
       ) : null}
-      {detailsForm ? (
+      <NavigationMenu className="max-w-none justify-start border-b">
+        <NavigationMenuList className="min-w-0 flex-wrap justify-start gap-6">
+          {countrySettingsItems.map((item) => (
+            <NavigationMenuItem key={item.id}>
+              <button
+                type="button"
+                className={cn(
+                  "-mb-px inline-flex h-9 items-center border-b border-transparent bg-transparent px-0 py-1 text-sm font-medium text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30",
+                  activeSettingsSection === item.id &&
+                    "border-foreground text-foreground"
+                )}
+                onClick={() => setActiveSettingsSection(item.id)}
+              >
+                {item.label}
+              </button>
+            </NavigationMenuItem>
+          ))}
+        </NavigationMenuList>
+      </NavigationMenu>
+      {detailsForm && activeSettingsSection === "country-information" ? (
         <section className="grid gap-3">
-          <h2 className="text-lg font-semibold">Country Information</h2>
-          <div className="rounded-lg border bg-background p-4">
-            <CountryFields
-              form={detailsForm}
-              parentRows={parentRows}
-              template={template}
-              onChange={onChangeDetailsForm}
-              showLegend={false}
-            />
-            <div className="mt-5 flex justify-end gap-2">
-              <Button onClick={onSaveDetailsForm}>
-                <SaveIcon />
-                Save
-              </Button>
-            </div>
+          <CountryFields
+            form={detailsForm}
+            parentRows={parentRows}
+            template={template}
+            onChange={onChangeDetailsForm}
+            showLegend={false}
+          />
+          <div className="flex justify-end gap-2">
+            <Button onClick={onSaveDetailsForm}>
+              <SaveIcon />
+              Save
+            </Button>
           </div>
         </section>
       ) : null}
-      <Tabs
-        value={activeMappingTab}
-        onValueChange={setActiveMappingTab}
-        className="min-h-0 flex-1 gap-4"
-      >
-        <h2 className="text-lg font-semibold">Report Mapping</h2>
+      {activeSettingsSection === "report-mapping" ? (
+        <Tabs
+          value={activeMappingTab}
+          onValueChange={setActiveMappingTab}
+          className="min-h-0 flex-1 gap-4"
+        >
         <div className="flex items-center gap-3">
           <div className="-mx-4 min-w-0 flex-1 overflow-x-auto px-4 md:mx-0 md:px-0">
             <TabsList className="h-auto min-h-11 w-max min-w-full flex-nowrap items-center gap-1 rounded-[1.375rem] p-1 md:min-w-0">
@@ -1741,7 +1909,9 @@ const CountryMappingPanel = React.forwardRef<
               onClick={() => activeMappingRef.current?.openSample()}
             >
               <FileSpreadsheetIcon />
-              Sample
+              {activeSampleMode === "paste"
+                ? "Paste Report Sample"
+                : "Upload Report Sample"}
             </Button>
             <DropdownMenu
               onOpenChange={(open) => {
@@ -1837,10 +2007,105 @@ const CountryMappingPanel = React.forwardRef<
             onSave={(mapping) => onSaveMapping("masterReportMapping", mapping)}
           />
         </TabsContent>
-      </Tabs>
+        </Tabs>
+      ) : null}
+      {activeSettingsSection === "ai-rules" ? (
+      <section className="grid gap-3">
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="text-sm text-muted-foreground">
+              Rules printed from the current mapper and reconciliation logic.
+            </p>
+          </div>
+          {!isEditingAiNotes ? (
+            <Button
+              variant="outline"
+              className="shrink-0"
+              onClick={() => setIsEditingAiNotes(true)}
+            >
+              <PencilIcon />
+              Edit Notes
+            </Button>
+          ) : null}
+        </div>
+        <div className="grid gap-2 rounded-lg border bg-muted/20 p-3 text-sm">
+          {countryAiRules.map((rule) => (
+            <div key={rule} className="leading-6">
+              {rule}
+            </div>
+          ))}
+        </div>
+        {isEditingAiNotes ? (
+          <div className="grid gap-3">
+            <Textarea
+              value={aiNotesDraft}
+              onChange={(event) => setAiNotesDraft(event.target.value)}
+              placeholder="Add country-specific AI notes here."
+              className="min-h-36"
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setAiNotesDraft(country.aiNotes ?? "")
+                  setIsEditingAiNotes(false)
+                }}
+                disabled={isSavingAiNotes}
+              >
+                Cancel
+              </Button>
+              <Button onClick={saveAiNotes} disabled={isSavingAiNotes}>
+                {isSavingAiNotes ? (
+                  <Loader2Icon className="animate-spin" />
+                ) : (
+                  <SaveIcon />
+                )}
+                Save Notes
+              </Button>
+            </div>
+          </div>
+        ) : country.aiNotes?.trim() ? (
+          <div className="whitespace-pre-wrap text-sm leading-6">
+            {country.aiNotes}
+          </div>
+        ) : null}
+      </section>
+      ) : null}
     </div>
   )
 })
+
+function getCountryAiRules(country: TemplateCountryRow) {
+  const rules = [
+    "AI upload reading is the default mapper for new or edited report mappings.",
+    "AI must normalize PDFs, Excel files, CSV files, screenshots, and pasted text into a clean table before assigning fields.",
+    "AI must treat every visible uploaded or pasted row as report data unless the row is clearly a visual spacer or extraction artifact.",
+    "AI must not invent a header row when the source report does not clearly have one.",
+    "Saved column assignments and prior corrected examples for this country take priority over generic assumptions.",
+    "When a user changes a column assignment and saves the mapping, that corrected layout is saved as training for future uploads.",
+    "Normal reconciliation can match by Bill of Lading, CTN / ECTN, or Invoice / Sales Order number.",
+    "Manual country reconciliation requires a reason and note, then removes those country rows from the unresolved report.",
+    "Manual Roll Invoice saves selected NetSuite rows by Internal ID and removes them from the unresolved NetSuite report.",
+    "Manual Leave Invoice saves selected NetSuite rows as left in the current month and removes them from the unresolved NetSuite report.",
+    "If every remaining NetSuite row is selected for Roll Invoice or Leave Invoice and there are no unresolved country rows, the workflow proceeds to the next step.",
+  ]
+
+  if (country.id === "frabemar-gabon") {
+    return [
+      ...rules,
+      "Gabon matching uses Bill of Lading number or Invoice number only; CTN number must not be used for matching.",
+      "Gabon rows with a Validation Date auto reconcile when their Bill of Lading or Invoice number matches NetSuite.",
+      "If a Gabon row has a Validation Date and matches two NetSuite rows, both NetSuite rows auto reconcile.",
+      "If a Gabon row has no Validation Date, has a Selling Date in the current month, and matches exactly two NetSuite rows, the Gabon Form record stays in the current month and the Gabon Tariff record rolls.",
+      "Those Gabon no-validation/current-selling-date pairs are removed from the main reconciliation report after the automatic Form/Tariff decision.",
+      "Gabon NetSuite records that are not Gabon Out of Territory must have exactly two records grouped by Created From and Bill of Lading Number.",
+      "Non-Out-of-Territory Gabon records without exactly two grouped records are flagged red at the top of the NetSuite table.",
+      "Gabon country report import omits rows where the cargo/unit columns are empty and the FORM BIETC, FEES, and TOTAL COLLECTED money columns are zero or blank.",
+    ]
+  }
+
+  return rules
+}
 
 function normalizeMappingHeader(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "")
@@ -1853,27 +2118,297 @@ function normalizePastedReportText(value: string) {
     .join("\n")
 }
 
+function splitPaymentDescription(value: string) {
+  const parts = value.split(/\s+-\s+/).map((part) => part.trim())
+
+  if (parts.length >= 3) {
+    return {
+      description: parts[0],
+      invoiceNumber: parts[1],
+      reference: parts.slice(2).join(" - "),
+    }
+  }
+
+  return {
+    description: value.trim(),
+    invoiceNumber: "",
+    reference: "",
+  }
+}
+
+function inferRepeatingPaymentRows(lines: string[]) {
+  const rows: string[][] = []
+
+  for (let index = 0; index < lines.length - 2; index += 3) {
+    const descriptionLine = lines[index]?.trim() ?? ""
+    const dateLine = lines[index + 1]?.trim() ?? ""
+    const amountLine = lines[index + 2]?.trim() ?? ""
+
+    if (
+      !descriptionLine ||
+      !/^\d{1,2}\/\d{1,2}\/\d{4}(?:\s+\d{1,2}:\d{2}:\d{2})?$/.test(
+        dateLine
+      ) ||
+      !/^\d[\d\s.,]*$/.test(amountLine)
+    ) {
+      return undefined
+    }
+
+    const parsedDescription = splitPaymentDescription(descriptionLine)
+
+    rows.push([
+      parsedDescription.description,
+      parsedDescription.invoiceNumber,
+      parsedDescription.reference,
+      dateLine,
+      amountLine,
+    ])
+  }
+
+  if (!rows.length || rows.length * 3 !== lines.length) {
+    return undefined
+  }
+
+  return {
+    columns: [
+      "Description",
+      "Invoice Number",
+      "Bill of Lading Number",
+      "Date",
+      "Amount",
+    ],
+    rows,
+  }
+}
+
+function isImageUpload(file: File) {
+  return file.type.startsWith("image/")
+}
+
+async function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+
+    reader.onload = () => resolve(String(reader.result ?? ""))
+    reader.onerror = () =>
+      reject(reader.error ?? new Error("Could not preview the image."))
+    reader.readAsDataURL(file)
+  })
+}
+
+async function readMappingUpload(file: File) {
+  const extension = file.name.split(".").pop()?.toLowerCase()
+  const diagnostics: string[] = []
+  let imageDataUrl: string | undefined
+
+  if (isImageUpload(file)) {
+    try {
+      imageDataUrl = await readFileAsDataUrl(file)
+    } catch (error) {
+      diagnostics.push(
+        error instanceof Error ? error.message : "Could not preview the image."
+      )
+    }
+
+    return {
+      text: "",
+      imageDataUrl,
+      diagnostics: [
+        ...diagnostics,
+        "This is an image upload. Use AI Suggest once your OpenAI API key is configured, or map manually from another text sample.",
+      ],
+    }
+  }
+
+  try {
+    if (extension === "pdf" || file.type === "application/pdf") {
+      return { text: await extractPdfText(file), imageDataUrl, diagnostics }
+    }
+
+    if (extension === "xlsx" || extension === "xls") {
+      return { text: await extractWorkbookRows(file), imageDataUrl, diagnostics }
+    }
+
+    return { text: await file.text(), imageDataUrl, diagnostics }
+  } catch (error) {
+    diagnostics.push(
+      error instanceof Error
+        ? `Primary import failed: ${error.message}`
+        : "Primary import failed."
+    )
+  }
+
+  try {
+    const fallbackText = await file.text()
+
+    diagnostics.push("Loaded the file as plain text fallback.")
+
+    return { text: fallbackText, imageDataUrl, diagnostics }
+  } catch (error) {
+    diagnostics.push(
+      error instanceof Error
+        ? `Plain text fallback failed: ${error.message}`
+        : "Plain text fallback failed."
+    )
+  }
+
+  return {
+    text: "",
+    imageDataUrl,
+    diagnostics: [
+      ...diagnostics,
+      "No readable text was found. The upload is still kept so you can preview it and try AI extraction.",
+    ],
+  }
+}
+
+function buildReportSamplePreview({
+  fileName,
+  fileType,
+  source,
+  text,
+  imageDataUrl,
+  diagnostics,
+}: {
+  fileName: string
+  fileType: string
+  source: "upload" | "paste"
+  text: string
+  imageDataUrl?: string
+  diagnostics: string[]
+}): ReportSamplePreview {
+  const normalizedText = normalizePastedReportText(text)
+  const allTextLines = normalizedText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const inferredTable = inferRepeatingPaymentRows(allTextLines)
+  const parsedRows = parseCsv(normalizedText).filter((row) =>
+    row.some((cell) => cell.trim())
+  )
+  const rows = inferredTable
+    ? inferredTable.rows.slice(0, 8)
+    : parsedRows.slice(0, 8)
+  const textLines = allTextLines.slice(0, 12)
+  const message = rows.length
+    ? `Previewing ${rows.length} row${rows.length === 1 ? "" : "s"} from the upload.`
+    : imageDataUrl
+      ? "Previewing the uploaded image."
+      : "No structured rows were found, but the upload is still available for mapping."
+
+  return {
+    fileName,
+    fileType,
+    source,
+    message,
+    diagnostics,
+    rows,
+    textLines,
+    imageDataUrl,
+  }
+}
+
+function sampleFieldsFromTable(
+  columns: string[],
+  rows: string[][]
+): ReportSampleField[] {
+  const columnCount = Math.max(
+    columns.length,
+    ...rows.map((row) => row.length),
+    0
+  )
+  const normalizedColumns = Array.from(
+    { length: columnCount },
+    (_, columnIndex) => columns[columnIndex]?.trim() || `Column ${columnIndex + 1}`
+  )
+
+  return normalizedColumns
+    .map((column, columnIndex) => {
+      const label = column.trim() || `Column ${columnIndex + 1}`
+
+      return {
+        sourceColumn: label,
+        label,
+        previewValues: rows
+          .map((row) => row[columnIndex]?.trim() ?? "")
+          .filter(Boolean)
+          .slice(0, 3),
+      }
+    })
+    .filter((field) => field.label)
+}
+
+function MappingTableSkeleton({ progress }: { progress: number }) {
+  return (
+    <div className="grid gap-3 rounded-lg border bg-background p-3">
+      <div className="h-2 overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full rounded-full bg-primary/70 transition-[width] duration-500 ease-out"
+          style={{ width: `${Math.max(4, Math.min(progress, 100))}%` }}
+        />
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        {[0, 1, 2].map((column) => (
+          <div key={column} className="grid gap-2">
+            <Skeleton className="h-8 rounded-md" />
+            <Skeleton className="h-3 w-3/4 rounded-md" />
+          </div>
+        ))}
+      </div>
+      <div className="grid gap-2">
+        {[0, 1, 2, 3].map((row) => (
+          <div key={row} className="grid grid-cols-3 gap-3">
+            <Skeleton className="h-5 rounded-md" />
+            <Skeleton className="h-5 rounded-md" />
+            <Skeleton className="h-5 rounded-md" />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function analyzeReportSample(value: string): {
   headerRowIndex: number
   headers: string[]
   fields: ReportSampleField[]
 } {
   const normalizedText = normalizePastedReportText(value)
+  const textLines = normalizedText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const inferredTable = inferRepeatingPaymentRows(textLines)
+
+  if (inferredTable) {
+    return {
+      headerRowIndex: 0,
+      headers: inferredTable.columns,
+      fields: sampleFieldsFromTable(inferredTable.columns, inferredTable.rows),
+    }
+  }
+
   const rows = parseCsv(normalizedText)
-  const headerRowIndex = rows.findIndex(
+  const firstStructuredRowIndex = rows.findIndex(
     (row) => row.filter((cell) => cell.trim()).length >= 2
   )
-  const headers = rows[headerRowIndex] ?? []
-  const dataRows = headerRowIndex >= 0 ? rows.slice(headerRowIndex + 1) : []
+  const firstStructuredRow =
+    firstStructuredRowIndex >= 0 ? rows[firstStructuredRowIndex] : []
+  const headers = firstStructuredRow.map(
+    (_, columnIndex) => `Column ${columnIndex + 1}`
+  )
+  const dataRows =
+    firstStructuredRowIndex >= 0 ? rows.slice(firstStructuredRowIndex) : []
   const hasStructuredColumns =
-    headerRowIndex >= 0 &&
+    firstStructuredRowIndex >= 0 &&
     headers.length > 1 &&
     headers.some((header) => header.trim()) &&
     dataRows.some((row) => row.filter((cell) => cell.trim()).length > 1)
 
   if (hasStructuredColumns) {
     return {
-      headerRowIndex,
+      headerRowIndex:
+        firstStructuredRowIndex >= 0 ? firstStructuredRowIndex : 0,
       headers,
       fields: headers
         .map((header, columnIndex) => ({
@@ -1888,10 +2423,6 @@ function analyzeReportSample(value: string): {
     }
   }
 
-  const textLines = normalizedText
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
   const previewLines = textLines.slice(0, 3)
   const lineFields = textLines.slice(0, 8).map((line, index) => ({
     sourceColumn: `__text_line_${index + 1}__`,
@@ -2032,11 +2563,22 @@ function makeExtraMappingId() {
   return `extra-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+function isGenericMappingColumn(value: string) {
+  return /^Column\s+\d+$/i.test(value.trim())
+}
+
 function cloneFieldMapping(mapping: ReportFieldMapping): ReportFieldMapping {
   return {
     headerRowIndex: mapping.headerRowIndex,
     fields: { ...mapping.fields },
     extraFields: mapping.extraFields?.map((field) => ({ ...field })) ?? [],
+    aiTrainingExamples:
+      mapping.aiTrainingExamples?.map((example) => ({
+        ...example,
+        columns: [...example.columns],
+        rows: example.rows.map((row) => [...row]),
+        assignments: { ...example.assignments },
+      })) ?? [],
   }
 }
 
@@ -2045,7 +2587,61 @@ function emptyReportMapping(): ReportFieldMapping {
     headerRowIndex: 0,
     fields: {},
     extraFields: [],
+    aiTrainingExamples: [],
   }
+}
+
+function makeAiTrainingExample(
+  mapping: ReportFieldMapping,
+  columns: ReportSampleField[],
+  rows: string[][]
+): ReportMappingAiTrainingExample | undefined {
+  if (!columns.length || !rows.length) {
+    return undefined
+  }
+
+  const assignments = Object.fromEntries(
+    Object.entries(mapping.fields).filter(([, sourceColumn]) =>
+      Boolean(sourceColumn)
+    )
+  ) as Partial<Record<ReportMappingField, string>>
+
+  if (!Object.keys(assignments).length) {
+    return undefined
+  }
+
+  return {
+    id: `ai-example-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    createdAt: new Date().toISOString(),
+    columns: columns.map((column) => column.sourceColumn).slice(0, 20),
+    rows: rows.slice(0, 8).map((row) => row.slice(0, 20)),
+    assignments,
+  }
+}
+
+function mergeAiTrainingExamples(
+  current: ReportMappingAiTrainingExample[] | undefined,
+  next: ReportMappingAiTrainingExample | undefined
+) {
+  const examples = current ?? []
+
+  if (!next) {
+    return examples
+  }
+
+  const nextSignature = JSON.stringify({
+    columns: next.columns,
+    assignments: next.assignments,
+  })
+  const withoutDuplicate = examples.filter(
+    (example) =>
+      JSON.stringify({
+        columns: example.columns,
+        assignments: example.assignments,
+      }) !== nextSignature
+  )
+
+  return [...withoutDuplicate, next].slice(-12)
 }
 
 function serializeReportMapping(mapping: ReportFieldMapping | undefined) {
@@ -2063,19 +2659,11 @@ const ReportMappingCard = React.forwardRef<
     onLoadSample: (
       file: File,
       mappingKind: "countryReport" | "masterReport"
-    ) => Promise<{
-      headerRowIndex: number
-      headers: string[]
-      fields: ReportSampleField[]
-    }>
+    ) => Promise<ReportMappingSampleResult>
     onLoadSampleText: (
       csvText: string,
       mappingKind: "countryReport" | "masterReport"
-    ) => Promise<{
-      headerRowIndex: number
-      headers: string[]
-      fields: ReportSampleField[]
-    }>
+    ) => Promise<ReportMappingSampleResult>
     onSave: (mapping?: ReportFieldMapping) => void
   }
 >(function ReportMappingCard(
@@ -2092,9 +2680,19 @@ const ReportMappingCard = React.forwardRef<
   ref
 ) {
   const inputRef = React.useRef<HTMLInputElement | null>(null)
+  const aiAbortControllerRef = React.useRef<AbortController | null>(null)
+  const aiProgressTimerRef = React.useRef<number | null>(null)
   const [showPasteSample, setShowPasteSample] = React.useState(false)
   const [pasteSample, setPasteSample] = React.useState("")
   const [hasPendingSample, setHasPendingSample] = React.useState(false)
+  const [samplePreview, setSamplePreview] =
+    React.useState<ReportSamplePreview | null>(null)
+  const [aiSampleFields, setAiSampleFields] = React.useState<
+    ReportSampleField[]
+  >([])
+  const [, setAiMessage] = React.useState("")
+  const [isAiSuggesting, setIsAiSuggesting] = React.useState(false)
+  const [aiProgress, setAiProgress] = React.useState(0)
   const [draft, setDraft] = React.useState<ReportFieldMapping>(
     mapping ?? {
       headerRowIndex: 0,
@@ -2102,9 +2700,11 @@ const ReportMappingCard = React.forwardRef<
       extraFields: [],
     }
   )
-  const sampleFields = sampleHeaders.length
-    ? sampleHeaders
-    : [
+  const sampleFields = aiSampleFields.length
+    ? aiSampleFields
+    : sampleHeaders.length
+      ? sampleHeaders
+      : [
         ...Object.values(draft.fields)
           .filter(Boolean)
           .map((sourceColumn) => ({
@@ -2121,12 +2721,6 @@ const ReportMappingCard = React.forwardRef<
             previewValues: [],
           })) ?? []),
       ]
-  const fieldLabelsBySource = new Map(
-    sampleFields.map((sampleField) => [
-      sampleField.sourceColumn,
-      sampleField.label,
-    ])
-  )
   React.useEffect(() => {
     setDraft(
       mapping ?? {
@@ -2137,18 +2731,49 @@ const ReportMappingCard = React.forwardRef<
     )
   }, [mapping])
 
-  async function handleSampleFile(file: File) {
-    const sample = await onLoadSample(file, mappingKind)
+  React.useEffect(() => {
+    return () => {
+      aiAbortControllerRef.current?.abort()
+      if (aiProgressTimerRef.current !== null) {
+        window.clearInterval(aiProgressTimerRef.current)
+      }
+    }
+  }, [])
 
-    applySampleHeaders(sample)
-    setHasPendingSample(true)
+  async function handleSampleFile(file: File) {
+    try {
+      const sample = await onLoadSample(file, mappingKind)
+
+      setSamplePreview(sample.preview)
+      setAiSampleFields([])
+      applySampleHeaders(sample)
+      setHasPendingSample(true)
+      await requestAiMappingSuggestions(sample.preview, sample.fields)
+    } catch (error) {
+      setSamplePreview({
+        fileName: file.name,
+        fileType: file.type || "Unknown file type",
+        source: "upload",
+        message: "The file could not be loaded into the mapper.",
+        diagnostics: [
+          error instanceof Error ? error.message : "Unknown upload error.",
+        ],
+        rows: [],
+        textLines: [],
+      })
+      setAiMessage("Upload failed before a preview could be created.")
+    }
   }
 
   async function handleSamplePaste() {
     const sample = await onLoadSampleText(pasteSample, mappingKind)
 
+    setSamplePreview(sample.preview)
+    setAiSampleFields([])
     applySampleHeaders(sample)
     setHasPendingSample(true)
+    setShowPasteSample(false)
+    await requestAiMappingSuggestions(sample.preview, sample.fields)
   }
 
   function applySampleHeaders(sample: {
@@ -2168,21 +2793,8 @@ const ReportMappingCard = React.forwardRef<
         {}
       ),
       extraFields: current.extraFields ?? [],
+      aiTrainingExamples: current.aiTrainingExamples ?? [],
     }))
-  }
-
-  function updateField(field: ReportMappingField, value: string) {
-    setDraft((current) => ({
-      ...current,
-      fields: {
-        ...current.fields,
-        [field]: value === reportMappingNoneValue ? undefined : value,
-      },
-    }))
-  }
-
-  function formatMappedSource(value: string | undefined) {
-    return value ? (fieldLabelsBySource.get(value) ?? value) : "Not mapped"
   }
 
   function getAssignedTargetValue(sourceColumn: string) {
@@ -2201,7 +2813,33 @@ const ReportMappingCard = React.forwardRef<
     return extraField ? `extra:${extraField.id}` : reportMappingNoneValue
   }
 
-  function assignSourceField(sourceColumn: string, targetValue: string | null) {
+  function formatColumnAssignment(sourceColumn: string) {
+    const value = getAssignedTargetValue(sourceColumn)
+
+    if (value === reportMappingNoneValue) {
+      return "Unassigned"
+    }
+
+    if (value.startsWith("core:")) {
+      const fieldId = value.replace("core:", "")
+
+      return fields.find((field) => field.id === fieldId)?.label ?? "Unassigned"
+    }
+
+    if (value.startsWith("extra:")) {
+      const fieldId = value.replace("extra:", "")
+
+      return (
+        draft.extraFields?.find((field) => field.id === fieldId)?.label ??
+        "Extra Field"
+      )
+    }
+
+    return "Unassigned"
+  }
+
+  function assignSourceColumn(sourceColumn: string, targetValue: string | null) {
+    setHasPendingSample(true)
     setDraft((current) => {
       const clearedFields = Object.fromEntries(
         Object.entries(current.fields).map(([fieldId, mappedSource]) => [
@@ -2252,6 +2890,33 @@ const ReportMappingCard = React.forwardRef<
     })
   }
 
+  const rawPreviewRows = samplePreview?.rows ?? []
+  const previewColumnCount = Math.max(
+    sampleFields.length,
+    ...rawPreviewRows.map((row) => row.length),
+    0
+  )
+  const previewColumns = Array.from(
+    { length: previewColumnCount },
+    (_, columnIndex) =>
+      sampleFields[columnIndex] ?? {
+        sourceColumn: `Column ${columnIndex + 1}`,
+        label: `Column ${columnIndex + 1}`,
+        previewValues: rawPreviewRows
+          .map((row) => row[columnIndex]?.trim() ?? "")
+          .filter(Boolean)
+          .slice(0, 3),
+      }
+  )
+  const previewDataRows =
+    rawPreviewRows.length && previewColumns.length
+      ? rawPreviewRows.slice(0, 12)
+      : []
+  const shouldShowMappingTable = samplePreview !== null || previewColumns.length > 0
+  const hasUnsavedMappingChanges =
+    hasPendingSample ||
+    serializeReportMapping(draft) !== serializeReportMapping(mapping)
+
   function addExtraField() {
     setDraft((current) => ({
       ...current,
@@ -2259,27 +2924,6 @@ const ReportMappingCard = React.forwardRef<
         ...(current.extraFields ?? []),
         { id: makeExtraMappingId(), label: "New Field", sourceColumn: "" },
       ],
-    }))
-  }
-
-  function updateExtraField(
-    fieldId: string,
-    updates: Partial<NonNullable<ReportFieldMapping["extraFields"]>[number]>
-  ) {
-    setDraft((current) => ({
-      ...current,
-      extraFields: (current.extraFields ?? []).map((field) =>
-        field.id === fieldId ? { ...field, ...updates } : field
-      ),
-    }))
-  }
-
-  function removeExtraField(fieldId: string) {
-    setDraft((current) => ({
-      ...current,
-      extraFields: (current.extraFields ?? []).filter(
-        (field) => field.id !== fieldId
-      ),
     }))
   }
 
@@ -2295,7 +2939,21 @@ const ReportMappingCard = React.forwardRef<
   }
 
   function saveMapping() {
-    onSave(draft)
+    const trainingExample = makeAiTrainingExample(
+      draft,
+      previewColumns,
+      previewDataRows
+    )
+    const nextDraft = {
+      ...draft,
+      aiTrainingExamples: mergeAiTrainingExamples(
+        draft.aiTrainingExamples,
+        trainingExample
+      ),
+    }
+
+    setDraft(nextDraft)
+    onSave(nextDraft)
     setHasPendingSample(false)
   }
 
@@ -2303,6 +2961,154 @@ const ReportMappingCard = React.forwardRef<
     setDraft(mapping ?? emptyReportMapping())
     setHasPendingSample(false)
     setShowPasteSample(false)
+    setSamplePreview(null)
+    setAiSampleFields([])
+    setAiMessage("")
+    aiAbortControllerRef.current?.abort()
+    aiAbortControllerRef.current = null
+    stopAiProgress()
+    setIsAiSuggesting(false)
+    setAiProgress(0)
+  }
+
+  function cancelAiMapping() {
+    aiAbortControllerRef.current?.abort()
+    aiAbortControllerRef.current = null
+    stopAiProgress()
+    setIsAiSuggesting(false)
+    setAiProgress(0)
+  }
+
+  function stopAiProgress() {
+    if (aiProgressTimerRef.current !== null) {
+      window.clearInterval(aiProgressTimerRef.current)
+      aiProgressTimerRef.current = null
+    }
+  }
+
+  function startAiProgress() {
+    stopAiProgress()
+    const startedAt = Date.now()
+
+    setAiProgress(12)
+    aiProgressTimerRef.current = window.setInterval(() => {
+      const elapsed = Date.now() - startedAt
+      const fastProgress = Math.min(elapsed / 1100, 1)
+      const slowProgress = Math.min(Math.max(elapsed - 1100, 0) / 14000, 1)
+      const easedFast = 1 - Math.pow(1 - fastProgress, 3)
+      const easedSlow = 1 - Math.pow(1 - slowProgress, 2)
+      const targetProgress = 12 + easedFast * 72 + easedSlow * 10
+
+      setAiProgress((current) => Math.max(current, targetProgress))
+    }, 120)
+  }
+
+  async function requestAiMappingSuggestions(
+    previewOverride?: ReportSamplePreview,
+    sampleFieldsOverride?: ReportSampleField[]
+  ) {
+    const activePreview = previewOverride ?? samplePreview
+    const activeSampleFields = sampleFieldsOverride ?? sampleFields
+
+    if (!activePreview) {
+      setAiMessage("Upload or paste a sample before asking AI to suggest.")
+      return
+    }
+
+    setIsAiSuggesting(true)
+    setAiMessage("")
+    aiAbortControllerRef.current?.abort()
+    const abortController = new AbortController()
+    aiAbortControllerRef.current = abortController
+    startAiProgress()
+
+    try {
+      const response = await fetch("/api/report-mapping/ai-suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: abortController.signal,
+        body: JSON.stringify({
+          mappingKind,
+          fields: fields.map((field) => ({
+            id: field.id,
+            label: field.label,
+            aliases: field.aliases,
+          })),
+          sampleFields: activeSampleFields,
+          savedAssignments: draft.fields,
+          trainingExamples: draft.aiTrainingExamples ?? [],
+          preview: activePreview,
+        }),
+      })
+      setAiProgress((current) => Math.max(current, 94))
+      const payload = (await response.json()) as {
+        ok?: boolean
+        message?: string
+        suggestions?: Partial<Record<ReportMappingField, string>>
+        table?: ReportMappingAiTable
+      }
+      setAiProgress((current) => Math.max(current, 97))
+      const aiColumns = payload.table?.columns?.filter(Boolean) ?? []
+      const aiRows = payload.table?.rows ?? []
+      const nextSampleFields = aiColumns.length
+        ? sampleFieldsFromTable(aiColumns, aiRows)
+        : activeSampleFields
+
+      if (nextSampleFields !== activeSampleFields && nextSampleFields.length) {
+        setAiSampleFields(nextSampleFields)
+      }
+
+      if (aiColumns.length) {
+        setSamplePreview((current) =>
+          current
+            ? {
+                ...current,
+                message: `AI laid out ${aiRows.length} row${aiRows.length === 1 ? "" : "s"} into ${aiColumns.length} column${aiColumns.length === 1 ? "" : "s"}.`,
+                rows: aiRows.slice(0, 12),
+              }
+            : current
+        )
+      }
+
+      if (payload.suggestions) {
+        setDraft((current) => ({
+          ...current,
+          fields: fields.reduce<ReportFieldMapping["fields"]>(
+            (nextFields, field) => ({
+              ...nextFields,
+              [field.id]:
+                payload.suggestions?.[field.id] ?? current.fields[field.id],
+            }),
+            {}
+          ),
+        }))
+        setHasPendingSample(true)
+      }
+
+      setAiMessage(
+        payload.message ??
+          (payload.ok
+            ? "AI suggestions were applied."
+            : "AI could not suggest a mapping.")
+      )
+      setAiProgress(100)
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return
+      }
+
+      setAiMessage(
+        error instanceof Error
+          ? `AI Suggest failed: ${error.message}`
+          : "AI Suggest failed. You can still map manually."
+      )
+    } finally {
+      if (aiAbortControllerRef.current === abortController) {
+        aiAbortControllerRef.current = null
+        stopAiProgress()
+        setIsAiSuggesting(false)
+      }
+    }
   }
 
   React.useImperativeHandle(ref, () => ({
@@ -2317,23 +3123,19 @@ const ReportMappingCard = React.forwardRef<
     addExtraField,
     resetToDefaultMapping,
     hasUnsavedChanges() {
-      return (
-        hasPendingSample ||
-        serializeReportMapping(draft) !== serializeReportMapping(mapping)
-      )
+      return hasUnsavedMappingChanges
     },
     saveMapping,
     discardChanges,
   }))
 
   return (
-    <Card className="rounded-lg shadow-none">
-      <CardContent className="grid gap-4">
+    <div className="grid gap-4">
         {sampleMode === "upload" ? (
           <input
             ref={inputRef}
             type="file"
-            accept=".csv,.pdf,.xls,.xlsx,text/csv,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            accept=".csv,.pdf,.xls,.xlsx,image/*,text/csv,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             className="sr-only"
             onChange={(event) => {
               const file = event.currentTarget.files?.[0]
@@ -2351,7 +3153,7 @@ const ReportMappingCard = React.forwardRef<
             <Textarea
               value={pasteSample}
               onChange={(event) => setPasteSample(event.target.value)}
-              placeholder="Paste the report rows here, including the header row."
+              placeholder="Paste the report rows here."
               className="min-h-36"
             />
             <div className="flex justify-end gap-2">
@@ -2370,263 +3172,171 @@ const ReportMappingCard = React.forwardRef<
             </div>
           </div>
         ) : null}
-        {sampleHeaders.length ? (
-          <div className="grid gap-2">
-            {sampleFields.map((sampleField, index) => (
-              <div
-                key={`${sampleField.sourceColumn}-${index}`}
-                className="grid gap-3 rounded-lg border bg-background p-3 md:grid-cols-[minmax(0,1fr)_minmax(14rem,18rem)] md:items-center"
-              >
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium">
-                    {sampleField.label}
-                  </div>
-                  {sampleField.previewValues.length ? (
-                    <div className="mt-1 truncate text-xs text-muted-foreground">
-                      {sampleField.previewValues.join(" | ")}
-                    </div>
-                  ) : (
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      No preview values found.
-                    </div>
-                  )}
-                </div>
-                <Select
-                  value={getAssignedTargetValue(sampleField.sourceColumn)}
-                  onValueChange={(value) =>
-                    assignSourceField(sampleField.sourceColumn, value)
-                  }
-                >
-                  <SelectTrigger className="w-full cursor-pointer">
-                    {formatAssignedTarget(
-                      getAssignedTargetValue(sampleField.sourceColumn),
-                      fields,
-                      draft.extraFields ?? []
-                    )}
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value={reportMappingNoneValue}>
-                        Not mapped
-                      </SelectItem>
-                      {fields.map((field) => (
-                        <SelectItem key={field.id} value={`core:${field.id}`}>
-                          {field.label}
-                        </SelectItem>
-                      ))}
-                      {(draft.extraFields ?? []).map((field) => (
-                        <SelectItem key={field.id} value={`extra:${field.id}`}>
-                          {field.label || "Extra Field"}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+        {shouldShowMappingTable ? (
+          <div className="grid gap-3">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div className="min-w-0">
+                <span className="block truncate text-sm font-medium">
+                  {samplePreview?.fileName ?? "Saved mapping"}
+                </span>
               </div>
-            ))}
-            {(draft.extraFields ?? []).map((field) => (
-              <ExtraMappingField
-                key={field.id}
-                field={field}
-                onChange={updateExtraField}
-                onRemove={removeExtraField}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="grid gap-3 md:grid-cols-2">
-            {fields.map((field) => (
-              <Field key={field.id}>
-                <div className="flex items-center gap-1.5">
-                  <FieldLabel>{field.label}</FieldLabel>
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <button
-                          type="button"
-                          className="text-muted-foreground transition-colors hover:text-foreground"
-                          aria-label={`About ${field.label}`}
-                        >
-                          <InfoIcon className="size-3.5" />
-                        </button>
-                      }
-                    />
-                    <TooltipContent>{field.description}</TooltipContent>
-                  </Tooltip>
-                </div>
-                <Select
-                  value={draft.fields[field.id] ?? reportMappingNoneValue}
-                  onValueChange={(value) => {
-                    if (value) {
-                      updateField(field.id, value)
-                    }
-                  }}
-                  disabled={!sampleFields.length}
-                >
-                  <SelectTrigger className="w-full cursor-pointer">
-                    {formatMappedSource(draft.fields[field.id])}
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value={reportMappingNoneValue}>
-                        Not mapped
-                      </SelectItem>
-                      {sampleFields.map((sampleField, index) => (
-                        <SelectItem
-                          key={`${sampleField.sourceColumn}-${index}`}
-                          value={sampleField.sourceColumn}
-                        >
-                          <div className="grid gap-0.5">
-                            <span>{sampleField.label}</span>
-                            {sampleField.previewValues.length ? (
-                              <span className="max-w-72 truncate text-xs text-muted-foreground">
-                                {sampleField.previewValues.join(" | ")}
-                              </span>
-                            ) : null}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </Field>
-            ))}
-            {(draft.extraFields ?? []).map((field) => (
-              <Field key={field.id}>
-                <div className="flex items-center gap-2">
-                  <Input
-                    value={field.label}
-                    onChange={(event) =>
-                      updateExtraField(field.id, { label: event.target.value })
-                    }
-                    aria-label="Extra field name"
-                  />
+              {samplePreview ? (
+                <div className="flex shrink-0 items-center gap-2">
                   <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={`Remove ${field.label || "extra field"}`}
-                    onClick={() => removeExtraField(field.id)}
+                    variant="outline"
+                    size="sm"
+                    onClick={() => requestAiMappingSuggestions()}
+                    disabled={isAiSuggesting}
                   >
-                    <Trash2Icon />
+                    {isAiSuggesting ? (
+                      <Loader2Icon className="animate-spin" />
+                    ) : (
+                      <SparklesIcon />
+                    )}
+                    AI Suggest
                   </Button>
                 </div>
-                <Select
-                  value={field.sourceColumn || reportMappingNoneValue}
-                  onValueChange={(value) =>
-                    updateExtraField(field.id, {
-                      sourceColumn:
-                        value && value !== reportMappingNoneValue ? value : "",
-                    })
-                  }
-                  disabled={!sampleFields.length}
+              ) : null}
+            </div>
+            {samplePreview?.imageDataUrl ? (
+              <div className="max-h-72 overflow-auto rounded-md border bg-muted/20">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={samplePreview.imageDataUrl}
+                  alt={`Preview of ${samplePreview.fileName}`}
+                  className="h-auto max-w-full"
+                />
+              </div>
+            ) : null}
+            {isAiSuggesting ? (
+              <MappingTableSkeleton progress={aiProgress} />
+            ) : null}
+            {!isAiSuggesting && previewColumns.length ? (
+              <div className="overflow-auto rounded-lg border bg-background p-3">
+                <div
+                  className="grid min-w-max"
+                  style={{
+                    gridTemplateColumns: `repeat(${previewColumns.length}, minmax(14rem, 1fr))`,
+                  }}
                 >
-                  <SelectTrigger className="w-full cursor-pointer">
-                    {formatMappedSource(field.sourceColumn)}
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value={reportMappingNoneValue}>
-                        Not mapped
-                      </SelectItem>
-                      {sampleFields.map((sampleField, index) => (
-                        <SelectItem
-                          key={`${sampleField.sourceColumn}-${index}`}
-                          value={sampleField.sourceColumn}
+                  {previewColumns.map((column, columnIndex) => (
+                    <div
+                      key={`${column.sourceColumn}-${columnIndex}`}
+                      className="grid justify-items-center gap-1 border-b px-2 pb-3"
+                    >
+                      <Select
+                        value={getAssignedTargetValue(column.sourceColumn)}
+                        onValueChange={(value) =>
+                          assignSourceColumn(column.sourceColumn, value)
+                        }
+                      >
+                        <SelectTrigger className="h-8 w-max min-w-56 max-w-none justify-center bg-background px-3 text-center text-xs whitespace-nowrap">
+                          {formatColumnAssignment(column.sourceColumn)}
+                        </SelectTrigger>
+                        <SelectContent
+                          align="center"
+                          alignItemWithTrigger={false}
+                          className="w-max min-w-64"
                         >
-                          <div className="grid gap-0.5">
-                            <span>{sampleField.label}</span>
-                            {sampleField.previewValues.length ? (
-                              <span className="max-w-72 truncate text-xs text-muted-foreground">
-                                {sampleField.previewValues.join(" | ")}
-                              </span>
-                            ) : null}
+                          <SelectGroup>
+                            <SelectItem value={reportMappingNoneValue}>
+                              Unassigned
+                            </SelectItem>
+                            {fields.map((field) => (
+                              <SelectItem
+                                key={field.id}
+                                value={`core:${field.id}`}
+                              >
+                                {field.label}
+                              </SelectItem>
+                            ))}
+                            {(draft.extraFields ?? []).map((field) => (
+                              <SelectItem
+                                key={field.id}
+                                value={`extra:${field.id}`}
+                              >
+                                {field.label || "Extra Field"}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      {!isGenericMappingColumn(column.label) ? (
+                        <span className="max-w-60 truncate text-center text-[11px] font-normal text-muted-foreground">
+                          {column.label}
+                        </span>
+                      ) : null}
+                    </div>
+                  ))}
+                  {(previewDataRows.length ? previewDataRows : [[]]).map(
+                    (row, rowIndex) => (
+                      <React.Fragment
+                        key={`${samplePreview?.fileName ?? "saved-mapping"}-${rowIndex}`}
+                      >
+                        {previewColumns.map((column, cellIndex) => (
+                          <div
+                            key={`${samplePreview?.fileName ?? "saved-mapping"}-${rowIndex}-${column.sourceColumn}`}
+                            className="min-h-10 truncate border-b px-2 py-2 text-center text-xs"
+                            title={
+                              row[cellIndex] ||
+                              (previewDataRows.length
+                                ? "-"
+                                : column.sourceColumn)
+                            }
+                          >
+                            {row[cellIndex] ||
+                              (previewDataRows.length
+                                ? "-"
+                                : column.sourceColumn)}
                           </div>
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </Field>
-            ))}
-          </div>
-        )}
-        {!sampleHeaders.length ? (
-          <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-            {sampleMode === "paste"
-              ? "Paste a sample report to choose its columns."
-              : "Upload a sample report to choose its columns."}
+                        ))}
+                      </React.Fragment>
+                    )
+                  )}
+                </div>
+              </div>
+            ) : !isAiSuggesting && samplePreview?.textLines.length ? (
+              <div className="max-h-56 overflow-auto rounded-md border bg-muted/20 p-3 text-xs">
+                {samplePreview.textLines.map((line, index) => (
+                  <div key={`${samplePreview.fileName}-line-${index}`}>
+                    {line}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {[...(samplePreview?.diagnostics ?? [])]
+              .filter(Boolean)
+              .length ? (
+              <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-950">
+                {[...(samplePreview?.diagnostics ?? [])]
+                  .filter(Boolean)
+                  .map((message, index) => (
+                    <div key={`${message}-${index}`}>{message}</div>
+                  ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
-        <div className="flex justify-end gap-2">
-          <Button onClick={saveMapping}>
-            <SaveIcon />
-            Save Mapping
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  )
-})
-
-function formatAssignedTarget(
-  value: string,
-  fields: ReportMappingFieldDefinition[],
-  extraFields: NonNullable<ReportFieldMapping["extraFields"]>
-) {
-  if (value === reportMappingNoneValue) {
-    return "Not mapped"
-  }
-
-  if (value.startsWith("core:")) {
-    const fieldId = value.replace("core:", "")
-    return fields.find((field) => field.id === fieldId)?.label ?? "Not mapped"
-  }
-
-  if (value.startsWith("extra:")) {
-    const fieldId = value.replace("extra:", "")
-    return (
-      extraFields.find((field) => field.id === fieldId)?.label ?? "Extra Field"
-    )
-  }
-
-  return "Not mapped"
-}
-
-function ExtraMappingField({
-  field,
-  onChange,
-  onRemove,
-}: {
-  field: NonNullable<ReportFieldMapping["extraFields"]>[number]
-  onChange: (
-    fieldId: string,
-    updates: Partial<NonNullable<ReportFieldMapping["extraFields"]>[number]>
-  ) => void
-  onRemove: (fieldId: string) => void
-}) {
-  return (
-    <div className="grid gap-2 rounded-lg border border-dashed bg-muted/20 p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-      <Field>
-        <FieldLabel>Extra Required Field</FieldLabel>
-        <Input
-          value={field.label}
-          onChange={(event) =>
-            onChange(field.id, { label: event.target.value })
-          }
-          aria-label="Extra field name"
-        />
-      </Field>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label={`Remove ${field.label || "extra field"}`}
-        onClick={() => onRemove(field.id)}
-      >
-        <Trash2Icon />
-      </Button>
+        {hasUnsavedMappingChanges ? (
+          <div className="flex justify-end gap-2">
+            {shouldShowMappingTable ? (
+              <Button
+                variant="outline"
+                onClick={isAiSuggesting ? cancelAiMapping : discardChanges}
+              >
+                <XIcon />
+                Cancel
+              </Button>
+            ) : null}
+            <Button onClick={saveMapping}>
+              <SaveIcon />
+              Save Mapping
+            </Button>
+          </div>
+        ) : null}
     </div>
   )
-}
+})
 
 function TasksTable({
   group,

@@ -598,7 +598,21 @@ function mappedColumnIndex(
     return -1
   }
 
+  const columnMatch = header.match(/^Column\s+(\d+)$/i)
+
+  if (columnMatch) {
+    const index = Number(columnMatch[1]) - 1
+
+    return Number.isInteger(index) && index >= 0 ? index : -1
+  }
+
   return headers.findIndex((item) => item === header)
+}
+
+function usesGenericColumnMapping(mapping: ReportFieldMapping) {
+  return Object.values(mapping.fields).some((value) =>
+    /^Column\s+\d+$/i.test(value ?? "")
+  )
 }
 
 export function parseMappedCountryMasterCsv({
@@ -619,7 +633,12 @@ export function parseMappedCountryMasterCsv({
   }
 
   const rows = parseCsv(csvText)
-  const [headers, ...dataRows] = rows.slice(mapping.headerRowIndex)
+  const sampleRows = rows.slice(mapping.headerRowIndex)
+  const genericColumnMapping = usesGenericColumnMapping(mapping)
+  const headers = genericColumnMapping
+    ? sampleRows[0]?.map((_, index) => `Column ${index + 1}`)
+    : sampleRows[0]
+  const dataRows = genericColumnMapping ? sampleRows : sampleRows.slice(1)
 
   if (!headers) {
     return []

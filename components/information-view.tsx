@@ -1396,6 +1396,10 @@ export function InformationView() {
   const [noteSearch, setNoteSearch] = React.useState("")
   const [isNotebookLoading, setIsNotebookLoading] = React.useState(true)
   const nodesRef = React.useRef<InformationNode[]>([])
+  const titleDraftRef = React.useRef("")
+  const contentDraftRef = React.useRef("")
+  const activeIdRef = React.useRef<string | undefined>(undefined)
+  const activeNoteSaveTimeoutRef = React.useRef<number | undefined>(undefined)
   const desktopSearchInputRef = React.useRef<HTMLInputElement | null>(null)
   const desktopNodeRefs = React.useRef<Record<string, HTMLDivElement | null>>(
     {}
@@ -1411,6 +1415,7 @@ export function InformationView() {
   const [selectionByNoteId, setSelectionByNoteId] = React.useState<
     Record<string, EditorSelection>
   >({})
+  const selectionByNoteIdRef = React.useRef<Record<string, EditorSelection>>({})
   const [informationSortOrder, setInformationSortOrder] =
     React.useState<InformationSortOrder>("name-asc")
   const [collapsedFolderIds, setCollapsedFolderIds] = React.useState(
@@ -1506,22 +1511,23 @@ export function InformationView() {
           })
         }
         if (desktopState) {
+          selectionByNoteIdRef.current = desktopState.selectionByNoteId
           setSelectionByNoteId(desktopState.selectionByNoteId)
         }
-        setActiveId(
+        setActiveNodeId(
           requestedView === "trash"
             ? trashViewId
             : requestedView === "notes"
               ? mobileRootNotesId
               : initialNode?.id
         )
-        setContentDraft(initialNode?.content ?? "")
-        setTitleDraft(
+        setActiveDrafts(
           requestedView === "trash"
             ? "Trash"
             : requestedView === "notes"
               ? "Notes"
-              : (initialNode?.title ?? "")
+              : (initialNode?.title ?? ""),
+          initialNode?.content ?? ""
         )
         if (initialNode?.type === "note" && isDesktopViewport()) {
           setEditorRestoreSelectionSignal((signal) => signal + 1)
@@ -1545,6 +1551,18 @@ export function InformationView() {
     nodesRef.current = nodes
   }, [nodes])
 
+  React.useEffect(() => {
+    activeIdRef.current = activeId
+  }, [activeId])
+
+  React.useEffect(() => {
+    return () => {
+      if (activeNoteSaveTimeoutRef.current) {
+        window.clearTimeout(activeNoteSaveTimeoutRef.current)
+      }
+    }
+  }, [])
+
   const activeNode = nodes.find((node) => node.id === activeId)
 
   React.useEffect(() => {
@@ -1555,9 +1573,9 @@ export function InformationView() {
     saveDesktopNotebookState({
       activeId,
       collapsedFolderIds: [...collapsedFolderIds],
-      selectionByNoteId,
+      selectionByNoteId: selectionByNoteIdRef.current,
     })
-  }, [activeId, collapsedFolderIds, selectionByNoteId])
+  }, [activeId, collapsedFolderIds])
 
   React.useEffect(() => {
     if (
@@ -1720,11 +1738,24 @@ export function InformationView() {
     router.push(href)
   }
 
+  function setActiveDrafts(title: string, content: string) {
+    titleDraftRef.current = title
+    contentDraftRef.current = content
+    setTitleDraft(title)
+    setContentDraft(content)
+  }
+
+  function setActiveNodeId(nodeId: string | undefined) {
+    activeIdRef.current = nodeId
+    setActiveId(nodeId)
+  }
+
   function selectNode(nodeId: string, mode: "push" | "replace" = "push") {
+    saveActiveNote()
+
     if (!nodeId) {
-      setActiveId(undefined)
-      setContentDraft("")
-      setTitleDraft("")
+      setActiveNodeId(undefined)
+      setActiveDrafts("", "")
       mobileNoteSelectorRef.current?.removeAttribute("open")
       updateInformationRoute("/information", mode)
       window.dispatchEvent(new Event("information-notes:navigation"))
@@ -1733,9 +1764,11 @@ export function InformationView() {
 
     const node = nodes.find((item) => item.id === nodeId)
 
-    setActiveId(node?.id ?? nodeId)
-    setContentDraft(node?.type === "note" ? (node.content ?? "") : "")
-    setTitleDraft(node?.title ?? "")
+    setActiveNodeId(node?.id ?? nodeId)
+    setActiveDrafts(
+      node?.title ?? "",
+      node?.type === "note" ? (node.content ?? "") : ""
+    )
     mobileNoteSelectorRef.current?.removeAttribute("open")
     updateInformationRoute(
       `/information?node=${encodeURIComponent(nodeId)}`,
@@ -1748,18 +1781,18 @@ export function InformationView() {
   }
 
   function selectRootNotes(mode: "push" | "replace" = "push") {
-    setActiveId(mobileRootNotesId)
-    setContentDraft("")
-    setTitleDraft("Notes")
+    saveActiveNote()
+    setActiveNodeId(mobileRootNotesId)
+    setActiveDrafts("Notes", "")
     mobileNoteSelectorRef.current?.removeAttribute("open")
     updateInformationRoute("/information?view=notes", mode)
     window.dispatchEvent(new Event("information-notes:navigation"))
   }
 
   function selectTrash(mode: "push" | "replace" = "push") {
-    setActiveId(trashViewId)
-    setContentDraft("")
-    setTitleDraft("Trash")
+    saveActiveNote()
+    setActiveNodeId(trashViewId)
+    setActiveDrafts("Trash", "")
     mobileNoteSelectorRef.current?.removeAttribute("open")
     updateInformationRoute("/information?view=trash", mode)
     window.dispatchEvent(new Event("information-notes:navigation"))
@@ -1770,6 +1803,11 @@ export function InformationView() {
     parentId = "",
     titleOverride?: string
   ) {
+    if (activeNoteSaveTimeoutRef.current) {
+      window.clearTimeout(activeNoteSaveTimeoutRef.current)
+      activeNoteSaveTimeoutRef.current = undefined
+    }
+
     const title =
       titleOverride?.trim() ||
       (type === "folder" ? "Untitled Folder" : "Untitled Note")
@@ -1790,8 +1828,8 @@ export function InformationView() {
             item.id === activeNode.id
               ? {
                   ...item,
-                  title: titleDraft.trim() || activeNode.title,
-                  content: contentDraft,
+                  title: titleDraftRef.current.trim() || activeNode.title,
+                  content: contentDraftRef.current,
                   updatedAt: timestamp,
                 }
               : item
@@ -1814,9 +1852,8 @@ export function InformationView() {
       })
     }
     setNoteSearch("")
-    setActiveId(node.id)
-    setContentDraft(node.content ?? "")
-    setTitleDraft(node.title)
+    setActiveNodeId(node.id)
+    setActiveDrafts(node.title, node.content ?? "")
     setEditingTreeNodeId(type === "folder" ? node.id : undefined)
     setTreeTitleDraft(node.title)
     if (type === "note" && !isMobileViewport()) {
@@ -1897,38 +1934,66 @@ export function InformationView() {
     persist(nextNodes)
 
     if (activeId === nodeId) {
+      titleDraftRef.current = cleanTitle
       setTitleDraft(cleanTitle)
     }
   }
 
   function saveActiveNote() {
-    if (!activeNode || activeNode.type !== "note") {
+    const currentActiveId = activeIdRef.current
+    const currentActiveNode = nodesRef.current.find(
+      (node) => node.id === currentActiveId
+    )
+
+    if (!currentActiveNode || currentActiveNode.type !== "note") {
       return
     }
 
-    const cleanTitle = titleDraft.trim() || activeNode.title
-    const timestamp = new Date().toISOString()
+    if (activeNoteSaveTimeoutRef.current) {
+      window.clearTimeout(activeNoteSaveTimeoutRef.current)
+      activeNoteSaveTimeoutRef.current = undefined
+    }
 
-    persist(
-      nodes.map((node) =>
-        node.id === activeNode.id
-          ? {
-              ...node,
-              title: cleanTitle,
-              content: contentDraft,
-              updatedAt: timestamp,
-            }
-          : node
-      )
+    const cleanTitle = titleDraftRef.current.trim() || currentActiveNode.title
+    const timestamp = new Date().toISOString()
+    const nextNodes = nodesRef.current.map((node) =>
+      node.id === currentActiveNode.id
+        ? {
+            ...node,
+            title: cleanTitle,
+            content: contentDraftRef.current,
+            updatedAt: timestamp,
+          }
+        : node
     )
+
+    persist(nextNodes)
+    titleDraftRef.current = cleanTitle
     setTitleDraft(cleanTitle)
   }
 
-  function updateActiveNoteContent(value: string) {
-    const nextNote = splitEditorTitleAndContent(value, titleDraft)
+  function scheduleActiveNoteSave() {
+    if (activeNoteSaveTimeoutRef.current) {
+      window.clearTimeout(activeNoteSaveTimeoutRef.current)
+    }
 
-    setTitleDraft(nextNote.title)
-    setContentDraft(nextNote.content)
+    activeNoteSaveTimeoutRef.current = window.setTimeout(() => {
+      activeNoteSaveTimeoutRef.current = undefined
+      saveActiveNote()
+    }, 700)
+  }
+
+  function updateActiveNoteContent(value: string) {
+    const nextNote = splitEditorTitleAndContent(value, titleDraftRef.current)
+
+    titleDraftRef.current = nextNote.title
+    contentDraftRef.current = nextNote.content
+
+    if (nextNote.title !== titleDraft) {
+      setTitleDraft(nextNote.title)
+    }
+
+    scheduleActiveNoteSave()
   }
 
   function closeMobileNote() {
@@ -2022,6 +2087,8 @@ export function InformationView() {
   }
 
   function deleteNode(nodeId: string) {
+    saveActiveNote()
+
     const deleteIds = descendantsOf(nodes, nodeId)
     const timestamp = new Date().toISOString()
     const nextTrashedNodes = [
@@ -2042,9 +2109,8 @@ export function InformationView() {
 
     persistTrash(nextTrashedNodes)
     persist(nextNodes)
-    setActiveId(nextActive?.id)
-    setContentDraft(nextActive?.content ?? "")
-    setTitleDraft(nextActive?.title ?? "")
+    setActiveNodeId(nextActive?.id)
+    setActiveDrafts(nextActive?.title ?? "", nextActive?.content ?? "")
     updateInformationRoute(
       nextActive
         ? `/information?node=${encodeURIComponent(nextActive.id)}`
@@ -2096,9 +2162,8 @@ export function InformationView() {
 
       return next
     })
-    setActiveId(restoredRoot.id)
-    setContentDraft(restoredRoot.content ?? "")
-    setTitleDraft(restoredRoot.title)
+    setActiveNodeId(restoredRoot.id)
+    setActiveDrafts(restoredRoot.title, restoredRoot.content ?? "")
     updateInformationRoute(
       `/information?node=${encodeURIComponent(restoredRoot.id)}`
     )
@@ -2131,41 +2196,16 @@ export function InformationView() {
   }
 
   React.useEffect(() => {
-    if (!activeNode || activeNode.type !== "note") {
-      return
-    }
-
-    const cleanTitle = titleDraft.trim() || activeNode.title
-
-    if (
-      cleanTitle === activeNode.title &&
-      contentDraft === (activeNode.content ?? "")
-    ) {
-      return
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      const timestamp = new Date().toISOString()
-
-      persist(
-        nodes.map((node) =>
-          node.id === activeNode.id
-            ? {
-                ...node,
-                title: cleanTitle,
-                content: contentDraft,
-                updatedAt: timestamp,
-              }
-            : node
-        )
-      )
-    }, 500)
-
-    return () => window.clearTimeout(timeoutId)
-  }, [activeNode, contentDraft, nodes, titleDraft])
-
-  React.useEffect(() => {
     async function refresh() {
+      const activeElement = document.activeElement as HTMLElement | null
+
+      if (
+        activeElement?.closest(".simple-editor-content .ProseMirror") ||
+        activeNoteSaveTimeoutRef.current
+      ) {
+        return
+      }
+
       setNodes(await getInformationNotes())
     }
 
@@ -2504,7 +2544,10 @@ export function InformationView() {
                           key={activeNode.id}
                           focusSignal={editorFocusSignal}
                           restoreSelectionSignal={editorRestoreSelectionSignal}
-                          restoredSelection={selectionByNoteId[activeNode.id]}
+                          restoredSelection={
+                            selectionByNoteIdRef.current[activeNode.id] ??
+                            selectionByNoteId[activeNode.id]
+                          }
                           value={editorContentWithTitle(
                             titleDraft,
                             contentDraft
@@ -2515,10 +2558,10 @@ export function InformationView() {
                               return
                             }
 
-                            setSelectionByNoteId((current) => ({
-                              ...current,
+                            selectionByNoteIdRef.current = {
+                              ...selectionByNoteIdRef.current,
                               [activeNode.id]: selection,
-                            }))
+                            }
                           }}
                         />
                       </div>
