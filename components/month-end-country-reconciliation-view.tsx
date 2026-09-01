@@ -485,6 +485,8 @@ function ReconciliationWorkbench({
   const [selectedMasterRecordIds, setSelectedMasterRecordIds] = React.useState(
     () => new Set<string>()
   )
+  const lastMasterSelectionAnchorIdRef = React.useRef<string | null>(null)
+  const isShiftClickingMasterRowRef = React.useRef(false)
   const [isRollingInvoices, setIsRollingInvoices] = React.useState(false)
   const [isMovingInvoicesToOot, setIsMovingInvoicesToOot] =
     React.useState(false)
@@ -597,11 +599,35 @@ function ReconciliationWorkbench({
     })
   }
 
-  function toggleMasterRow(recordId: string, checked: boolean) {
+  function toggleMasterRow(
+    recordId: string,
+    checked: boolean,
+    shiftKey = false
+  ) {
     setSelectedMasterRecordIds((current) => {
       const next = new Set(current)
+      const anchorRecordId = lastMasterSelectionAnchorIdRef.current
+      const masterRowIds = masterRows.map(({ record }) => record.id)
+      const anchorIndex = anchorRecordId
+        ? masterRowIds.indexOf(anchorRecordId)
+        : -1
+      const recordIndex = masterRowIds.indexOf(recordId)
 
-      if (checked) {
+      if (shiftKey && anchorIndex >= 0 && recordIndex >= 0) {
+        const startIndex = Math.min(anchorIndex, recordIndex)
+        const endIndex = Math.max(anchorIndex, recordIndex)
+
+        for (const rangeRecordId of masterRowIds.slice(
+          startIndex,
+          endIndex + 1
+        )) {
+          if (checked) {
+            next.add(rangeRecordId)
+          } else {
+            next.delete(rangeRecordId)
+          }
+        }
+      } else if (checked) {
         next.add(recordId)
       } else {
         next.delete(recordId)
@@ -609,20 +635,8 @@ function ReconciliationWorkbench({
 
       return next
     })
-  }
-
-  function toggleMasterRowSelection(recordId: string) {
-    setSelectedMasterRecordIds((current) => {
-      const next = new Set(current)
-
-      if (next.has(recordId)) {
-        next.delete(recordId)
-      } else {
-        next.add(recordId)
-      }
-
-      return next
-    })
+    lastMasterSelectionAnchorIdRef.current = recordId
+    isShiftClickingMasterRowRef.current = false
   }
 
   async function rollSelectedInvoices() {
@@ -975,43 +989,32 @@ function ReconciliationWorkbench({
                   masterRows.map(({ record }) => (
                     <article
                       key={record.id}
-                      role="checkbox"
-                      tabIndex={0}
-                      aria-checked={selectedMasterRecordIds.has(record.id)}
                       className={
                         "rounded-lg border bg-muted/20 p-3 text-sm transition-colors " +
                         (isReadOnly
                           ? ""
                           : selectedMasterRecordIds.has(record.id)
-                            ? "cursor-pointer border-primary bg-primary/5"
-                            : "cursor-pointer hover:bg-muted/40")
+                            ? "border-primary bg-primary/5"
+                            : "")
                       }
-                      onClick={() => {
-                        if (!isReadOnly) {
-                          toggleMasterRowSelection(record.id)
-                        }
-                      }}
-                      onKeyDown={(event) => {
-                        if (isReadOnly) {
-                          return
-                        }
-
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault()
-                          toggleMasterRowSelection(record.id)
-                        }
-                      }}
                     >
                       <div className="flex items-start gap-3">
                         <Checkbox
                           checked={selectedMasterRecordIds.has(record.id)}
                           onCheckedChange={(checked) =>
-                            toggleMasterRow(record.id, checked === true)
+                            toggleMasterRow(
+                              record.id,
+                              checked === true,
+                              isShiftClickingMasterRowRef.current
+                            )
                           }
                           aria-label={`Select NetSuite record ${record.salesOrderNumber || record.id}`}
-                          className="mt-0.5 shrink-0"
+                          className="mt-0.5 shrink-0 after:-inset-2"
                           disabled={isReadOnly}
-                          onClick={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            isShiftClickingMasterRowRef.current = event.shiftKey
+                          }}
                         />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-3">
@@ -1114,35 +1117,26 @@ function ReconciliationWorkbench({
                         <TableRow
                           key={record.id}
                           aria-selected={selectedMasterRecordIds.has(record.id)}
-                          className={
-                            "h-12 " + (isReadOnly ? "" : "cursor-pointer")
-                          }
-                          onClick={() => {
-                            if (!isReadOnly) {
-                              toggleMasterRowSelection(record.id)
-                            }
-                          }}
-                          onKeyDown={(event) => {
-                            if (isReadOnly) {
-                              return
-                            }
-
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault()
-                              toggleMasterRowSelection(record.id)
-                            }
-                          }}
-                          tabIndex={0}
+                          className="h-12"
                         >
-                          <TableCell>
+                          <TableCell className="w-8">
                             <Checkbox
                               checked={selectedMasterRecordIds.has(record.id)}
                               onCheckedChange={(checked) =>
-                                toggleMasterRow(record.id, checked === true)
+                                toggleMasterRow(
+                                  record.id,
+                                  checked === true,
+                                  isShiftClickingMasterRowRef.current
+                                )
                               }
                               aria-label={`Select NetSuite record ${record.salesOrderNumber || record.id}`}
+                              className="after:-inset-2"
                               disabled={isReadOnly}
-                              onClick={(event) => event.stopPropagation()}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                isShiftClickingMasterRowRef.current =
+                                  event.shiftKey
+                              }}
                             />
                           </TableCell>
                           <TableCell className="break-words tabular-nums">
