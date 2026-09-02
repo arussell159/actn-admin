@@ -16,6 +16,11 @@ export type ParsedCountryReportRecord = {
   targetCountryId?: string
 }
 
+export type CameroonCountryReportTotals = {
+  amount: number
+  secondaryAmount: number
+}
+
 function parseAmount(value: string | number | undefined) {
   if (typeof value === "string") {
     value = value.replace(
@@ -470,6 +475,42 @@ export function parseCameroonCountryReportCsv(csvText: string) {
       }
     })
     .filter((record) => record.invoiceNumber)
+}
+
+export function getCameroonCountryReportTotals(
+  csvText: string
+): CameroonCountryReportTotals | undefined {
+  const rows = parseCsv(csvText)
+  const [headers, ...dataRows] = rows
+
+  if (!headers) {
+    return undefined
+  }
+
+  const normalizedHeaders = headers.map(normalizeCsvHeader)
+  const amountIndex = normalizedHeaders.findIndex(
+    (header) =>
+      (header === "val" ||
+        header === "valeur" ||
+        header.startsWith("valeur")) &&
+      !header.includes("date")
+  )
+  const commissionIndex = normalizedHeaders.findIndex(
+    (header) =>
+      header === "com" || header === "comusd" || header.includes("commission")
+  )
+  const totalRow = dataRows.find((row) =>
+    row.some((cell) => normalizeCsvHeader(cell).includes("totalamount"))
+  )
+
+  if (!totalRow || amountIndex < 0 || commissionIndex < 0) {
+    return undefined
+  }
+
+  return {
+    amount: parseAmount(totalRow[amountIndex]),
+    secondaryAmount: parseAmount(totalRow[commissionIndex]),
+  }
 }
 
 function getDatePeriod(value: string | undefined) {

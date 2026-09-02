@@ -87,6 +87,7 @@ import {
 } from "@/lib/month-end-template"
 import {
   extractWorkbookRows,
+  getCameroonCountryReportTotals,
   parseCameroonCountryReportCsv,
   parseMappedCountryReportCsv,
   parseGabonCountryReportCsv,
@@ -94,6 +95,7 @@ import {
   parseCountryReportText,
   type AntaserJournalDocument,
   type AntaserJournalDocumentKind,
+  type CameroonCountryReportTotals,
   type ParsedCountryReportRecord,
 } from "@/lib/country-report-import"
 import {
@@ -277,6 +279,10 @@ function cameroonDmiMappingKey(rowId: string) {
 
 function cameroonCommissionTotalKey(rowId: string) {
   return `${rowId}__cameroon_commission_total`
+}
+
+function cameroonReportTotalKey(rowId: string) {
+  return `${rowId}__cameroon_report_total`
 }
 
 type ResolvedCountryReportRow = {
@@ -674,6 +680,10 @@ function sumCameroonCommissionTotal(records: ParsedCountryReportRecord[]) {
     (total, record) => total + (record.secondaryAmount ?? 0),
     0
   )
+}
+
+function sumCameroonReportTotal(records: ParsedCountryReportRecord[]) {
+  return records.reduce((total, record) => total + record.amount, 0)
 }
 
 function parseStoredNumber(value: unknown) {
@@ -3991,6 +4001,7 @@ type JournalEntrySnapshot = {
     exchangeRate?: number
     journalTotal: number
   }[]
+  additionalRows?: JournalEntryRow[]
   rows?: JournalEntryRow[]
   sourceDocumentCount?: number
 }
@@ -4012,6 +4023,7 @@ function parseJournalEntrySnapshot(value: unknown) {
 function JournalEntryPreview({
   countryName,
   entries,
+  additionalRows,
   journalRows,
   sourceDocumentCount,
   onBack,
@@ -4029,6 +4041,7 @@ function JournalEntryPreview({
     exchangeRate?: number
     journalTotal: number
   }[]
+  additionalRows?: JournalEntryRow[]
   journalRows?: JournalEntryRow[]
   sourceDocumentCount?: number
   onBack: () => void
@@ -4048,6 +4061,12 @@ function JournalEntryPreview({
     (sum, entry) => sum + entry.journalTotal,
     0
   )
+  const additionalDebitTotal =
+    additionalRows?.reduce((sum, row) => sum + (row.debit ?? 0), 0) ?? 0
+  const additionalCreditTotal =
+    additionalRows?.reduce((sum, row) => sum + (row.credit ?? 0), 0) ?? 0
+  const simpleDebitTotal = journalTotal + additionalDebitTotal
+  const simpleCreditTotal = journalTotal + additionalCreditTotal
   const journalDebitTotal = journalRows?.reduce(
     (sum, row) => sum + (row.debit ?? 0),
     0
@@ -4260,20 +4279,39 @@ function JournalEntryPreview({
                         </TableRow>
                       ))
                     : null}
+                  {!hasDetailedJournal
+                    ? additionalRows?.map((row, index) => (
+                        <TableRow key={`${row.account}-${index}`}>
+                          <TableCell className="font-medium">
+                            {row.account}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {row.debit === undefined
+                              ? "-"
+                              : formatAmount(row.debit)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {row.credit === undefined
+                              ? "-"
+                              : formatAmount(row.credit)}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    : null}
                   <TableRow className="bg-muted/40 font-semibold">
                     <TableCell>Total</TableCell>
                     <TableCell className="text-right tabular-nums">
                       {formatAmount(
                         hasDetailedJournal
                           ? (journalDebitTotal ?? 0)
-                          : journalTotal
+                          : simpleDebitTotal
                       )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {formatAmount(
                         hasDetailedJournal
                           ? (journalCreditTotal ?? 0)
-                          : journalTotal
+                          : simpleCreditTotal
                       )}
                     </TableCell>
                     {hasDetailedJournal ? <TableCell colSpan={2} /> : null}
@@ -4745,7 +4783,8 @@ export function MonthEndCountryReconciliationView({
   async function saveCountryReportWorkflowState(
     fileName: string,
     antaserDocuments?: AntaserJournalDocument[],
-    cameroonCommissionTotal?: number
+    cameroonCommissionTotal?: number,
+    cameroonReportTotal?: number
   ) {
     if (!record || !activeCountryId || isMonthClosed) {
       return
@@ -4780,8 +4819,18 @@ export function MonthEndCountryReconciliationView({
       } else {
         delete checked[cameroonCommissionTotalKey(activeCountryId)]
       }
+
+      if (
+        typeof cameroonReportTotal === "number" &&
+        Number.isFinite(cameroonReportTotal)
+      ) {
+        checked[cameroonReportTotalKey(activeCountryId)] = cameroonReportTotal
+      } else {
+        delete checked[cameroonReportTotalKey(activeCountryId)]
+      }
     } else {
       delete checked[cameroonCommissionTotalKey(activeCountryId)]
+      delete checked[cameroonReportTotalKey(activeCountryId)]
     }
 
     delete checked[cameroonDmiMappingKey(activeCountryId)]
@@ -5234,6 +5283,7 @@ export function MonthEndCountryReconciliationView({
       delete checked[sourceFileNameKey(linkedCountryId, "country")]
       delete checked[cameroonDmiMappingKey(linkedCountryId)]
       delete checked[cameroonCommissionTotalKey(linkedCountryId)]
+      delete checked[cameroonReportTotalKey(linkedCountryId)]
     }
 
     delete checked[rollApprovalKey(activeCountryId)]
@@ -5244,6 +5294,7 @@ export function MonthEndCountryReconciliationView({
     delete checked[sourceFileNameKey(activeCountryId, "country")]
     delete checked[cameroonDmiMappingKey(activeCountryId)]
     delete checked[cameroonCommissionTotalKey(activeCountryId)]
+    delete checked[cameroonReportTotalKey(activeCountryId)]
 
     await Promise.all(
       Array.from(new Set([activeCountryId, ...workflowCountryIds])).map(
@@ -5305,6 +5356,9 @@ export function MonthEndCountryReconciliationView({
     const snapshot: JournalEntrySnapshot = {
       createdAt: new Date().toISOString(),
       entries: displayedJournalEntries,
+      additionalRows: displayedAdditionalJournalRows.length
+        ? displayedAdditionalJournalRows
+        : undefined,
       rows: displayedJournalRows.length ? displayedJournalRows : undefined,
       sourceDocumentCount: displayedSourceDocumentCount || undefined,
     }
@@ -5393,11 +5447,13 @@ export function MonthEndCountryReconciliationView({
     sourceLabel,
     antaserDocuments,
     cameroonCommissionTotal,
+    cameroonReportTotal,
   }: {
     parsedRecords: ParsedCountryReportRecord[]
     sourceLabel: string
     antaserDocuments?: AntaserJournalDocument[]
     cameroonCommissionTotal?: number
+    cameroonReportTotal?: number
   }) {
     if (!record || !country || !activeCountryId || isMonthClosed) {
       setUploadError("Open a valid country record before uploading.")
@@ -5467,7 +5523,8 @@ export function MonthEndCountryReconciliationView({
     await saveCountryReportWorkflowState(
       sourceLabel,
       antaserDocuments,
-      cameroonCommissionTotal
+      cameroonCommissionTotal,
+      cameroonReportTotal
     )
     setCountryReportRecords(
       reportRecords.filter((item) => item.countryId === activeCountryId)
@@ -5528,13 +5585,21 @@ export function MonthEndCountryReconciliationView({
       const activeCountry = activeCountryId
         ? template.countries.find((item) => item.id === activeCountryId)
         : undefined
-      const parsedGroups = await Promise.all(
+      const parsedGroups: {
+        records: ParsedCountryReportRecord[]
+        antaserJournalDocument?: AntaserJournalDocument
+        cameroonTotals?: CameroonCountryReportTotals
+      }[] = await Promise.all(
         files.map(async (file) => {
           const savedMapping = activeCountry?.countryReportMapping
           const shouldUseSavedMapping =
             Boolean(savedMapping) &&
             !isDefaultCountryReportMapping(savedMapping)
           const csvText = await reportFileToCsvText(file, record?.period)
+          const cameroonTotals =
+            activeCountryId === "cameroon"
+              ? getCameroonCountryReportTotals(csvText)
+              : undefined
           const gabonRecords =
             activeCountryId === "frabemar-gabon"
               ? parseGabonCountryReportCsv(csvText)
@@ -5555,6 +5620,7 @@ export function MonthEndCountryReconciliationView({
             return {
               records: cameroonRecords,
               antaserJournalDocument: undefined,
+              cameroonTotals,
             }
           }
 
@@ -5567,6 +5633,7 @@ export function MonthEndCountryReconciliationView({
               return {
                 records: mappedRecords,
                 antaserJournalDocument: undefined,
+                cameroonTotals,
               }
             }
 
@@ -5582,6 +5649,7 @@ export function MonthEndCountryReconciliationView({
               return {
                 records: aiMappedRecords,
                 antaserJournalDocument: undefined,
+                cameroonTotals,
               }
             }
 
@@ -5638,7 +5706,23 @@ export function MonthEndCountryReconciliationView({
           : undefined,
         cameroonCommissionTotal:
           activeCountryId === "cameroon"
-            ? sumCameroonCommissionTotal(parsedRecords)
+            ? parsedGroups.reduce(
+                (total, group) =>
+                  total +
+                  (group.cameroonTotals?.secondaryAmount ??
+                    sumCameroonCommissionTotal(group.records)),
+                0
+              )
+            : undefined,
+        cameroonReportTotal:
+          activeCountryId === "cameroon"
+            ? parsedGroups.reduce(
+                (total, group) =>
+                  total +
+                  (group.cameroonTotals?.amount ??
+                    sumCameroonReportTotal(group.records)),
+                0
+              )
             : undefined,
       })
     } catch (error) {
@@ -5677,6 +5761,10 @@ export function MonthEndCountryReconciliationView({
         activeCountryId === "cameroon"
           ? parseCameroonCountryReportCsv(pastedReportText)
           : []
+      const cameroonTotals =
+        activeCountryId === "cameroon"
+          ? getCameroonCountryReportTotals(pastedReportText)
+          : undefined
       const mappedRecords = shouldUseSavedMapping
         ? parseMappedCountryReportCsv(pastedReportText, savedMapping)
         : undefined
@@ -5719,13 +5807,25 @@ export function MonthEndCountryReconciliationView({
         sourceLabel: "Pasted report",
         cameroonCommissionTotal:
           activeCountryId === "cameroon"
-            ? sumCameroonCommissionTotal(
+            ? (cameroonTotals?.secondaryAmount ??
+              sumCameroonCommissionTotal(
                 cameroonRecords.length
                   ? cameroonRecords
                   : parseCountryReportText(pastedReportText, {
                       period: record.period,
                     })
-              )
+              ))
+            : undefined,
+        cameroonReportTotal:
+          activeCountryId === "cameroon"
+            ? (cameroonTotals?.amount ??
+              sumCameroonReportTotal(
+                cameroonRecords.length
+                  ? cameroonRecords
+                  : parseCountryReportText(pastedReportText, {
+                      period: record.period,
+                    })
+              ))
             : undefined,
       })
       setPastedReportText("")
@@ -6072,15 +6172,20 @@ export function MonthEndCountryReconciliationView({
   }
 
   const journalEntries = journalCountries.map((item) => {
-    const countryTotal = journalTotalsByCountryId.get(item.id) ?? 0
+    const countryTotal =
+      item.id === "cameroon"
+        ? parseStoredNumber(record?.checked[cameroonReportTotalKey(item.id)]) ||
+          (journalTotalsByCountryId.get(item.id) ?? 0)
+        : (journalTotalsByCountryId.get(item.id) ?? 0)
     const exchangeRateValue = record?.checked[exchangeRateKey(item.id)]
-    const defaultExchangeRate = item.id === "cameroon" ? 1.2 : undefined
     const exchangeRate =
-      typeof exchangeRateValue === "number" &&
-      Number.isFinite(exchangeRateValue) &&
-      exchangeRateValue > 0
-        ? exchangeRateValue
-        : defaultExchangeRate
+      item.id === "cameroon"
+        ? 1.2
+        : typeof exchangeRateValue === "number" &&
+            Number.isFinite(exchangeRateValue) &&
+            exchangeRateValue > 0
+          ? exchangeRateValue
+          : undefined
 
     return {
       countryName: item.name,
@@ -6178,9 +6283,6 @@ export function MonthEndCountryReconciliationView({
   const regularJournalTotal = sumJournalAmounts(regularCountryAmounts)
   const commissionJournalTotal = sumJournalAmounts(commissionCountryAmounts)
   const ootJournalTotal = sumJournalAmounts(ootCountryAmounts)
-  const cameroonCountry = journalCountries.find(
-    (item) => item.id === "cameroon"
-  )
   const cameroonJournalEntry = journalEntries.find(
     (entry) => normalizeMatchKey(entry.countryName) === "cameroon"
   )
@@ -6194,35 +6296,18 @@ export function MonthEndCountryReconciliationView({
           record?.checked[cameroonCommissionTotalKey(activeCountryId)]
         )
       : 0
-  const cameroonJournalRows: JournalEntryRow[] =
+  const cameroonAdditionalJournalRows: JournalEntryRow[] =
     activeCountryId === "cameroon" &&
-    cameroonCountry &&
     cameroonJournalEntry &&
-    (cameroonJournalEntry.journalTotal > 0 || cameroonCommissionTotal > 0)
+    cameroonCommissionTotal > 0
       ? [
           {
             account: "Income",
-            debit: roundJournalAmount(cameroonJournalEntry.journalTotal),
-            lineDescription: "Cameroon country report income",
-            className: cameroonCountry.name,
-          },
-          {
-            account: cameroonCountry.name,
-            credit: roundJournalAmount(cameroonJournalEntry.journalTotal),
-            lineDescription: "Cameroon country report payable",
-            className: cameroonCountry.name,
-          },
-          {
-            account: "Income",
             debit: roundJournalAmount(cameroonCommissionTotal),
-            lineDescription: "Deduct Cameroon commission",
-            className: cameroonCountry.name,
           },
           {
             account: "Chase Main Account",
             credit: roundJournalAmount(cameroonCommissionTotal),
-            lineDescription: "Cameroon commission paid",
-            className: cameroonCountry.name,
           },
         ].filter((row) => (row.debit ?? row.credit ?? 0) > 0)
       : []
@@ -6260,15 +6345,20 @@ export function MonthEndCountryReconciliationView({
         })),
       ]
     : []
-  const savedJournalEntry = activeCountryId
-    ? parseJournalEntrySnapshot(
-        record?.checked[journalEntrySnapshotKey(activeCountryId)]
-      )
-    : undefined
+  const savedJournalEntry =
+    activeCountryId && activeCountryId !== "cameroon"
+      ? parseJournalEntrySnapshot(
+          record?.checked[journalEntrySnapshotKey(activeCountryId)]
+        )
+      : undefined
   const displayedJournalEntries = savedJournalEntry?.entries ?? journalEntries
+  const displayedAdditionalJournalRows =
+    activeCountryId === "cameroon"
+      ? cameroonAdditionalJournalRows
+      : (savedJournalEntry?.additionalRows ?? [])
   const displayedJournalRows =
     savedJournalEntry?.rows ??
-    (antaserJournalRows.length ? antaserJournalRows : cameroonJournalRows)
+    (antaserJournalRows.length ? antaserJournalRows : [])
   const displayedSourceDocumentCount =
     savedJournalEntry?.sourceDocumentCount ??
     (antaserJournalRows.length ? antaserJournalDocuments.length : undefined)
@@ -6341,6 +6431,7 @@ export function MonthEndCountryReconciliationView({
                   countryDisplayName || country?.name || "Unknown country"
                 }
                 entries={displayedJournalEntries}
+                additionalRows={displayedAdditionalJournalRows}
                 journalRows={displayedJournalRows}
                 sourceDocumentCount={displayedSourceDocumentCount}
                 onBack={() => router.push(reconciliationReportHref)}
