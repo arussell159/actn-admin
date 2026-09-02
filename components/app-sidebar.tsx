@@ -28,6 +28,7 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
+  SidebarTrigger,
 } from "@/components/ui/sidebar"
 import {
   BookOpenTextIcon,
@@ -132,9 +133,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     async function syncMonthEndItems() {
       try {
         const records = await listMonthEndRecords()
-        setHasOpenMonthEnd(
-          records.some((record) => record.status === "Open")
-        )
+        setHasOpenMonthEnd(records.some((record) => record.status === "Open"))
       } catch {}
     }
 
@@ -172,31 +171,34 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   }
 
   return (
-    <Sidebar collapsible="offcanvas" {...props}>
+    <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              className="data-[slot=sidebar-menu-button]:p-1.5!"
-              render={<AppLink href="/month-end" />}
-            >
-              <span className="grid size-7 shrink-0 place-items-center rounded-md bg-background">
-                <Image
-                  src="/actn-admin-icon.png"
-                  alt=""
-                  width={28}
-                  height={28}
-                  className="size-7 object-contain"
-                  priority
-                />
-              </span>
-              <span className="text-base font-semibold">ACTN Admin</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <div className="flex items-center gap-2 group-data-[collapsible=icon]:justify-center">
+          <SidebarMenu className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                className="data-[slot=sidebar-menu-button]:p-1.5!"
+                render={<AppLink href="/month-end" />}
+              >
+                <span className="grid size-7 shrink-0 place-items-center rounded-md bg-background">
+                  <Image
+                    src="/actn-admin-icon.png"
+                    alt=""
+                    width={28}
+                    height={28}
+                    className="size-7 object-contain"
+                    priority
+                  />
+                </span>
+                <span className="text-base font-semibold">ACTN Admin</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+          <SidebarTrigger className="size-8 shrink-0" />
+        </div>
       </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+        <SidebarGroup>
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton
@@ -210,7 +212,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </SidebarMenu>
         </SidebarGroup>
         <NavDocuments title="Month End" items={monthEndItems} />
-        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+        <SidebarGroup>
           <SidebarGroupLabel>Utilities</SidebarGroupLabel>
           <SidebarMenu>
             <SidebarMenuItem>
@@ -270,7 +272,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
-        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+        <SidebarGroup>
           <SidebarGroupLabel>Settings</SidebarGroupLabel>
           <SidebarMenu>
             <SidebarMenuItem>

@@ -20,14 +20,6 @@ import { AppLink } from "@/components/app-link"
 import { AppSidebar } from "@/components/app-sidebar"
 import { CountryReconciliationSkeleton } from "@/components/page-skeletons"
 import { SiteHeader } from "@/components/site-header"
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -46,6 +38,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import {
+  NavigationMenu,
+  NavigationMenuItem,
+  NavigationMenuList,
+} from "@/components/ui/navigation-menu"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import {
   Table,
@@ -86,6 +83,7 @@ import {
   type TemplateCountryRow,
 } from "@/lib/month-end-template"
 import {
+  extractPdfText,
   extractWorkbookRows,
   getCameroonCountryReportTotals,
   parseCameroonCountryReportCsv,
@@ -116,9 +114,53 @@ import {
   serializeApprovedInternalIds,
 } from "@/lib/month-end-roll-invoices"
 import { normalizeCsvHeader, parseCsv } from "@/lib/csv"
+import { cn } from "@/lib/utils"
 
 const ANGOLA_OOT_COUNTRY_ID = "angola-oot"
 const ANGOLA_OOT_COUNTRY_NAME = "Angola OOT"
+const FRABEMAR_COUNTRY_ID = "frabemar"
+const FRABEMAR_CHILD_COUNTRY_IDS = [
+  "frabemar-gabon",
+  "frabemar-dr-congo",
+  "frabemar-mali",
+  "frabemar-republic-of-guinea",
+]
+const FRABEMAR_CHILD_COUNTRIES = [
+  {
+    id: "frabemar-dr-congo",
+    accountName: "Frabemar : DR Congo",
+    aliases: ["rdc", "drcongo", "dr congo", "congo", "drc"],
+    shortCode: "RDC",
+    hasCommission: true,
+  },
+  {
+    id: "frabemar-gabon",
+    accountName: "Frabemar : Gabon",
+    aliases: ["gabon"],
+    shortCode: "GA",
+    hasCommission: true,
+  },
+  {
+    id: "frabemar-mali",
+    accountName: "Frabemar : Mali",
+    aliases: ["mali"],
+    shortCode: "ML",
+    hasCommission: true,
+  },
+  {
+    id: "frabemar-republic-of-guinea",
+    accountName: "Frabemar : Republic of Guinea",
+    aliases: ["guinea", "republicofguinea", "republic of guinea"],
+    shortCode: "GN",
+    hasCommission: false,
+  },
+] satisfies {
+  id: (typeof FRABEMAR_CHILD_COUNTRY_IDS)[number]
+  accountName: string
+  aliases: string[]
+  shortCode: string
+  hasCommission: boolean
+}[]
 
 const countryReportAiFields = [
   {
@@ -189,6 +231,16 @@ function formatAmount(amount: number) {
   }).format(amount)
 }
 
+function roundMoneyAmount(amount: number) {
+  return Math.round((amount + Number.EPSILON) * 100) / 100
+}
+
+function formatCurrencyAmount(amount: number, currency: "EUR" | "USD") {
+  const symbol = currency === "EUR" ? "EUR " : "$"
+
+  return `${symbol}${formatAmount(amount)}`
+}
+
 function formatTransactionDate(value: string | undefined) {
   const rawValue = (value ?? "").trim()
 
@@ -247,7 +299,10 @@ function pluralize(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`
 }
 
-function sourceFileNameKey(rowId: string, source: "master" | "country") {
+function sourceFileNameKey(
+  rowId: string,
+  source: "master" | "country" | "invoice"
+) {
   return `${rowId}__${source}_source_file`
 }
 
@@ -321,6 +376,51 @@ type CameroonDmiMapping = {
   sourceRowIndex: number
 }
 
+type InvoiceDocument = {
+  fileName: string
+  fileNames?: string[]
+  fileSize: number
+  fileType: string
+  uploadedAt: string
+}
+
+type CongoInvoiceJournalValues = {
+  invoiceVisaPointsTotal: number
+  invoiceCommission: number
+  invoiceBankCharges: number
+  wireFee: number
+  visaUsed: number
+  visaUsedCommission: number
+  visaUsedIncome: number
+  invoiceFileName: string
+  savedAt: string
+}
+
+type FrabemarInvoicePackage = {
+  invoices: InvoiceDocument[]
+  countryValues: Record<
+    string,
+    {
+      invoiceTotal: number
+      commission: number
+      invoiceFileName: string
+      invoiceNumber: string
+      commissionInvoiceNumber: string
+    }
+  >
+  pastedReportText: string
+  savedAt: string
+}
+
+type FrabemarCountryJournalValues = {
+  invoiceTotal: number
+  commission: number
+  invoiceFileName: string
+  invoiceNumber: string
+  commissionInvoiceNumber: string
+  savedAt: string
+}
+
 const countryReportReconcileReasonOptions = [
   "Validated in previous month",
   "Already rolled",
@@ -372,6 +472,263 @@ function parseReconciliationSnapshot(value: unknown) {
   return undefined
 }
 
+function parseInvoiceDocument(value: unknown): InvoiceDocument | undefined {
+  if (typeof value !== "string" || !value) {
+    return undefined
+  }
+
+  try {
+    const parsed = JSON.parse(value)
+
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "fileName" in parsed &&
+      typeof parsed.fileName === "string"
+    ) {
+      return {
+        fileName: parsed.fileName,
+        fileNames:
+          "fileNames" in parsed && Array.isArray(parsed.fileNames)
+            ? (parsed.fileNames as unknown[]).filter(
+                (fileName): fileName is string => typeof fileName === "string"
+              )
+            : undefined,
+        fileSize:
+          "fileSize" in parsed && typeof parsed.fileSize === "number"
+            ? parsed.fileSize
+            : 0,
+        fileType:
+          "fileType" in parsed && typeof parsed.fileType === "string"
+            ? parsed.fileType
+            : "",
+        uploadedAt:
+          "uploadedAt" in parsed && typeof parsed.uploadedAt === "string"
+            ? parsed.uploadedAt
+            : "",
+      }
+    }
+  } catch {}
+
+  return undefined
+}
+
+function parseCongoInvoiceJournalValues(
+  value: unknown
+): CongoInvoiceJournalValues | undefined {
+  if (typeof value !== "string" || !value) {
+    return undefined
+  }
+
+  try {
+    const parsed = JSON.parse(value)
+
+    if (typeof parsed !== "object" || parsed === null) {
+      return undefined
+    }
+
+    const invoiceVisaPointsTotal =
+      "invoiceVisaPointsTotal" in parsed &&
+      typeof parsed.invoiceVisaPointsTotal === "number"
+        ? parsed.invoiceVisaPointsTotal
+        : 0
+    const visaUsed =
+      "visaUsed" in parsed && typeof parsed.visaUsed === "number"
+        ? parsed.visaUsed
+        : 0
+
+    if (invoiceVisaPointsTotal <= 0) {
+      return undefined
+    }
+
+    return {
+      invoiceVisaPointsTotal,
+      invoiceCommission:
+        "invoiceCommission" in parsed &&
+        typeof parsed.invoiceCommission === "number"
+          ? parsed.invoiceCommission
+          : 0,
+      invoiceBankCharges:
+        "invoiceBankCharges" in parsed &&
+        typeof parsed.invoiceBankCharges === "number"
+          ? parsed.invoiceBankCharges
+          : 0,
+      wireFee:
+        "wireFee" in parsed && typeof parsed.wireFee === "number"
+          ? parsed.wireFee
+          : 16,
+      visaUsed,
+      visaUsedCommission:
+        "visaUsedCommission" in parsed &&
+        typeof parsed.visaUsedCommission === "number"
+          ? parsed.visaUsedCommission
+          : 0,
+      visaUsedIncome:
+        "visaUsedIncome" in parsed && typeof parsed.visaUsedIncome === "number"
+          ? parsed.visaUsedIncome
+          : 0,
+      invoiceFileName:
+        "invoiceFileName" in parsed &&
+        typeof parsed.invoiceFileName === "string"
+          ? parsed.invoiceFileName
+          : "",
+      savedAt:
+        "savedAt" in parsed && typeof parsed.savedAt === "string"
+          ? parsed.savedAt
+          : "",
+    }
+  } catch {}
+
+  return undefined
+}
+
+function parseFrabemarInvoicePackage(
+  value: unknown
+): FrabemarInvoicePackage | undefined {
+  if (typeof value !== "string" || !value) {
+    return undefined
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(value)
+
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "invoices" in parsed &&
+      Array.isArray(parsed.invoices)
+    ) {
+      const invoices = parsed.invoices as unknown[]
+
+      return {
+        invoices: invoices.filter(
+          (invoice): invoice is InvoiceDocument =>
+            typeof invoice === "object" &&
+            invoice !== null &&
+            "fileName" in invoice &&
+            typeof invoice.fileName === "string"
+        ),
+        countryValues:
+          "countryValues" in parsed &&
+          typeof parsed.countryValues === "object" &&
+          parsed.countryValues !== null
+            ? Object.fromEntries(
+                Object.entries(parsed.countryValues).flatMap(
+                  ([countryId, countryValue]) => {
+                    if (
+                      typeof countryValue !== "object" ||
+                      countryValue === null
+                    ) {
+                      return []
+                    }
+
+                    return [
+                      [
+                        countryId,
+                        {
+                          invoiceTotal:
+                            "invoiceTotal" in countryValue &&
+                            typeof countryValue.invoiceTotal === "number"
+                              ? countryValue.invoiceTotal
+                              : 0,
+                          commission:
+                            "commission" in countryValue &&
+                            typeof countryValue.commission === "number"
+                              ? countryValue.commission
+                              : 0,
+                          invoiceFileName:
+                            "invoiceFileName" in countryValue &&
+                            typeof countryValue.invoiceFileName === "string"
+                              ? countryValue.invoiceFileName
+                              : "",
+                          invoiceNumber:
+                            "invoiceNumber" in countryValue &&
+                            typeof countryValue.invoiceNumber === "string"
+                              ? countryValue.invoiceNumber
+                              : "",
+                          commissionInvoiceNumber:
+                            "commissionInvoiceNumber" in countryValue &&
+                            typeof countryValue.commissionInvoiceNumber ===
+                              "string"
+                              ? countryValue.commissionInvoiceNumber
+                              : "",
+                        },
+                      ],
+                    ]
+                  }
+                )
+              )
+            : {},
+        pastedReportText:
+          "pastedReportText" in parsed &&
+          typeof parsed.pastedReportText === "string"
+            ? parsed.pastedReportText
+            : "",
+        savedAt:
+          "savedAt" in parsed && typeof parsed.savedAt === "string"
+            ? parsed.savedAt
+            : "",
+      }
+    }
+  } catch {}
+
+  return undefined
+}
+
+function parseFrabemarCountryJournalValues(
+  value: unknown
+): FrabemarCountryJournalValues | undefined {
+  if (typeof value !== "string" || !value) {
+    return undefined
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(value)
+
+    if (typeof parsed !== "object" || parsed === null) {
+      return undefined
+    }
+
+    const invoiceTotal =
+      "invoiceTotal" in parsed && typeof parsed.invoiceTotal === "number"
+        ? parsed.invoiceTotal
+        : 0
+    const commission =
+      "commission" in parsed && typeof parsed.commission === "number"
+        ? parsed.commission
+        : 0
+
+    if (invoiceTotal <= 0 && commission <= 0) {
+      return undefined
+    }
+
+    return {
+      invoiceTotal,
+      commission,
+      invoiceFileName:
+        "invoiceFileName" in parsed &&
+        typeof parsed.invoiceFileName === "string"
+          ? parsed.invoiceFileName
+          : "",
+      invoiceNumber:
+        "invoiceNumber" in parsed && typeof parsed.invoiceNumber === "string"
+          ? parsed.invoiceNumber
+          : "",
+      commissionInvoiceNumber:
+        "commissionInvoiceNumber" in parsed &&
+        typeof parsed.commissionInvoiceNumber === "string"
+          ? parsed.commissionInvoiceNumber
+          : "",
+      savedAt:
+        "savedAt" in parsed && typeof parsed.savedAt === "string"
+          ? parsed.savedAt
+          : "",
+    }
+  } catch {}
+
+  return undefined
+}
+
 function reconciliationSnapshotComparable(
   snapshot: ReconciliationSnapshot | undefined
 ) {
@@ -392,7 +749,6 @@ function approvedIdsMatch(value: unknown, ids: string[]) {
     serializeApprovedInternalIds(ids)
   )
 }
-
 function masterRecordApprovalIds(record: MonthEndMasterRecord) {
   return [record.id, record.sourceInternalId.trim()].filter(Boolean)
 }
@@ -421,6 +777,131 @@ function mergeSnapshotLeftInvoiceIds(
           .filter(Boolean),
       ])
     ),
+  }
+}
+
+function withoutSetValue(values: Set<string>, value: string) {
+  return new Set(Array.from(values).filter((item) => item !== value))
+}
+
+function addManualReconciliationMatch({
+  reconciliation,
+  masterRecord,
+  countryRecord,
+}: {
+  reconciliation: ReturnType<typeof reconcileRecords>
+  masterRecord: MonthEndMasterRecord
+  countryRecord: MonthEndCountryReportRecord
+}): ReturnType<typeof reconcileRecords> {
+  const matchedValue =
+    countryRecord.reference ||
+    countryRecord.invoiceNumber ||
+    countryRecord.ctnNumber ||
+    countryRecord.billOfLadingNumber ||
+    masterRecord.salesOrderNumber ||
+    masterRecord.ctnNumber ||
+    masterRecord.billOfLadingNumber
+
+  return {
+    ...reconciliation,
+    matched: [
+      ...reconciliation.matched.filter(
+        (match) =>
+          match.masterRecord.id !== masterRecord.id &&
+          match.countryRecord.id !== countryRecord.id
+      ),
+      {
+        id: `${masterRecord.id}__${countryRecord.id}`,
+        masterRecord,
+        countryRecord,
+        matchedOn: {
+          label: "Manual",
+          value: matchedValue,
+        },
+      },
+    ],
+    linkedMasterRecordIds: withoutSetValue(
+      reconciliation.linkedMasterRecordIds,
+      masterRecord.id
+    ),
+    autoRolledMasterIds: withoutSetValue(
+      reconciliation.autoRolledMasterIds,
+      masterRecord.id
+    ),
+    autoLeftMasterIds: withoutSetValue(
+      reconciliation.autoLeftMasterIds,
+      masterRecord.id
+    ),
+    missingFromNetSuite: reconciliation.missingFromNetSuite.filter(
+      (record) => record.id !== countryRecord.id
+    ),
+    missingFromCountry: reconciliation.missingFromCountry.filter(
+      (record) => record.id !== masterRecord.id
+    ),
+  }
+}
+
+type MatchedDisplayRow =
+  | (ReturnType<typeof reconcileRecords>["matched"][number] & {
+      kind: "matched"
+    })
+  | {
+      id: string
+      kind: "cleared"
+      countryRecord: MonthEndCountryReportRecord
+      resolvedRow: ResolvedCountryReportRow
+    }
+
+function removeReconciliationMatches({
+  reconciliation,
+  countryRecords,
+  masterRecords,
+}: {
+  reconciliation: ReturnType<typeof reconcileRecords>
+  countryRecords: MonthEndCountryReportRecord[]
+  masterRecords: MonthEndMasterRecord[]
+}): ReturnType<typeof reconcileRecords> {
+  const countryRecordIds = new Set(countryRecords.map((record) => record.id))
+  const masterRecordIds = new Set(masterRecords.map((record) => record.id))
+  const missingCountryById = new Map(
+    reconciliation.missingFromNetSuite.map((record) => [record.id, record])
+  )
+  const missingMasterById = new Map(
+    reconciliation.missingFromCountry.map((record) => [record.id, record])
+  )
+
+  for (const record of countryRecords) {
+    missingCountryById.set(record.id, record)
+  }
+
+  for (const record of masterRecords) {
+    missingMasterById.set(record.id, record)
+  }
+
+  return {
+    ...reconciliation,
+    matched: reconciliation.matched.filter(
+      (match) =>
+        !countryRecordIds.has(match.countryRecord.id) &&
+        !masterRecordIds.has(match.masterRecord.id)
+    ),
+    linkedMasterRecordIds: new Set(
+      Array.from(reconciliation.linkedMasterRecordIds).filter(
+        (recordId) => !masterRecordIds.has(recordId)
+      )
+    ),
+    autoRolledMasterIds: new Set(
+      Array.from(reconciliation.autoRolledMasterIds).filter(
+        (recordId) => !masterRecordIds.has(recordId)
+      )
+    ),
+    autoLeftMasterIds: new Set(
+      Array.from(reconciliation.autoLeftMasterIds).filter(
+        (recordId) => !masterRecordIds.has(recordId)
+      )
+    ),
+    missingFromNetSuite: Array.from(missingCountryById.values()),
+    missingFromCountry: Array.from(missingMasterById.values()),
   }
 }
 
@@ -464,7 +945,30 @@ function parseMasterTransactionDates(value: unknown) {
   return new Map<string, string>()
 }
 
-function monthEndTaskKey(rowId: string, taskId: "reconcile" | "journal") {
+function invoiceDocumentKey(rowId: string) {
+  return `${rowId}__invoice_document`
+}
+
+function congoInvoiceJournalValuesKey(rowId: string) {
+  return `${rowId}__congo_invoice_journal_values`
+}
+
+function frabemarInvoicePackageKey(rowId = FRABEMAR_COUNTRY_ID) {
+  return `${rowId}__frabemar_invoice_package`
+}
+
+function frabemarCountryJournalValuesKey(rowId: string) {
+  return `${rowId}__frabemar_country_journal_values`
+}
+
+function exchangeRateDisplayKey(rowId: string) {
+  return `${rowId}__exchange_rate_display`
+}
+
+function monthEndTaskKey(
+  rowId: string,
+  taskId: "invoice" | "reconcile" | "journal"
+) {
   return `${rowId}__${taskId}`
 }
 
@@ -688,6 +1192,604 @@ function sumCameroonReportTotal(records: ParsedCountryReportRecord[]) {
 
 function parseStoredNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0
+}
+
+function parseCongoMoneyValue(value: string) {
+  const rawValue = value.trim()
+
+  if (!rawValue) {
+    return 0
+  }
+
+  const isNegative = rawValue.includes("-") || /^\(.*\)$/.test(rawValue)
+  const numericValue = rawValue.replace(/[^\d.,]/g, "")
+
+  if (!numericValue) {
+    return 0
+  }
+
+  const commaIndex = numericValue.lastIndexOf(",")
+  const dotIndex = numericValue.lastIndexOf(".")
+  const decimalIndex = Math.max(commaIndex, dotIndex)
+  let normalized = numericValue
+
+  if (commaIndex >= 0 && dotIndex >= 0) {
+    const integerPart = numericValue.slice(0, decimalIndex).replace(/[.,]/g, "")
+    const decimalPart = numericValue.slice(decimalIndex + 1)
+
+    normalized = `${integerPart}.${decimalPart}`
+  } else if (commaIndex >= 0) {
+    const decimals = numericValue.length - commaIndex - 1
+
+    normalized =
+      decimals === 2
+        ? numericValue.replace(/\./g, "").replace(",", ".")
+        : numericValue.replace(/,/g, "")
+  } else if (dotIndex >= 0) {
+    const decimals = numericValue.length - dotIndex - 1
+
+    normalized = decimals === 3 ? numericValue.replace(/\./g, "") : numericValue
+  }
+
+  const amount = Number(normalized)
+
+  return Number.isFinite(amount) ? Math.abs(isNegative ? -amount : amount) : 0
+}
+
+function parseFrabemarExchangeRate(value: string) {
+  const normalizedValue = value.trim().replace(",", ".")
+
+  if (!/^\d+(?:\.\d{1,4})?$/.test(normalizedValue)) {
+    return undefined
+  }
+
+  const exchangeRate = Number(normalizedValue)
+
+  return Number.isFinite(exchangeRate) && exchangeRate > 0
+    ? exchangeRate
+    : undefined
+}
+
+function formatFrabemarExchangeRate(value: number) {
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4,
+    useGrouping: false,
+  })
+}
+
+function congoMoneyValuesFromLine(line: string) {
+  return Array.from(
+    line.matchAll(
+      /-?\(?\s*\d{1,3}(?:[,.]\d{3})*(?:[,.]\d{2})\)?|-?\(?\s*\d+(?:[,.]\d{2})\)?/g
+    ),
+    (match) => parseCongoMoneyValue(match[0])
+  ).filter((amount) => amount > 0)
+}
+
+function congoLineAfterLabelAmount(text: string, labelPattern: RegExp) {
+  const normalizedText = text.replace(/\r/g, "\n")
+  const match = normalizedText.match(labelPattern)
+
+  if (!match || match.index === undefined) {
+    return 0
+  }
+
+  const afterLabel = normalizedText.slice(match.index + match[0].length)
+  const amountMatch = afterLabel.match(
+    /-?\(?\s*\d{1,3}(?:[,.]\d{3})*(?:[,.]\d{2})\)?|-?\(?\s*\d+(?:[,.]\d{2})\)?/
+  )
+
+  return amountMatch ? parseCongoMoneyValue(amountMatch[0]) : 0
+}
+
+function congoVisaPointsFromTcAndTLine(line: string) {
+  const dateMatch = line.match(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/)
+  const amountText =
+    dateMatch && dateMatch.index !== undefined
+      ? line.slice(dateMatch.index + dateMatch[0].length)
+      : line
+  const values = congoMoneyValuesFromLine(amountText)
+
+  return values[0] ?? 0
+}
+
+function congoAmountFromLineItem(lines: string[], labelPattern: RegExp) {
+  const labelIndex = lines.findIndex((line) =>
+    labelPattern.test(line.replace(/\s+/g, ""))
+  )
+
+  if (labelIndex < 0) {
+    return 0
+  }
+
+  for (const line of lines.slice(labelIndex, labelIndex + 5)) {
+    const values = congoMoneyValuesFromLine(line)
+    const amount = values.at(-1) ?? 0
+
+    if (amount > 0) {
+      return amount
+    }
+  }
+
+  return 0
+}
+
+function parseCongoInvoiceText(text: string) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const visaPointsFromTotal = congoLineAfterLabelAmount(
+    text,
+    /total\s+number\s+of\s+visa\s+points\s*:/i
+  )
+  const visaPointsFromLines = lines
+    .filter((line) => /^\s*TC&T\b/i.test(line))
+    .reduce((total, line) => total + congoVisaPointsFromTcAndTLine(line), 0)
+  const bankCharges = congoAmountFromLineItem(lines, /bankcharges?/i)
+
+  return {
+    visaPointsTotal: visaPointsFromTotal || visaPointsFromLines,
+    bankCharges,
+  }
+}
+
+function findFrabemarCountryId(value: string) {
+  const normalizedValue = normalizeMatchKey(value)
+
+  return FRABEMAR_CHILD_COUNTRIES.find((country) =>
+    country.aliases.some((alias) =>
+      normalizedValue.includes(normalizeMatchKey(alias))
+    )
+  )?.id
+}
+
+function parseFrabemarCommissionReport(text: string) {
+  const commissions = new Map<string, number>()
+  const normalizedText = text.replace(/\r/g, "\n")
+
+  for (const country of FRABEMAR_CHILD_COUNTRIES) {
+    if (!country.hasCommission) {
+      continue
+    }
+
+    const aliasPattern = country.aliases
+      .map((alias) => alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join("|")
+    const match = normalizedText.match(
+      new RegExp(
+        `(?:${aliasPattern})[\\s\\S]{0,260}?total\\s+amount\\s+of\\s*(?:\\u20ac|EUR)?\\s*([\\d.,'\\s]+)`,
+        "i"
+      )
+    )
+
+    if (match?.[1]) {
+      commissions.set(country.id, parseCongoMoneyValue(match[1]))
+    }
+  }
+
+  return commissions
+}
+
+function parseFrabemarInvoiceTotal(text: string) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const totalLine = [...lines]
+    .reverse()
+    .find(
+      (line) => /\btotal\b/i.test(line) && congoMoneyValuesFromLine(line).length
+    )
+
+  if (totalLine) {
+    return congoMoneyValuesFromLine(totalLine).at(-1) ?? 0
+  }
+
+  const amountValues = congoMoneyValuesFromLine(text)
+
+  return amountValues.at(-1) ?? 0
+}
+
+function parseFrabemarInvoiceNumber(text: string, fileName: string) {
+  const candidates = [fileName, text]
+
+  for (const candidate of candidates) {
+    const match = candidate.match(/\b(\d{2,6})\s*EST\b/i)
+
+    if (match?.[1]) {
+      return `${match[1]}EST`
+    }
+  }
+
+  return ""
+}
+
+function previousMonthEndMmddyy(period: string) {
+  const match = period.match(/^(\d{4})-(\d{2})$/)
+
+  if (!match) {
+    return ""
+  }
+
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const date = new Date(year, month - 1, 0)
+  const mm = String(date.getMonth() + 1).padStart(2, "0")
+  const dd = String(date.getDate()).padStart(2, "0")
+  const yy = String(date.getFullYear()).slice(-2)
+
+  return `${mm}${dd}${yy}`
+}
+
+function frabemarCommissionInvoiceNumber(period: string, countryId: string) {
+  const countryConfig = FRABEMAR_CHILD_COUNTRIES.find(
+    (country) => country.id === countryId
+  )
+  const datePrefix = previousMonthEndMmddyy(period)
+
+  return datePrefix && countryConfig
+    ? `${datePrefix}-${countryConfig.shortCode}`
+    : ""
+}
+
+function encodePdfString(value: string) {
+  return value.replace(/[^\x00-\x7F]/g, "")
+}
+
+function loadInvoiceLogoImage() {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image()
+
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error("Could not load invoice logo."))
+    image.src = "/africactn-logo.png"
+  })
+}
+
+function dataUrlToBytes(dataUrl: string) {
+  const base64 = dataUrl.split(",")[1] ?? ""
+  const binary = window.atob(base64)
+  const bytes = new Uint8Array(binary.length)
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index)
+  }
+
+  return bytes
+}
+
+function pdfText(value: string) {
+  return encodePdfString(value)
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)")
+    .replace(/[\r\n]+/g, " ")
+}
+
+function makePdfContentStream() {
+  const commands: string[] = []
+
+  return {
+    text({
+      x,
+      y,
+      size,
+      value,
+      bold = false,
+      align = "left",
+    }: {
+      x: number
+      y: number
+      size: number
+      value: string
+      bold?: boolean
+      align?: "left" | "right"
+    }) {
+      const escapedValue = pdfText(value)
+      const width = escapedValue.length * size * 0.48
+      const adjustedX = align === "right" ? x - width : x
+
+      commands.push(
+        `BT /${bold ? "F2" : "F1"} ${size} Tf ${adjustedX.toFixed(
+          2
+        )} ${y.toFixed(2)} Td (${escapedValue}) Tj ET`
+      )
+    },
+    rect({
+      x,
+      y,
+      width,
+      height,
+      gray = 0.9,
+    }: {
+      x: number
+      y: number
+      width: number
+      height: number
+      gray?: number
+    }) {
+      commands.push(`${gray} g ${x} ${y} ${width} ${height} re f 0 g`)
+    },
+    line({
+      x1,
+      y1,
+      x2,
+      y2,
+      gray = 0.78,
+    }: {
+      x1: number
+      y1: number
+      x2: number
+      y2: number
+      gray?: number
+    }) {
+      commands.push(`${gray} G 0.75 w ${x1} ${y1} m ${x2} ${y2} l S 0 G`)
+    },
+    image({ x, y, size }: { x: number; y: number; size: number }) {
+      commands.push(`q ${size} 0 0 ${size} ${x} ${y} cm /Logo Do Q`)
+    },
+    content() {
+      return commands.join("\n")
+    },
+  }
+}
+
+function createCommissionInvoicePdfBlob({
+  content,
+  logoBytes,
+}: {
+  content: string
+  logoBytes: Uint8Array
+}) {
+  const encoder = new TextEncoder()
+  const parts: Uint8Array[] = []
+  const offsets: number[] = [0]
+  let byteLength = 0
+
+  function append(value: string | Uint8Array) {
+    const bytes = typeof value === "string" ? encoder.encode(value) : value
+
+    parts.push(bytes)
+    byteLength += bytes.length
+  }
+
+  function appendObject(
+    index: number,
+    body: string | Uint8Array,
+    prefix = "",
+    suffix = ""
+  ) {
+    offsets[index] = byteLength
+    append(`${index} 0 obj\n${prefix}`)
+    append(body)
+    append(`${suffix}\nendobj\n`)
+  }
+
+  const contentBytes = encoder.encode(content)
+
+  append("%PDF-1.4\n")
+  appendObject(1, "<< /Type /Catalog /Pages 2 0 R >>")
+  appendObject(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+  appendObject(
+    3,
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> /XObject << /Logo 6 0 R >> >> /Contents 7 0 R >>"
+  )
+  appendObject(4, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+  appendObject(5, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>")
+  appendObject(
+    6,
+    logoBytes,
+    `<< /Type /XObject /Subtype /Image /Width 360 /Height 360 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${logoBytes.length} >>\nstream\n`,
+    "\nendstream"
+  )
+  appendObject(
+    7,
+    contentBytes,
+    `<< /Length ${contentBytes.length} >>\nstream\n`,
+    "\nendstream"
+  )
+
+  const xrefOffset = byteLength
+
+  append("xref\n0 8\n0000000000 65535 f \n")
+  for (const offset of offsets.slice(1)) {
+    append(`${String(offset).padStart(10, "0")} 00000 n \n`)
+  }
+  append(`trailer\n<< /Size 8 /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`)
+
+  const blobParts = parts.map((part) => {
+    const buffer = new ArrayBuffer(part.byteLength)
+
+    new Uint8Array(buffer).set(part)
+
+    return buffer
+  })
+
+  return new Blob(blobParts, { type: "application/pdf" })
+}
+
+async function downloadFrabemarCommissionInvoicePdf({
+  countryName,
+  invoiceNumber,
+  customerReference,
+  invoiceDate,
+  commissionAmount,
+}: {
+  countryName: string
+  invoiceNumber: string
+  customerReference: string
+  invoiceDate: string
+  commissionAmount: number
+}) {
+  const logoImage = await loadInvoiceLogoImage()
+  const logoCanvas = document.createElement("canvas")
+  const logoContext = logoCanvas.getContext("2d")
+
+  logoCanvas.width = 360
+  logoCanvas.height = 360
+
+  if (!logoContext) {
+    throw new Error("Could not create invoice PDF.")
+  }
+
+  logoContext.fillStyle = "#ffffff"
+  logoContext.fillRect(0, 0, logoCanvas.width, logoCanvas.height)
+  logoContext.drawImage(logoImage, 0, 0, 360, 360)
+
+  const logoBytes = dataUrlToBytes(logoCanvas.toDataURL("image/jpeg", 0.9))
+  const stream = makePdfContentStream()
+  const companyLines = [
+    "12337 Jones Rd, Suite 414",
+    "Houston, Texas 77070",
+    "United States",
+    "",
+    "281-477-3233",
+    "info@africactn.com",
+    "www.africactn.com",
+  ]
+  const amountText = formatCurrencyAmount(commissionAmount, "EUR")
+
+  stream.image({ x: 34, y: 664, size: 92 })
+  stream.text({ x: 156, y: 740, size: 21, value: "AfricaCTN LLC", bold: true })
+  companyLines.forEach((line, index) => {
+    if (line) {
+      stream.text({ x: 157, y: 724 - index * 10.5, size: 8.5, value: line })
+    }
+  })
+  stream.text({
+    x: 542,
+    y: 738,
+    size: 39,
+    value: "INVOICE",
+    bold: true,
+    align: "right",
+  })
+
+  stream.text({ x: 38, y: 636, size: 9, value: "Bill To", bold: true })
+  stream.text({ x: 38, y: 614, size: 9, value: "654 Frabemar SRL", bold: true })
+  stream.text({ x: 38, y: 602, size: 9, value: "Frabemar SRL" })
+  stream.text({ x: 38, y: 590, size: 9, value: "Viale Brigata Patigiane 16/2" })
+  stream.text({ x: 38, y: 578, size: 9, value: "Genova 16129" })
+  stream.text({ x: 38, y: 566, size: 9, value: "Italy" })
+
+  const detailRows = [
+    ["Invoice Number:", invoiceNumber],
+    ["Customer Reference:", customerReference],
+    ["Invoice Date:", invoiceDate],
+  ]
+  const detailBoxX = 342
+  const detailLabelWidth = 150
+  const detailValueWidth = 90
+  const detailLabelRightX = detailBoxX + detailLabelWidth - 8
+  const detailValueX = detailBoxX + detailLabelWidth + 10
+
+  detailRows.forEach(([label, value], index) => {
+    const y = 622 - index * 18
+
+    stream.rect({
+      x: detailBoxX,
+      y: y - 6,
+      width: detailLabelWidth,
+      height: 17,
+      gray: 0.92,
+    })
+    stream.rect({
+      x: detailBoxX + detailLabelWidth,
+      y: y - 6,
+      width: detailValueWidth,
+      height: 17,
+      gray: 0.97,
+    })
+    stream.text({
+      x: detailLabelRightX,
+      y,
+      size: 8.5,
+      value: label,
+      bold: true,
+      align: "right",
+    })
+    stream.text({ x: detailValueX, y, size: 8.5, value })
+  })
+
+  stream.rect({ x: 32, y: 520, width: 550, height: 24, gray: 0.9 })
+  stream.text({ x: 38, y: 529, size: 8.5, value: "Item", bold: true })
+  stream.text({
+    x: 568,
+    y: 529,
+    size: 8.5,
+    value: "Amount",
+    bold: true,
+    align: "right",
+  })
+  stream.text({
+    x: 38,
+    y: 494,
+    size: 9,
+    value: `Comission - ${countryName}`,
+    bold: true,
+  })
+  stream.text({
+    x: 38,
+    y: 481,
+    size: 8.5,
+    value: `Frabemar Commissions for ${countryName}`,
+  })
+  stream.text({ x: 568, y: 488, size: 9, value: amountText, align: "right" })
+  stream.line({ x1: 32, y1: 468, x2: 582, y2: 468 })
+  stream.rect({ x: 32, y: 426, width: 550, height: 26, gray: 0.9 })
+  stream.text({
+    x: 452,
+    y: 436,
+    size: 9,
+    value: "Total",
+    bold: true,
+    align: "right",
+  })
+  stream.text({ x: 568, y: 436, size: 9, value: amountText, align: "right" })
+
+  stream.text({
+    x: 38,
+    y: 396,
+    size: 10,
+    value: "Bank Information",
+    bold: true,
+  })
+  ;[
+    "JP Morgan Chase Bank",
+    "2904 N. Beltline Rd.",
+    "Bank One Texas 75062",
+    "",
+    "Account Name: AfricaCTN LLC",
+    "",
+    "Account Number: 523725601",
+    "Routing Number: 111000614",
+    "",
+    "International Wire: CHASUS33",
+    "Zelle: info@africactn.com",
+    "PayCargo: AfricaCTN LLC",
+  ].forEach((line, index) => {
+    if (line) {
+      stream.text({ x: 38, y: 374 - index * 10.5, size: 8, value: line })
+    }
+  })
+
+  const blob = createCommissionInvoicePdfBlob({
+    content: stream.content(),
+    logoBytes,
+  })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+
+  link.href = url
+  link.download = encodePdfString(
+    `Frabemar-${customerReference}-commission.pdf`
+  )
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
 }
 
 function findCameroonDmiMappingColumns(headers: string[]) {
@@ -1562,6 +2664,8 @@ function ReconciliationWorkbench({
   onDropCountryFiles,
   canEditCountryData = true,
   isReadOnly = false,
+  canUnreconcile = !isReadOnly,
+  showOnlyMatched = false,
   countryId,
   countryName,
   countryRecordCount,
@@ -1570,7 +2674,9 @@ function ReconciliationWorkbench({
   matchedMasterCount,
   onRollInvoices,
   onLeaveInvoices,
+  onReconcileSelectedPair,
   onReconcileCountryRows,
+  onUnreconcileMatchedRows,
   onPasteDmiReport,
   onProceed,
   onMoveInvoicesToOot,
@@ -1588,6 +2694,8 @@ function ReconciliationWorkbench({
   onDropCountryFiles: (files: File[]) => void
   canEditCountryData?: boolean
   isReadOnly?: boolean
+  canUnreconcile?: boolean
+  showOnlyMatched?: boolean
   countryId?: string
   countryName: string
   countryRecordCount: number
@@ -1598,11 +2706,16 @@ function ReconciliationWorkbench({
     records: MonthEndMasterRecord[]
   ) => Promise<{ savedCount: number; excludedCount: number }>
   onLeaveInvoices: (records: MonthEndMasterRecord[]) => Promise<void>
+  onReconcileSelectedPair: (
+    countryRecord: MonthEndCountryReportRecord,
+    masterRecord: MonthEndMasterRecord
+  ) => Promise<void>
   onReconcileCountryRows: (
     records: MonthEndCountryReportRecord[],
     reason: string,
     note: string
   ) => Promise<void>
+  onUnreconcileMatchedRows: (rows: MatchedDisplayRow[]) => Promise<void>
   onPasteDmiReport?: () => void
   onProceed: () => Promise<void>
   onMoveInvoicesToOot?: (
@@ -1614,12 +2727,19 @@ function ReconciliationWorkbench({
   const [selectedMasterRecordIds, setSelectedMasterRecordIds] = React.useState(
     () => new Set<string>()
   )
+  const [selectedMatchedRowIds, setSelectedMatchedRowIds] = React.useState(
+    () => new Set<string>()
+  )
   const lastCountrySelectionAnchorIdRef = React.useRef<string | null>(null)
   const isShiftClickingCountryRowRef = React.useRef(false)
   const lastMasterSelectionAnchorIdRef = React.useRef<string | null>(null)
   const isShiftClickingMasterRowRef = React.useRef(false)
   const [isRollingInvoices, setIsRollingInvoices] = React.useState(false)
   const [isReconcilingCountryRows, setIsReconcilingCountryRows] =
+    React.useState(false)
+  const [isReconcilingSelectedPair, setIsReconcilingSelectedPair] =
+    React.useState(false)
+  const [isUnreconcilingMatchedRows, setIsUnreconcilingMatchedRows] =
     React.useState(false)
   const [isProceeding, setIsProceeding] = React.useState(false)
   const [isMovingInvoicesToOot, setIsMovingInvoicesToOot] =
@@ -1642,7 +2762,7 @@ function ReconciliationWorkbench({
     () => new Set<string>()
   )
   const countryReconcileReasonRef = React.useRef<HTMLInputElement>(null)
-  const countryReconcileNoteRef = React.useRef<HTMLInputElement>(null)
+  const countryReconcileNoteRef = React.useRef<HTMLTextAreaElement>(null)
   const [dragTarget, setDragTarget] = React.useState<
     "country" | "master" | null
   >(null)
@@ -1701,9 +2821,55 @@ function ReconciliationWorkbench({
         second.masterRecord.salesOrderNumber
       )
     )
-  const matchedRowCount = new Set(
+  const matchedCountryRecordIds = new Set(
     matchedRows.map(({ countryRecord }) => countryRecord.id)
+  )
+  const resolvedCountryReportRowById = new Map(
+    resolvedCountryReportRows.map((row) => [row.id, row])
+  )
+  const clearedRows = countryRecords
+    .filter(
+      (record) =>
+        visibleCountryIds.has(record.id) &&
+        resolvedCountryReportRowById.has(record.id) &&
+        !matchedCountryRecordIds.has(record.id)
+    )
+    .map((countryRecord) => ({
+      id: `cleared__${countryRecord.id}`,
+      kind: "cleared" as const,
+      countryRecord,
+      resolvedRow: resolvedCountryReportRowById.get(countryRecord.id),
+    }))
+    .filter(
+      (
+        row
+      ): row is {
+        id: string
+        kind: "cleared"
+        countryRecord: MonthEndCountryReportRecord
+        resolvedRow: ResolvedCountryReportRow
+      } => Boolean(row.resolvedRow)
+    )
+    .sort((first, second) =>
+      (
+        first.countryRecord.reference || first.countryRecord.ctnNumber
+      ).localeCompare(
+        second.countryRecord.reference || second.countryRecord.ctnNumber
+      )
+    )
+  const matchedDisplayRows = [
+    ...matchedRows.map((match) => ({ ...match, kind: "matched" as const })),
+    ...clearedRows,
+  ]
+  const matchedRowCount = new Set(
+    matchedDisplayRows.map(({ countryRecord }) => countryRecord.id)
   ).size
+  const allMatchedRowsSelected =
+    matchedDisplayRows.length > 0 &&
+    matchedDisplayRows.every((row) => selectedMatchedRowIds.has(row.id))
+  const selectedMatchedRows = matchedDisplayRows.filter((row) =>
+    selectedMatchedRowIds.has(row.id)
+  )
   const billOfLadingMatchCount = matchedRecords.filter(({ matchedOn }) =>
     matchedOn?.label.includes("BL")
   ).length
@@ -1742,6 +2908,14 @@ function ReconciliationWorkbench({
   const selectedMasterRecords = masterRows
     .map(({ record }) => record)
     .filter((record) => selectedMasterRecordIds.has(record.id))
+  const hasPairedSelection =
+    selectedCountryRecords.length > 0 && selectedMasterRecords.length > 0
+  const canReconcileSelectedPair =
+    selectedCountryRecords.length === 1 && selectedMasterRecords.length === 1
+  const isCountryReconcileNoteRequired = countryReconcileReason === "Other"
+  const canSaveCountryReconciliation =
+    Boolean(countryReconcileReason) &&
+    (!isCountryReconcileNoteRequired || Boolean(countryReconcileNote.trim()))
   const canProceed = countryRows.length === 0 && masterRows.length === 0
   const gabonPairIssueByRecordId = getGabonPairIssueByRecordId(
     countryId,
@@ -1894,6 +3068,36 @@ function ReconciliationWorkbench({
     isShiftClickingMasterRowRef.current = false
   }
 
+  function toggleAllMatchedRows(checked: boolean) {
+    setSelectedMatchedRowIds((current) => {
+      const next = new Set(current)
+
+      for (const row of matchedDisplayRows) {
+        if (checked) {
+          next.add(row.id)
+        } else {
+          next.delete(row.id)
+        }
+      }
+
+      return next
+    })
+  }
+
+  function toggleMatchedRow(rowId: string, checked: boolean) {
+    setSelectedMatchedRowIds((current) => {
+      const next = new Set(current)
+
+      if (checked) {
+        next.add(rowId)
+      } else {
+        next.delete(rowId)
+      }
+
+      return next
+    })
+  }
+
   function toggleMasterGroup(groupId: string) {
     setExpandedMasterGroupIds((current) => {
       const next = new Set(current)
@@ -1944,18 +3148,14 @@ function ReconciliationWorkbench({
     setCountryReconcileReasonSearch("")
     setCountryReconcileNote("")
     setIsCountryReconcileDialogOpen(true)
-    setIsCountryReasonDropdownOpen(true)
+    setIsCountryReasonDropdownOpen(false)
     window.setTimeout(() => {
       countryReconcileReasonRef.current?.focus()
     }, 0)
   }
 
   async function saveCountryReconciliation() {
-    if (
-      !selectedCountryRecords.length ||
-      !countryReconcileReason ||
-      !countryReconcileNote.trim()
-    ) {
+    if (!selectedCountryRecords.length || !canSaveCountryReconciliation) {
       return
     }
 
@@ -1980,6 +3180,49 @@ function ReconciliationWorkbench({
       setCountryReconcileMessage("Could not save the selected country rows.")
     } finally {
       setIsReconcilingCountryRows(false)
+    }
+  }
+
+  async function reconcileSelectedPair() {
+    if (!canReconcileSelectedPair) {
+      return
+    }
+
+    setIsReconcilingSelectedPair(true)
+    setCountryReconcileMessage("")
+    setRollInvoiceMessage("")
+
+    try {
+      await onReconcileSelectedPair(
+        selectedCountryRecords[0],
+        selectedMasterRecords[0]
+      )
+      setSelectedCountryRecordIds(new Set())
+      setSelectedMasterRecordIds(new Set())
+      setCountryReconcileMessage(
+        "Selected country and NetSuite records reconciled."
+      )
+    } catch {
+      setCountryReconcileMessage("Could not reconcile the selected records.")
+    } finally {
+      setIsReconcilingSelectedPair(false)
+    }
+  }
+
+  async function unreconcileSelectedMatchedRows() {
+    if (!selectedMatchedRows.length) {
+      return
+    }
+
+    setIsUnreconcilingMatchedRows(true)
+    setCountryReconcileMessage("")
+    setRollInvoiceMessage("")
+
+    try {
+      await onUnreconcileMatchedRows(selectedMatchedRows)
+      setSelectedMatchedRowIds(new Set())
+    } finally {
+      setIsUnreconcilingMatchedRows(false)
     }
   }
 
@@ -2163,7 +3406,7 @@ function ReconciliationWorkbench({
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Reconcile Country Rows</DialogTitle>
+            <DialogTitle>Clear Country Rows</DialogTitle>
             <DialogDescription>
               {selectedCountryRecords.length} selected
             </DialogDescription>
@@ -2178,7 +3421,7 @@ function ReconciliationWorkbench({
                   setCountryReconcileReason("")
                   setIsCountryReasonDropdownOpen(true)
                 }}
-                onFocus={() => setIsCountryReasonDropdownOpen(true)}
+                onFocus={() => setIsCountryReasonDropdownOpen(false)}
                 onBlur={() => {
                   window.setTimeout(() => {
                     setIsCountryReasonDropdownOpen(false)
@@ -2193,8 +3436,12 @@ function ReconciliationWorkbench({
                   }
 
                   if (event.key === "Tab") {
-                    commitCountryReconcileReason()
-                    setIsCountryReasonDropdownOpen(false)
+                    event.preventDefault()
+                    if (commitCountryReconcileReason()) {
+                      focusCountryReconcileNote()
+                    } else {
+                      setIsCountryReasonDropdownOpen(false)
+                    }
                   }
 
                   if (event.key === "Escape") {
@@ -2240,17 +3487,22 @@ function ReconciliationWorkbench({
                 </div>
               ) : null}
             </div>
-            <Input
+            <Textarea
               ref={countryReconcileNoteRef}
               value={countryReconcileNote}
               onChange={(event) => setCountryReconcileNote(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter") {
+                if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault()
                   saveCountryReconciliation()
                 }
               }}
-              placeholder="Type note, then press Enter"
+              placeholder={
+                isCountryReconcileNoteRequired
+                  ? "Type note, then press Enter"
+                  : "Optional note"
+              }
+              className="min-h-28 resize-y"
               disabled={!countryReconcileReason || isReconcilingCountryRows}
             />
           </div>
@@ -2266,164 +3518,103 @@ function ReconciliationWorkbench({
               type="button"
               onClick={saveCountryReconciliation}
               disabled={
-                !countryReconcileReason ||
-                !countryReconcileNote.trim() ||
-                isReconcilingCountryRows
+                !canSaveCountryReconciliation || isReconcilingCountryRows
               }
             >
-              Reconcile
+              Clear
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
       <div className="grid min-h-0 gap-3 xl:gap-4">
-        <div className="grid min-h-0 items-stretch gap-4 lg:min-h-[calc(100svh-var(--header-height)-5.5rem)] lg:grid-cols-2">
-          <section
-            className={
-              "grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-lg border bg-background p-3 transition-colors " +
-              (dragTarget === "country" ? "border-primary bg-primary/5" : "")
-            }
-            onDragOver={(event) => {
-              if (isReadOnly || !canEditCountryData) {
-                return
-              }
+        {!showOnlyMatched ? (
+          <>
+            <div className="grid min-h-0 items-stretch gap-4 lg:min-h-[calc(100svh-var(--header-height)-5.5rem)] lg:grid-cols-2">
+              <section
+                className={
+                  "grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-lg border bg-background p-3 transition-colors " +
+                  (dragTarget === "country"
+                    ? "border-primary bg-primary/5"
+                    : "")
+                }
+                onDragOver={(event) => {
+                  if (isReadOnly || !canEditCountryData) {
+                    return
+                  }
 
-              event.preventDefault()
-              setDragTarget("country")
-            }}
-            onDragLeave={() => setDragTarget(null)}
-            onDrop={(event) => {
-              if (isReadOnly || !canEditCountryData) {
-                return
-              }
+                  event.preventDefault()
+                  setDragTarget("country")
+                }}
+                onDragLeave={() => setDragTarget(null)}
+                onDrop={(event) => {
+                  if (isReadOnly || !canEditCountryData) {
+                    return
+                  }
 
-              const files = getDroppedFiles(event)
+                  const files = getDroppedFiles(event)
 
-              if (files.length) {
-                onDropCountryFiles(files)
-              }
-            }}
-          >
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold tracking-normal">Country</h2>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                {!isReadOnly && onPasteDmiReport ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 rounded-full"
-                    onClick={onPasteDmiReport}
-                  >
-                    <ClipboardPasteIcon />
-                    Paste DMI Report
-                  </Button>
-                ) : null}
-                {!isReadOnly && selectedCountryRecords.length ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-8 rounded-full"
-                    disabled={isReconcilingCountryRows}
-                    onClick={openCountryReconcileDialog}
-                  >
-                    <CheckCircle2Icon />
-                    Reconcile ({selectedCountryRecords.length})
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-            <div className="grid min-h-0 gap-2 overflow-y-auto pb-3 md:hidden">
-              {countryRows.length ? (
-                countryRows.map(({ record }) => (
-                  <article
-                    key={record.id}
-                    className={
-                      "rounded-lg border bg-muted/20 p-3 text-sm transition-colors " +
-                      (isReadOnly
-                        ? ""
-                        : selectedCountryRecordIds.has(record.id)
-                          ? "border-primary bg-primary/5"
-                          : "")
-                    }
-                  >
-                    <div className="flex items-start gap-3">
-                      <Checkbox
-                        checked={selectedCountryRecordIds.has(record.id)}
-                        onCheckedChange={(checked) =>
-                          toggleCountryRow(
-                            record.id,
-                            checked === true,
-                            isShiftClickingCountryRowRef.current
-                          )
-                        }
-                        aria-label={`Select country report row ${record.reference || record.ctnNumber || record.id}`}
-                        className="mt-0.5 shrink-0 after:-inset-2"
-                        disabled={isReadOnly}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          isShiftClickingCountryRowRef.current = event.shiftKey
-                        }}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="font-semibold break-words">
-                              {record.ctnNumber || "-"}
-                            </div>
-                            <div className="mt-1 grid grid-cols-[2.5rem_minmax(0,1fr)] gap-2 text-xs">
-                              <span className="text-muted-foreground">BL</span>
-                              <span className="break-words">
-                                {record.billOfLadingNumber || "-"}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="shrink-0 text-right text-sm font-semibold tabular-nums">
-                            {formatAmount(record.amount)}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </article>
-                ))
-              ) : (
-                <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
-                  No country-only records.
-                </div>
-              )}
-            </div>
-            <div className="hidden min-h-0 overflow-x-hidden overflow-y-auto pb-3 md:block">
-              <Table
-                className="w-full table-fixed text-xs"
-                containerClassName="overflow-x-hidden"
+                  if (files.length) {
+                    onDropCountryFiles(files)
+                  }
+                }}
               >
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-8">
-                      <Checkbox
-                        checked={allCountryRowsSelected}
-                        onCheckedChange={(checked) =>
-                          toggleAllCountryRows(checked === true)
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold tracking-normal">
+                    Country
+                  </h2>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    {!isReadOnly && onPasteDmiReport ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 rounded-full"
+                        onClick={onPasteDmiReport}
+                      >
+                        <ClipboardPasteIcon />
+                        Paste DMI Report
+                      </Button>
+                    ) : null}
+                    {!isReadOnly && selectedCountryRecords.length ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 rounded-md"
+                        disabled={
+                          hasPairedSelection
+                            ? !canReconcileSelectedPair ||
+                              isReconcilingSelectedPair
+                            : isReconcilingCountryRows
                         }
-                        aria-label="Select all unmatched country report rows"
-                      />
-                    </TableHead>
-                    <TableHead className="w-[20%]">Country</TableHead>
-                    <TableHead>Reference</TableHead>
-                    <TableHead>CTN</TableHead>
-                    <TableHead>Bill of Lading</TableHead>
-                    <TableHead className="w-24 text-right">Amount</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+                        onClick={
+                          hasPairedSelection
+                            ? reconcileSelectedPair
+                            : openCountryReconcileDialog
+                        }
+                      >
+                        <CheckCircle2Icon />
+                        {hasPairedSelection
+                          ? "Reconcile"
+                          : `Clear (${selectedCountryRecords.length})`}
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="grid min-h-0 gap-2 overflow-y-auto pb-3 md:hidden">
                   {countryRows.length ? (
                     countryRows.map(({ record }) => (
-                      <TableRow
+                      <article
                         key={record.id}
-                        aria-selected={selectedCountryRecordIds.has(record.id)}
-                        className="h-12"
+                        className={
+                          "rounded-lg border bg-muted/20 p-3 text-sm transition-colors " +
+                          (isReadOnly
+                            ? ""
+                            : selectedCountryRecordIds.has(record.id)
+                              ? "border-primary bg-primary/5"
+                              : "")
+                        }
                       >
-                        <TableCell className="w-8">
+                        <div className="flex items-start gap-3">
                           <Checkbox
                             checked={selectedCountryRecordIds.has(record.id)}
                             onCheckedChange={(checked) =>
@@ -2434,7 +3625,7 @@ function ReconciliationWorkbench({
                               )
                             }
                             aria-label={`Select country report row ${record.reference || record.ctnNumber || record.id}`}
-                            className="after:-inset-2"
+                            className="mt-0.5 shrink-0 after:-inset-2"
                             disabled={isReadOnly}
                             onClick={(event) => {
                               event.stopPropagation()
@@ -2442,261 +3633,32 @@ function ReconciliationWorkbench({
                                 event.shiftKey
                             }}
                           />
-                        </TableCell>
-                        <TableCell className="min-w-0">
-                          <span
-                            className="block truncate"
-                            title={countryCellLabel(record)}
-                          >
-                            {countryCellLabel(record)}
-                          </span>
-                        </TableCell>
-                        <TableCell className="font-medium break-words">
-                          {record.reference || record.invoiceNumber || "-"}
-                        </TableCell>
-                        <TableCell className="break-words">
-                          {record.ctnNumber || "-"}
-                        </TableCell>
-                        <TableCell className="break-words">
-                          {record.billOfLadingNumber || "-"}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatAmount(record.amount)}
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell
-                        colSpan={6}
-                        className="h-24 text-center text-sm text-muted-foreground"
-                      >
-                        No country-only records.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-            {countryReconcileMessage ? (
-              <p className="px-1 pb-2 text-xs text-muted-foreground">
-                {countryReconcileMessage}
-              </p>
-            ) : null}
-            <div className="-mx-3 -mb-3 flex h-12 items-center justify-between border-t bg-muted/50 px-4 text-xs font-medium">
-              <div className="flex items-center gap-2">
-                <span>Matched</span>
-                <span className="rounded-full border bg-background px-2 py-0.5 tabular-nums">
-                  {matchedCountryCount} / {countryRecordCount}
-                </span>
-              </div>
-              <span className="text-muted-foreground tabular-nums">
-                Open {formatAmount(countryTotal)}
-              </span>
-            </div>
-          </section>
-          <section
-            className={
-              "grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-lg border bg-background p-3 transition-colors " +
-              (dragTarget === "master" ? "border-primary bg-primary/5" : "")
-            }
-            onDragOver={(event) => {
-              if (isReadOnly) {
-                return
-              }
-
-              event.preventDefault()
-              setDragTarget("master")
-            }}
-            onDragLeave={() => setDragTarget(null)}
-            onDrop={(event) => {
-              if (isReadOnly) {
-                return
-              }
-
-              const [file] = getDroppedFiles(event)
-
-              if (file) {
-                onDropMasterFile(file)
-              }
-            }}
-          >
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold tracking-normal">
-                NetSuite
-              </h2>
-              <div className="flex items-center gap-2">
-                {!isReadOnly &&
-                showAngolaNetSuiteReferences &&
-                selectedMasterRecords.length &&
-                onMoveInvoicesToOot ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 rounded-full"
-                    disabled={isRollingInvoices || isMovingInvoicesToOot}
-                    onClick={moveSelectedInvoicesToOot}
-                  >
-                    <ArrowRightIcon />
-                    Move to OOT
-                  </Button>
-                ) : null}
-                {!isReadOnly && selectedMasterRecords.length ? (
-                  <>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 rounded-full"
-                      disabled={isRollingInvoices || isMovingInvoicesToOot}
-                      onClick={leaveSelectedInvoices}
-                    >
-                      <ArrowRightIcon />
-                      Leave Invoices ({selectedMasterRecords.length})
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="h-8 rounded-full"
-                      disabled={isRollingInvoices || isMovingInvoicesToOot}
-                      onClick={rollSelectedInvoices}
-                    >
-                      <FileOutputIcon />
-                      Roll Invoices ({selectedMasterRecords.length})
-                    </Button>
-                  </>
-                ) : !isReadOnly && canProceed ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-8 rounded-full"
-                    disabled={
-                      isRollingInvoices || isMovingInvoicesToOot || isProceeding
-                    }
-                    onClick={proceedToNextStep}
-                  >
-                    <ArrowRightIcon />
-                    Proceed
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-            {masterRecords.length ? (
-              <>
-                <div className="grid min-h-0 gap-2 overflow-y-auto pb-3 md:hidden">
-                  {masterRows.length ? (
-                    masterRows.map(({ record }) => {
-                      const gabonPairIssue = gabonPairIssueByRecordId.get(
-                        record.id
-                      )
-
-                      return (
-                        <article
-                          key={record.id}
-                          className={
-                            "rounded-lg border p-3 text-sm transition-colors " +
-                            (gabonPairIssue
-                              ? "border-red-300 bg-red-50 text-red-950 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-100 "
-                              : "bg-muted/20 ") +
-                            (isReadOnly
-                              ? ""
-                              : selectedMasterRecordIds.has(record.id)
-                                ? "border-primary bg-primary/5"
-                                : "")
-                          }
-                        >
-                          <div className="flex items-start gap-3">
-                            <Checkbox
-                              checked={selectedMasterRecordIds.has(record.id)}
-                              onCheckedChange={(checked) =>
-                                toggleMasterRow(
-                                  record.id,
-                                  checked === true,
-                                  isShiftClickingMasterRowRef.current
-                                )
-                              }
-                              aria-label={`Select NetSuite record ${record.salesOrderNumber || record.id}`}
-                              className="mt-0.5 shrink-0 after:-inset-2"
-                              disabled={isReadOnly}
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                isShiftClickingMasterRowRef.current =
-                                  event.shiftKey
-                              }}
-                            />
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <div className="text-xs font-medium text-muted-foreground">
-                                    {formatTransactionDate(
-                                      record.transactionDate
-                                    )}
-                                  </div>
-                                  <div className="font-semibold break-words">
-                                    {showAngolaNetSuiteReferences
-                                      ? record.billOfLadingNumber || "-"
-                                      : record.salesOrderNumber || "-"}
-                                  </div>
-                                  {gabonPairIssue ? (
-                                    <div className="mt-1 text-xs font-semibold text-red-700 dark:text-red-300">
-                                      {gabonPairIssue}
-                                    </div>
-                                  ) : null}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="font-semibold break-words">
+                                  {record.ctnNumber || "-"}
                                 </div>
-                                <div className="shrink-0 text-right text-sm font-semibold tabular-nums">
-                                  {formatAmount(record.amount)}
+                                <div className="mt-1 grid grid-cols-[2.5rem_minmax(0,1fr)] gap-2 text-xs">
+                                  <span className="text-muted-foreground">
+                                    BL
+                                  </span>
+                                  <span className="break-words">
+                                    {record.billOfLadingNumber || "-"}
+                                  </span>
                                 </div>
                               </div>
-                              <dl className="mt-3 grid gap-2 text-xs">
-                                {showAngolaNetSuiteReferences ? (
-                                  <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
-                                    <dt className="text-muted-foreground">
-                                      CTN
-                                    </dt>
-                                    <dd className="break-words">
-                                      {record.ctnNumber || "-"}
-                                    </dd>
-                                  </div>
-                                ) : (
-                                  <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
-                                    <dt className="text-muted-foreground">
-                                      {masterReferenceLabel}
-                                    </dt>
-                                    <dd className="break-words">
-                                      {(showCtnReference
-                                        ? record.ctnNumber
-                                        : record.billOfLadingNumber) || "-"}
-                                    </dd>
-                                  </div>
-                                )}
-                                <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
-                                  <dt className="text-muted-foreground">
-                                    Status
-                                  </dt>
-                                  <dd className="break-words">
-                                    {record.status || "-"}
-                                  </dd>
-                                </div>
-                                {showCountryColumn ? (
-                                  <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
-                                    <dt className="text-muted-foreground">
-                                      Country
-                                    </dt>
-                                    <dd className="break-words">
-                                      {record.countryName || "-"}
-                                    </dd>
-                                  </div>
-                                ) : null}
-                              </dl>
+                              <div className="shrink-0 text-right text-sm font-semibold tabular-nums">
+                                {formatAmount(record.amount)}
+                              </div>
                             </div>
                           </div>
-                        </article>
-                      )
-                    })
+                        </div>
+                      </article>
+                    ))
                   ) : (
                     <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
-                      No NetSuite-only records.
+                      No country-only records.
                     </div>
                   )}
                 </div>
@@ -2707,203 +3669,427 @@ function ReconciliationWorkbench({
                   >
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-14">
+                        <TableHead className="w-8">
                           <Checkbox
-                            checked={allMasterRowsSelected}
+                            checked={allCountryRowsSelected}
                             onCheckedChange={(checked) =>
-                              toggleAllMasterRows(checked === true)
+                              toggleAllCountryRows(checked === true)
                             }
-                            aria-label="Select all unmatched NetSuite records"
+                            aria-label="Select all unmatched country report rows"
                           />
                         </TableHead>
-                        <TableHead className="w-24">Date</TableHead>
-                        {showAngolaNetSuiteReferences ? (
-                          <>
-                            <TableHead>Bill of Lading</TableHead>
-                            <TableHead>CTN</TableHead>
-                          </>
-                        ) : (
-                          <>
-                            <TableHead>Sales Order</TableHead>
-                            <TableHead>{masterReferenceLabel}</TableHead>
-                          </>
-                        )}
-                        <TableHead className="w-[18%]">Status</TableHead>
+                        <TableHead className="w-[20%]">Country</TableHead>
+                        <TableHead>Reference</TableHead>
+                        <TableHead>CTN</TableHead>
+                        <TableHead>Bill of Lading</TableHead>
                         <TableHead className="w-24 text-right">
                           Amount
                         </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
+                      {countryRows.length ? (
+                        countryRows.map(({ record }) => (
+                          <TableRow
+                            key={record.id}
+                            aria-selected={selectedCountryRecordIds.has(
+                              record.id
+                            )}
+                            className="h-12"
+                          >
+                            <TableCell className="w-8">
+                              <Checkbox
+                                checked={selectedCountryRecordIds.has(
+                                  record.id
+                                )}
+                                onCheckedChange={(checked) =>
+                                  toggleCountryRow(
+                                    record.id,
+                                    checked === true,
+                                    isShiftClickingCountryRowRef.current
+                                  )
+                                }
+                                aria-label={`Select country report row ${record.reference || record.ctnNumber || record.id}`}
+                                className="after:-inset-2"
+                                disabled={isReadOnly}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  isShiftClickingCountryRowRef.current =
+                                    event.shiftKey
+                                }}
+                              />
+                            </TableCell>
+                            <TableCell className="min-w-0">
+                              <span
+                                className="block truncate"
+                                title={countryCellLabel(record)}
+                              >
+                                {countryCellLabel(record)}
+                              </span>
+                            </TableCell>
+                            <TableCell className="font-medium break-words">
+                              {record.reference || record.invoiceNumber || "-"}
+                            </TableCell>
+                            <TableCell className="break-words">
+                              {record.ctnNumber || "-"}
+                            </TableCell>
+                            <TableCell className="break-words">
+                              {record.billOfLadingNumber || "-"}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {formatAmount(record.amount)}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell
+                            colSpan={6}
+                            className="h-24 text-center text-sm text-muted-foreground"
+                          >
+                            No country-only records.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+                {countryReconcileMessage ? (
+                  <p className="px-1 pb-2 text-xs text-muted-foreground">
+                    {countryReconcileMessage}
+                  </p>
+                ) : null}
+                <div className="-mx-3 -mb-3 flex h-12 items-center justify-between border-t bg-muted/50 px-4 text-xs font-medium">
+                  <div className="flex items-center gap-2">
+                    <span>Matched</span>
+                    <span className="rounded-full border bg-background px-2 py-0.5 tabular-nums">
+                      {Math.max(matchedCountryCount, matchedRowCount)} /{" "}
+                      {countryRecordCount}
+                    </span>
+                  </div>
+                  <span className="text-muted-foreground tabular-nums">
+                    Open {formatAmount(countryTotal)}
+                  </span>
+                </div>
+              </section>
+              <section
+                className={
+                  "grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-lg border bg-background p-3 transition-colors " +
+                  (dragTarget === "master" ? "border-primary bg-primary/5" : "")
+                }
+                onDragOver={(event) => {
+                  if (isReadOnly) {
+                    return
+                  }
+
+                  event.preventDefault()
+                  setDragTarget("master")
+                }}
+                onDragLeave={() => setDragTarget(null)}
+                onDrop={(event) => {
+                  if (isReadOnly) {
+                    return
+                  }
+
+                  const [file] = getDroppedFiles(event)
+
+                  if (file) {
+                    onDropMasterFile(file)
+                  }
+                }}
+              >
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold tracking-normal">
+                    NetSuite
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    {!isReadOnly &&
+                    showAngolaNetSuiteReferences &&
+                    selectedMasterRecords.length &&
+                    !hasPairedSelection &&
+                    onMoveInvoicesToOot ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 rounded-full"
+                        disabled={isRollingInvoices || isMovingInvoicesToOot}
+                        onClick={moveSelectedInvoicesToOot}
+                      >
+                        <ArrowRightIcon />
+                        Move to OOT
+                      </Button>
+                    ) : null}
+                    {!isReadOnly &&
+                    selectedMasterRecords.length &&
+                    !hasPairedSelection ? (
+                      <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 rounded-full"
+                          disabled={isRollingInvoices || isMovingInvoicesToOot}
+                          onClick={leaveSelectedInvoices}
+                        >
+                          <ArrowRightIcon />
+                          Leave Invoices ({selectedMasterRecords.length})
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 rounded-full"
+                          disabled={isRollingInvoices || isMovingInvoicesToOot}
+                          onClick={rollSelectedInvoices}
+                        >
+                          <FileOutputIcon />
+                          Roll Invoices ({selectedMasterRecords.length})
+                        </Button>
+                      </>
+                    ) : !isReadOnly && canProceed ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 rounded-full"
+                        disabled={
+                          isRollingInvoices ||
+                          isMovingInvoicesToOot ||
+                          isProceeding
+                        }
+                        onClick={proceedToNextStep}
+                      >
+                        <ArrowRightIcon />
+                        Proceed
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+                {masterRecords.length ? (
+                  <>
+                    <div className="grid min-h-0 gap-2 overflow-y-auto pb-3 md:hidden">
                       {masterRows.length ? (
-                        masterDisplayRows.map((displayRow) => {
-                          const record = displayRow.record
-                          const isGroup = displayRow.kind === "group"
-                          const isExpanded =
-                            isGroup && expandedMasterGroupIds.has(displayRow.id)
-                          const selectedCount = displayRow.records.filter(
-                            (groupRecord) =>
-                              selectedMasterRecordIds.has(groupRecord.id)
-                          ).length
-                          const allGroupRecordsSelected =
-                            selectedCount === displayRow.records.length
-                          const gabonPairIssue =
-                            !isGroup && gabonPairIssueByRecordId.get(record.id)
+                        masterRows.map(({ record }) => {
+                          const gabonPairIssue = gabonPairIssueByRecordId.get(
+                            record.id
+                          )
 
                           return (
-                            <React.Fragment key={displayRow.id}>
-                              <TableRow
-                                aria-selected={selectedCount > 0}
-                                className={
-                                  isGroup
-                                    ? "h-12 cursor-pointer"
-                                    : gabonPairIssue
-                                      ? "h-12 border-l-4 border-l-red-500 bg-red-50 text-red-950 dark:bg-red-950/30 dark:text-red-100"
-                                      : "h-12"
-                                }
-                                onClick={() => {
-                                  if (isGroup) {
-                                    toggleMasterGroup(displayRow.id)
+                            <article
+                              key={record.id}
+                              className={
+                                "rounded-lg border p-3 text-sm transition-colors " +
+                                (gabonPairIssue
+                                  ? "border-red-300 bg-red-50 text-red-950 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-100 "
+                                  : "bg-muted/20 ") +
+                                (isReadOnly
+                                  ? ""
+                                  : selectedMasterRecordIds.has(record.id)
+                                    ? "border-primary bg-primary/5"
+                                    : "")
+                              }
+                            >
+                              <div className="flex items-start gap-3">
+                                <Checkbox
+                                  checked={selectedMasterRecordIds.has(
+                                    record.id
+                                  )}
+                                  onCheckedChange={(checked) =>
+                                    toggleMasterRow(
+                                      record.id,
+                                      checked === true,
+                                      isShiftClickingMasterRowRef.current
+                                    )
                                   }
-                                }}
-                              >
-                                <TableCell className="w-14">
-                                  <div className="flex items-center gap-2">
-                                    <Checkbox
-                                      checked={
-                                        isGroup
-                                          ? allGroupRecordsSelected
-                                          : selectedMasterRecordIds.has(
-                                              record.id
-                                            )
-                                      }
-                                      aria-checked={
-                                        isGroup &&
-                                        selectedCount > 0 &&
-                                        !allGroupRecordsSelected
-                                          ? "mixed"
-                                          : undefined
-                                      }
-                                      onCheckedChange={(checked) => {
-                                        if (isGroup) {
-                                          toggleMasterRecords(
-                                            displayRow.records,
-                                            checked === true
-                                          )
-                                          return
-                                        }
-
-                                        toggleMasterRow(
-                                          record.id,
-                                          checked === true,
-                                          isShiftClickingMasterRowRef.current
-                                        )
-                                      }}
-                                      aria-label={
-                                        isGroup
-                                          ? `Select paired NetSuite records for ${record.salesOrderNumber || record.id}`
-                                          : `Select NetSuite record ${record.salesOrderNumber || record.id}`
-                                      }
-                                      className="after:-inset-2"
-                                      disabled={isReadOnly}
-                                      onClick={(event) => {
-                                        event.stopPropagation()
-                                        isShiftClickingMasterRowRef.current =
-                                          event.shiftKey
-                                      }}
-                                    />
-                                    {isGroup ? (
-                                      <button
-                                        type="button"
-                                        aria-label={
-                                          isExpanded
-                                            ? "Collapse paired NetSuite records"
-                                            : "Expand paired NetSuite records"
-                                        }
-                                        aria-expanded={isExpanded}
-                                        className="flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
-                                        onClick={(event) => {
-                                          event.stopPropagation()
-                                          toggleMasterGroup(displayRow.id)
-                                        }}
-                                      >
-                                        <ChevronDownIcon
-                                          className={
-                                            "size-4 transition-transform " +
-                                            (isExpanded ? "" : "-rotate-90")
-                                          }
-                                        />
-                                      </button>
-                                    ) : null}
+                                  aria-label={`Select NetSuite record ${record.salesOrderNumber || record.id}`}
+                                  className="mt-0.5 shrink-0 after:-inset-2"
+                                  disabled={isReadOnly}
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    isShiftClickingMasterRowRef.current =
+                                      event.shiftKey
+                                  }}
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <div className="text-xs font-medium text-muted-foreground">
+                                        {formatTransactionDate(
+                                          record.transactionDate
+                                        )}
+                                      </div>
+                                      <div className="font-semibold break-words">
+                                        {showAngolaNetSuiteReferences
+                                          ? record.billOfLadingNumber || "-"
+                                          : record.salesOrderNumber || "-"}
+                                      </div>
+                                      {gabonPairIssue ? (
+                                        <div className="mt-1 text-xs font-semibold text-red-700 dark:text-red-300">
+                                          {gabonPairIssue}
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                    <div className="shrink-0 text-right text-sm font-semibold tabular-nums">
+                                      {formatAmount(record.amount)}
+                                    </div>
                                   </div>
-                                </TableCell>
-                                <TableCell className="break-words tabular-nums">
-                                  {isExpanded
-                                    ? ""
-                                    : formatTransactionDate(
-                                        record.transactionDate
-                                      )}
-                                </TableCell>
-                                {showAngolaNetSuiteReferences ? (
-                                  <>
-                                    <TableCell className="break-words">
-                                      {isExpanded
-                                        ? ""
-                                        : record.billOfLadingNumber || "-"}
-                                    </TableCell>
-                                    <TableCell className="break-words">
-                                      {isExpanded
-                                        ? ""
-                                        : record.ctnNumber || "-"}
-                                    </TableCell>
-                                  </>
-                                ) : (
-                                  <>
-                                    <TableCell className="font-medium break-words">
-                                      {isExpanded
-                                        ? ""
-                                        : record.salesOrderNumber || "-"}
-                                    </TableCell>
-                                    <TableCell className="break-words">
-                                      {isExpanded
-                                        ? ""
-                                        : (showCtnReference
+                                  <dl className="mt-3 grid gap-2 text-xs">
+                                    {showAngolaNetSuiteReferences ? (
+                                      <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
+                                        <dt className="text-muted-foreground">
+                                          CTN
+                                        </dt>
+                                        <dd className="break-words">
+                                          {record.ctnNumber || "-"}
+                                        </dd>
+                                      </div>
+                                    ) : (
+                                      <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
+                                        <dt className="text-muted-foreground">
+                                          {masterReferenceLabel}
+                                        </dt>
+                                        <dd className="break-words">
+                                          {(showCtnReference
                                             ? record.ctnNumber
                                             : record.billOfLadingNumber) || "-"}
-                                    </TableCell>
-                                  </>
-                                )}
-                                <TableCell className="break-words">
-                                  {isExpanded ? "" : record.status || "-"}
-                                </TableCell>
-                                <TableCell className="text-right tabular-nums">
-                                  {isExpanded
-                                    ? ""
-                                    : formatAmount(record.amount)}
-                                </TableCell>
-                              </TableRow>
-                              {isGroup && isExpanded
-                                ? displayRow.records.map((childRecord) => (
-                                    <TableRow
-                                      key={childRecord.id}
-                                      aria-selected={selectedMasterRecordIds.has(
-                                        childRecord.id
-                                      )}
-                                      className="h-12 border-l-4 border-l-border"
-                                    >
-                                      <TableCell className="w-14 pl-9">
+                                        </dd>
+                                      </div>
+                                    )}
+                                    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
+                                      <dt className="text-muted-foreground">
+                                        Status
+                                      </dt>
+                                      <dd className="break-words">
+                                        {record.status || "-"}
+                                      </dd>
+                                    </div>
+                                    {showCountryColumn ? (
+                                      <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
+                                        <dt className="text-muted-foreground">
+                                          Country
+                                        </dt>
+                                        <dd className="break-words">
+                                          {record.countryName || "-"}
+                                        </dd>
+                                      </div>
+                                    ) : null}
+                                  </dl>
+                                </div>
+                              </div>
+                            </article>
+                          )
+                        })
+                      ) : (
+                        <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+                          No NetSuite-only records.
+                        </div>
+                      )}
+                    </div>
+                    <div className="hidden min-h-0 overflow-x-hidden overflow-y-auto pb-3 md:block">
+                      <Table
+                        className="w-full table-fixed text-xs"
+                        containerClassName="overflow-x-hidden"
+                      >
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-14">
+                              <Checkbox
+                                checked={allMasterRowsSelected}
+                                onCheckedChange={(checked) =>
+                                  toggleAllMasterRows(checked === true)
+                                }
+                                aria-label="Select all unmatched NetSuite records"
+                              />
+                            </TableHead>
+                            <TableHead className="w-24">Date</TableHead>
+                            {showAngolaNetSuiteReferences ? (
+                              <>
+                                <TableHead>Bill of Lading</TableHead>
+                                <TableHead>CTN</TableHead>
+                              </>
+                            ) : (
+                              <>
+                                <TableHead>Sales Order</TableHead>
+                                <TableHead>{masterReferenceLabel}</TableHead>
+                              </>
+                            )}
+                            <TableHead className="w-[18%]">Status</TableHead>
+                            <TableHead className="w-24 text-right">
+                              Amount
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {masterRows.length ? (
+                            masterDisplayRows.map((displayRow) => {
+                              const record = displayRow.record
+                              const isGroup = displayRow.kind === "group"
+                              const isExpanded =
+                                isGroup &&
+                                expandedMasterGroupIds.has(displayRow.id)
+                              const selectedCount = displayRow.records.filter(
+                                (groupRecord) =>
+                                  selectedMasterRecordIds.has(groupRecord.id)
+                              ).length
+                              const allGroupRecordsSelected =
+                                selectedCount === displayRow.records.length
+                              const gabonPairIssue =
+                                !isGroup &&
+                                gabonPairIssueByRecordId.get(record.id)
+
+                              return (
+                                <React.Fragment key={displayRow.id}>
+                                  <TableRow
+                                    aria-selected={selectedCount > 0}
+                                    className={
+                                      isGroup
+                                        ? "h-12 cursor-pointer"
+                                        : gabonPairIssue
+                                          ? "h-12 border-l-4 border-l-red-500 bg-red-50 text-red-950 dark:bg-red-950/30 dark:text-red-100"
+                                          : "h-12"
+                                    }
+                                    onClick={() => {
+                                      if (isGroup) {
+                                        toggleMasterGroup(displayRow.id)
+                                      }
+                                    }}
+                                  >
+                                    <TableCell className="w-14">
+                                      <div className="flex items-center gap-2">
                                         <Checkbox
-                                          checked={selectedMasterRecordIds.has(
-                                            childRecord.id
-                                          )}
-                                          onCheckedChange={(checked) =>
+                                          checked={
+                                            isGroup
+                                              ? allGroupRecordsSelected
+                                              : selectedMasterRecordIds.has(
+                                                  record.id
+                                                )
+                                          }
+                                          aria-checked={
+                                            isGroup &&
+                                            selectedCount > 0 &&
+                                            !allGroupRecordsSelected
+                                              ? "mixed"
+                                              : undefined
+                                          }
+                                          onCheckedChange={(checked) => {
+                                            if (isGroup) {
+                                              toggleMasterRecords(
+                                                displayRow.records,
+                                                checked === true
+                                              )
+                                              return
+                                            }
+
                                             toggleMasterRow(
-                                              childRecord.id,
+                                              record.id,
                                               checked === true,
                                               isShiftClickingMasterRowRef.current
                                             )
+                                          }}
+                                          aria-label={
+                                            isGroup
+                                              ? `Select paired NetSuite records for ${record.salesOrderNumber || record.id}`
+                                              : `Select NetSuite record ${record.salesOrderNumber || record.id}`
                                           }
-                                          aria-label={`Select NetSuite record ${childRecord.salesOrderNumber || childRecord.id}`}
                                           className="after:-inset-2"
                                           disabled={isReadOnly}
                                           onClick={(event) => {
@@ -2912,102 +4098,246 @@ function ReconciliationWorkbench({
                                               event.shiftKey
                                           }}
                                         />
-                                      </TableCell>
-                                      <TableCell className="pl-4 break-words tabular-nums">
-                                        {formatTransactionDate(
-                                          childRecord.transactionDate
-                                        )}
-                                      </TableCell>
-                                      {showAngolaNetSuiteReferences ? (
-                                        <>
-                                          <TableCell className="break-words">
-                                            {childRecord.billOfLadingNumber ||
+                                        {isGroup ? (
+                                          <button
+                                            type="button"
+                                            aria-label={
+                                              isExpanded
+                                                ? "Collapse paired NetSuite records"
+                                                : "Expand paired NetSuite records"
+                                            }
+                                            aria-expanded={isExpanded}
+                                            className="flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
+                                            onClick={(event) => {
+                                              event.stopPropagation()
+                                              toggleMasterGroup(displayRow.id)
+                                            }}
+                                          >
+                                            <ChevronDownIcon
+                                              className={
+                                                "size-4 transition-transform " +
+                                                (isExpanded ? "" : "-rotate-90")
+                                              }
+                                            />
+                                          </button>
+                                        ) : null}
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="break-words tabular-nums">
+                                      {isExpanded
+                                        ? ""
+                                        : formatTransactionDate(
+                                            record.transactionDate
+                                          )}
+                                    </TableCell>
+                                    {showAngolaNetSuiteReferences ? (
+                                      <>
+                                        <TableCell className="break-words">
+                                          {isExpanded
+                                            ? ""
+                                            : record.billOfLadingNumber || "-"}
+                                        </TableCell>
+                                        <TableCell className="break-words">
+                                          {isExpanded
+                                            ? ""
+                                            : record.ctnNumber || "-"}
+                                        </TableCell>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <TableCell className="font-medium break-words">
+                                          {isExpanded
+                                            ? ""
+                                            : record.salesOrderNumber || "-"}
+                                        </TableCell>
+                                        <TableCell className="break-words">
+                                          {isExpanded
+                                            ? ""
+                                            : (showCtnReference
+                                                ? record.ctnNumber
+                                                : record.billOfLadingNumber) ||
                                               "-"}
+                                        </TableCell>
+                                      </>
+                                    )}
+                                    <TableCell className="break-words">
+                                      {isExpanded ? "" : record.status || "-"}
+                                    </TableCell>
+                                    <TableCell className="text-right tabular-nums">
+                                      {isExpanded
+                                        ? ""
+                                        : formatAmount(record.amount)}
+                                    </TableCell>
+                                  </TableRow>
+                                  {isGroup && isExpanded
+                                    ? displayRow.records.map((childRecord) => (
+                                        <TableRow
+                                          key={childRecord.id}
+                                          aria-selected={selectedMasterRecordIds.has(
+                                            childRecord.id
+                                          )}
+                                          className="h-12 border-l-4 border-l-border"
+                                        >
+                                          <TableCell className="w-14 pl-9">
+                                            <Checkbox
+                                              checked={selectedMasterRecordIds.has(
+                                                childRecord.id
+                                              )}
+                                              onCheckedChange={(checked) =>
+                                                toggleMasterRow(
+                                                  childRecord.id,
+                                                  checked === true,
+                                                  isShiftClickingMasterRowRef.current
+                                                )
+                                              }
+                                              aria-label={`Select NetSuite record ${childRecord.salesOrderNumber || childRecord.id}`}
+                                              className="after:-inset-2"
+                                              disabled={isReadOnly}
+                                              onClick={(event) => {
+                                                event.stopPropagation()
+                                                isShiftClickingMasterRowRef.current =
+                                                  event.shiftKey
+                                              }}
+                                            />
                                           </TableCell>
+                                          <TableCell className="pl-4 break-words tabular-nums">
+                                            {formatTransactionDate(
+                                              childRecord.transactionDate
+                                            )}
+                                          </TableCell>
+                                          {showAngolaNetSuiteReferences ? (
+                                            <>
+                                              <TableCell className="break-words">
+                                                {childRecord.billOfLadingNumber ||
+                                                  "-"}
+                                              </TableCell>
+                                              <TableCell className="break-words">
+                                                {childRecord.ctnNumber || "-"}
+                                              </TableCell>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <TableCell className="pl-4 font-medium break-words">
+                                                {childRecord.salesOrderNumber ||
+                                                  "-"}
+                                              </TableCell>
+                                              <TableCell className="break-words">
+                                                {(showCtnReference
+                                                  ? childRecord.ctnNumber
+                                                  : childRecord.billOfLadingNumber) ||
+                                                  "-"}
+                                              </TableCell>
+                                            </>
+                                          )}
                                           <TableCell className="break-words">
-                                            {childRecord.ctnNumber || "-"}
+                                            {childRecord.status || "-"}
                                           </TableCell>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <TableCell className="pl-4 font-medium break-words">
-                                            {childRecord.salesOrderNumber ||
-                                              "-"}
+                                          <TableCell className="text-right tabular-nums">
+                                            {formatAmount(childRecord.amount)}
                                           </TableCell>
-                                          <TableCell className="break-words">
-                                            {(showCtnReference
-                                              ? childRecord.ctnNumber
-                                              : childRecord.billOfLadingNumber) ||
-                                              "-"}
-                                          </TableCell>
-                                        </>
-                                      )}
-                                      <TableCell className="break-words">
-                                        {childRecord.status || "-"}
-                                      </TableCell>
-                                      <TableCell className="text-right tabular-nums">
-                                        {formatAmount(childRecord.amount)}
-                                      </TableCell>
-                                    </TableRow>
-                                  ))
-                                : null}
-                            </React.Fragment>
-                          )
-                        })
-                      ) : (
-                        <TableRow>
-                          <TableCell
-                            colSpan={6}
-                            className="h-24 text-center text-sm text-muted-foreground"
-                          >
-                            No NetSuite-only records.
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
+                                        </TableRow>
+                                      ))
+                                    : null}
+                                </React.Fragment>
+                              )
+                            })
+                          ) : (
+                            <TableRow>
+                              <TableCell
+                                colSpan={6}
+                                className="h-24 text-center text-sm text-muted-foreground"
+                              >
+                                No NetSuite-only records.
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </>
+                ) : (
+                  <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
+                    Upload or replace the NetSuite report from the Upload menu.
+                  </div>
+                )}
+                {rollInvoiceMessage ? (
+                  <p className="px-1 pb-2 text-xs text-muted-foreground">
+                    {rollInvoiceMessage}
+                  </p>
+                ) : null}
+                <div className="-mx-3 -mb-3 flex h-12 items-center justify-between border-t bg-muted/50 px-4 text-xs font-medium">
+                  <div className="flex items-center gap-2">
+                    <span>Matched</span>
+                    <span className="rounded-full border bg-background px-2 py-0.5 tabular-nums">
+                      {matchedMasterCount} / {masterRecordCount}
+                    </span>
+                  </div>
+                  <span className="text-muted-foreground tabular-nums">
+                    Open {formatAmount(masterTotal)}
+                  </span>
                 </div>
-              </>
-            ) : (
-              <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
-                Upload or replace the NetSuite report from the Upload menu.
-              </div>
-            )}
-            {rollInvoiceMessage ? (
-              <p className="px-1 pb-2 text-xs text-muted-foreground">
-                {rollInvoiceMessage}
-              </p>
-            ) : null}
-            <div className="-mx-3 -mb-3 flex h-12 items-center justify-between border-t bg-muted/50 px-4 text-xs font-medium">
-              <div className="flex items-center gap-2">
-                <span>Matched</span>
-                <span className="rounded-full border bg-background px-2 py-0.5 tabular-nums">
-                  {matchedMasterCount} / {masterRecordCount}
-                </span>
-              </div>
-              <span className="text-muted-foreground tabular-nums">
-                Open {formatAmount(masterTotal)}
-              </span>
+              </section>
             </div>
-          </section>
-        </div>
-        <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3 overflow-hidden rounded-lg border bg-background p-3">
+          </>
+        ) : null}
+        <section
+          className={
+            "grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3 overflow-hidden rounded-lg border bg-background p-3 " +
+            (showOnlyMatched
+              ? "lg:min-h-[calc(100svh-var(--header-height)-5.5rem)]"
+              : "")
+          }
+        >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold tracking-normal">Matched</h2>
-            <span className="shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium text-muted-foreground">
-              {matchedRowCount} matched
-            </span>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {canUnreconcile && selectedMatchedRows.length ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 rounded-md"
+                  disabled={isUnreconcilingMatchedRows}
+                  onClick={unreconcileSelectedMatchedRows}
+                >
+                  <ArrowLeftIcon />
+                  Unreconcile ({selectedMatchedRows.length})
+                </Button>
+              ) : null}
+            </div>
           </div>
           <div className="grid min-h-0 gap-2 overflow-y-auto pb-3 md:hidden">
-            {matchedRows.length ? (
-              matchedRows.map(
-                ({ id, countryRecord, masterRecord, matchedOn }) => (
+            {matchedDisplayRows.length ? (
+              matchedDisplayRows.map((row) => {
+                const countryRecord = row.countryRecord
+                const masterRecord =
+                  row.kind === "matched" ? row.masterRecord : undefined
+                const matchedBy =
+                  row.kind === "matched"
+                    ? row.matchedOn
+                    : {
+                        label: row.resolvedRow.reason,
+                        value: row.resolvedRow.note,
+                      }
+
+                return (
                   <article
-                    key={id}
+                    key={row.id}
                     className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-3 text-sm dark:border-emerald-900/70 dark:bg-emerald-950/20"
                   >
                     <div className="flex items-start gap-2">
-                      <CheckCircle2Icon className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+                      {canUnreconcile ? (
+                        <Checkbox
+                          checked={selectedMatchedRowIds.has(row.id)}
+                          onCheckedChange={(checked) =>
+                            toggleMatchedRow(row.id, checked === true)
+                          }
+                          aria-label="Select matched row"
+                          className="mt-0.5 shrink-0 after:-inset-2"
+                        />
+                      ) : (
+                        <CheckCircle2Icon className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+                      )}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
@@ -3028,14 +4358,16 @@ function ReconciliationWorkbench({
                           <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
                             <dt className="text-muted-foreground">NetSuite</dt>
                             <dd className="break-words">
-                              {masterRecord.salesOrderNumber || "-"}
+                              {masterRecord?.salesOrderNumber || "-"}
                             </dd>
                           </div>
                           <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
                             <dt className="text-muted-foreground">Match</dt>
                             <dd className="break-words">
-                              {matchedOn
-                                ? `${matchedOn.label}: ${matchedOn.value}`
+                              {matchedBy
+                                ? [matchedBy.label, matchedBy.value]
+                                    .filter(Boolean)
+                                    .join(": ")
                                 : "-"}
                             </dd>
                           </div>
@@ -3043,7 +4375,7 @@ function ReconciliationWorkbench({
                             <dt className="text-muted-foreground">CTN</dt>
                             <dd className="break-words">
                               {countryRecord.ctnNumber ||
-                                masterRecord.ctnNumber ||
+                                masterRecord?.ctnNumber ||
                                 "-"}
                             </dd>
                           </div>
@@ -3051,14 +4383,16 @@ function ReconciliationWorkbench({
                             <dt className="text-muted-foreground">Bill</dt>
                             <dd className="break-words">
                               {countryRecord.billOfLadingNumber ||
-                                masterRecord.billOfLadingNumber ||
+                                masterRecord?.billOfLadingNumber ||
                                 "-"}
                             </dd>
                           </div>
                           <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
                             <dt className="text-muted-foreground">NS amount</dt>
                             <dd className="break-words tabular-nums">
-                              {formatAmount(masterRecord.amount)}
+                              {masterRecord
+                                ? formatAmount(masterRecord.amount)
+                                : "-"}
                             </dd>
                           </div>
                         </dl>
@@ -3066,7 +4400,7 @@ function ReconciliationWorkbench({
                     </div>
                   </article>
                 )
-              )
+              })
             ) : (
               <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
                 No matched records.
@@ -3080,7 +4414,17 @@ function ReconciliationWorkbench({
             >
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-10" />
+                  <TableHead className="w-14">
+                    {canUnreconcile ? (
+                      <Checkbox
+                        checked={allMatchedRowsSelected}
+                        onCheckedChange={(checked) =>
+                          toggleAllMatchedRows(checked === true)
+                        }
+                        aria-label="Select all matched rows"
+                      />
+                    ) : null}
+                  </TableHead>
                   <TableHead>Country</TableHead>
                   <TableHead>NetSuite</TableHead>
                   <TableHead className="w-44">Matched By</TableHead>
@@ -3088,34 +4432,58 @@ function ReconciliationWorkbench({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {matchedRows.length ? (
-                  matchedRows.map(
-                    ({ id, countryRecord, masterRecord, matchedOn }) => {
-                      return (
-                        <TableRow
-                          key={id}
-                          className="bg-emerald-50/60 transition-colors hover:bg-emerald-50 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/30"
-                        >
-                          <TableCell className="align-top">
-                            <CheckCircle2Icon className="size-4 text-emerald-600" />
-                          </TableCell>
-                          <TableCell className="align-top">
-                            <div className="grid gap-1.5 text-muted-foreground">
-                              <div className="grid grid-cols-[4.75rem_minmax(0,1fr)] gap-2">
-                                <span>CTN Num</span>
-                                <span className="break-words text-foreground">
-                                  {countryRecord.ctnNumber || "-"}
-                                </span>
-                              </div>
-                              <div className="grid grid-cols-[4.75rem_minmax(0,1fr)] gap-2">
-                                <span>BL Num</span>
-                                <span className="break-words text-foreground">
-                                  {countryRecord.billOfLadingNumber || "-"}
-                                </span>
-                              </div>
+                {matchedDisplayRows.length ? (
+                  matchedDisplayRows.map((row) => {
+                    const countryRecord = row.countryRecord
+                    const masterRecord =
+                      row.kind === "matched" ? row.masterRecord : undefined
+                    const matchedBy =
+                      row.kind === "matched"
+                        ? row.matchedOn
+                        : {
+                            label: row.resolvedRow.reason,
+                            value: row.resolvedRow.note,
+                          }
+
+                    return (
+                      <TableRow
+                        key={row.id}
+                        className="bg-emerald-50/60 transition-colors hover:bg-emerald-50 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/30"
+                      >
+                        <TableCell className="align-top">
+                          <div className="flex items-center gap-2">
+                            {canUnreconcile ? (
+                              <Checkbox
+                                checked={selectedMatchedRowIds.has(row.id)}
+                                onCheckedChange={(checked) =>
+                                  toggleMatchedRow(row.id, checked === true)
+                                }
+                                aria-label="Select matched row"
+                                className="after:-inset-2"
+                              />
+                            ) : (
+                              <CheckCircle2Icon className="size-4 text-emerald-600" />
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <div className="grid gap-1.5 text-muted-foreground">
+                            <div className="grid grid-cols-[4.75rem_minmax(0,1fr)] gap-2">
+                              <span>CTN Num</span>
+                              <span className="break-words text-foreground">
+                                {countryRecord.ctnNumber || "-"}
+                              </span>
                             </div>
-                          </TableCell>
-                          <TableCell className="align-top">
+                            <div className="grid grid-cols-[4.75rem_minmax(0,1fr)] gap-2">
+                              <span>BL Num</span>
+                              <span className="break-words text-foreground">
+                                {countryRecord.billOfLadingNumber || "-"}
+                              </span>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="align-top">
+                          {masterRecord ? (
                             <div className="grid gap-1.5 text-muted-foreground">
                               <div className="grid grid-cols-[4.75rem_minmax(0,1fr)] gap-2">
                                 <span>CTN Num</span>
@@ -3130,43 +4498,49 @@ function ReconciliationWorkbench({
                                 </span>
                               </div>
                             </div>
-                          </TableCell>
-                          <TableCell className="align-top">
-                            {matchedOn ? (
-                              <div className="grid gap-1">
-                                <span className="text-[0.7rem] font-medium text-muted-foreground">
-                                  {matchedOn.label}
-                                </span>
-                                <span className="font-medium break-words">
-                                  {matchedOn.value}
-                                </span>
-                              </div>
-                            ) : (
-                              "-"
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right align-top tabular-nums">
+                          ) : (
+                            "-"
+                          )}
+                        </TableCell>
+                        <TableCell className="align-top">
+                          {matchedBy ? (
                             <div className="grid gap-1">
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground">
-                                  Country
+                              <span className="text-[0.7rem] font-medium text-muted-foreground">
+                                {matchedBy.label}
+                              </span>
+                              {matchedBy.value ? (
+                                <span className="font-medium break-words">
+                                  {matchedBy.value}
                                 </span>
-                                <span className="font-semibold">
-                                  {formatAmount(countryRecord.amount)}
-                                </span>
-                              </div>
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground">
-                                  NS
-                                </span>
-                                <span>{formatAmount(masterRecord.amount)}</span>
-                              </div>
+                              ) : null}
                             </div>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    }
-                  )
+                          ) : (
+                            "-"
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right align-top tabular-nums">
+                          <div className="grid gap-1">
+                            <div className="flex justify-between gap-3">
+                              <span className="text-muted-foreground">
+                                Country
+                              </span>
+                              <span className="font-semibold">
+                                {formatAmount(countryRecord.amount)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between gap-3">
+                              <span className="text-muted-foreground">NS</span>
+                              <span>
+                                {masterRecord
+                                  ? formatAmount(masterRecord.amount)
+                                  : "-"}
+                              </span>
+                            </div>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })
                 ) : (
                   <TableRow>
                     <TableCell
@@ -3627,23 +5001,23 @@ function CountryNavigationButtons({
   return (
     <div className="flex items-center gap-1">
       <Button
-        variant="secondary"
-        size="icon-sm"
-        className="h-9 w-9 rounded-full md:h-9 md:w-9"
+        variant="outline"
+        className="h-8 rounded-md"
         aria-label="Previous country"
         disabled={!onPrevious}
         onClick={onPrevious}
       >
         <ArrowLeftIcon />
+        Previous
       </Button>
       <Button
-        variant="secondary"
-        size="icon-sm"
-        className="h-9 w-9 rounded-full md:h-9 md:w-9"
+        variant="outline"
+        className="h-8 rounded-md"
         aria-label="Next country"
         disabled={!onNext}
         onClick={onNext}
       >
+        Next
         <ArrowRightIcon />
       </Button>
     </div>
@@ -3655,11 +5029,13 @@ function CountryProcessBreadcrumb({
   reconciliationHref,
   journalHref,
   dashboardHref,
+  hideReconciliation = false,
 }: {
   activeView: "reconciliation" | "journal" | "dashboard"
   reconciliationHref: string
   journalHref: string
   dashboardHref: string
+  hideReconciliation?: boolean
 }) {
   const steps = [
     {
@@ -3677,7 +5053,7 @@ function CountryProcessBreadcrumb({
       label: "Country Dashboard",
       href: dashboardHref,
     },
-  ] as const
+  ].filter((step) => !hideReconciliation || step.value !== "reconciliation")
   const activeStep = steps.find((step) => step.value === activeView) ?? steps[0]
 
   return (
@@ -3709,35 +5085,27 @@ function CountryProcessBreadcrumb({
           })}
         </DropdownMenuContent>
       </DropdownMenu>
-      <Breadcrumb className="hidden min-w-0 md:block">
-        <BreadcrumbList className="flex-nowrap gap-1 text-xs sm:text-sm">
-          {steps.map((step, index) => {
+      <NavigationMenu className="hidden max-w-none justify-start md:flex">
+        <NavigationMenuList className="min-w-0 flex-wrap justify-start gap-6">
+          {steps.map((step) => {
             const isActive = activeView === step.value
 
             return (
-              <React.Fragment key={step.value}>
-                {index > 0 ? (
-                  <BreadcrumbSeparator className="shrink-0" />
-                ) : null}
-                <BreadcrumbItem className="min-w-0 shrink-0">
-                  {isActive ? (
-                    <BreadcrumbPage className="rounded-full bg-primary/10 px-2.5 py-1 font-medium text-primary">
-                      {step.label}
-                    </BreadcrumbPage>
-                  ) : (
-                    <BreadcrumbLink
-                      render={<AppLink href={step.href} />}
-                      className="rounded-full px-2.5 py-1 font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-                    >
-                      {step.label}
-                    </BreadcrumbLink>
+              <NavigationMenuItem key={step.value}>
+                <AppLink
+                  href={step.href}
+                  className={cn(
+                    "-mb-px inline-flex h-9 items-center border-b border-transparent bg-transparent px-0 py-1 text-sm font-medium text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30",
+                    isActive && "border-foreground text-foreground"
                   )}
-                </BreadcrumbItem>
-              </React.Fragment>
+                >
+                  {step.label}
+                </AppLink>
+              </NavigationMenuItem>
             )
           })}
-        </BreadcrumbList>
-      </Breadcrumb>
+        </NavigationMenuList>
+      </NavigationMenu>
     </>
   )
 }
@@ -3752,12 +5120,6 @@ function CountryReconciliationDashboard({
   leftInvoiceRecordIds,
   activeSection,
   onActiveSectionChange,
-  onBack,
-  onPreviousCountry,
-  onNextCountry,
-  reconciliationHref,
-  journalHref,
-  dashboardHref,
 }: {
   countryName: string
   masterRecords: MonthEndMasterRecord[]
@@ -3770,12 +5132,6 @@ function CountryReconciliationDashboard({
   onActiveSectionChange: (
     section: CountryDashboardSection
   ) => Promise<void> | void
-  onBack: () => void
-  onPreviousCountry?: () => void
-  onNextCountry?: () => void
-  reconciliationHref: string
-  journalHref: string
-  dashboardHref: string
 }) {
   const [displaySection, setDisplaySection] =
     React.useState<CountryDashboardSection>(activeSection)
@@ -3870,30 +5226,6 @@ function CountryReconciliationDashboard({
 
   return (
     <div className="flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
-      <div className="grid min-h-9 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-3">
-        <Button
-          variant="outline"
-          size="icon-sm"
-          className="h-9 w-9 rounded-full md:h-9 md:w-9"
-          aria-label="Back to month end"
-          onClick={onBack}
-        >
-          <ArrowLeftIcon />
-        </Button>
-        <CountryProcessBreadcrumb
-          activeView="dashboard"
-          reconciliationHref={reconciliationHref}
-          journalHref={journalHref}
-          dashboardHref={dashboardHref}
-        />
-        <div className="flex items-center gap-2">
-          <CountryNavigationButtons
-            onPrevious={onPreviousCountry}
-            onNext={onNextCountry}
-          />
-        </div>
-      </div>
-
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-3">
         {dashboardSections.map((section) => {
           const isActive = activeDashboardSection.value === section.value
@@ -3991,6 +5323,7 @@ type JournalEntryRow = {
   credit?: number
   lineDescription?: string
   className?: string
+  sectionGapBefore?: boolean
 }
 
 type JournalEntrySnapshot = {
@@ -4002,6 +5335,7 @@ type JournalEntrySnapshot = {
     journalTotal: number
   }[]
   additionalRows?: JournalEntryRow[]
+  simpleRows?: JournalEntryRow[]
   rows?: JournalEntryRow[]
   sourceDocumentCount?: number
 }
@@ -4024,14 +5358,15 @@ function JournalEntryPreview({
   countryName,
   entries,
   additionalRows,
+  simpleRows,
   journalRows,
   sourceDocumentCount,
-  onBack,
-  onPreviousCountry,
-  onNextCountry,
-  reconciliationHref,
-  journalHref,
-  dashboardHref,
+  isReadOnly = false,
+  pdfDownloadAction,
+  exchangeRateEditor,
+  exchangeRateNeedsAttention = false,
+  onExchangeRateAttentionHandled,
+  summaryMetric,
   onMakeJournalEntry,
 }: {
   countryName: string
@@ -4042,17 +5377,33 @@ function JournalEntryPreview({
     journalTotal: number
   }[]
   additionalRows?: JournalEntryRow[]
+  simpleRows?: JournalEntryRow[]
   journalRows?: JournalEntryRow[]
   sourceDocumentCount?: number
-  onBack: () => void
-  onPreviousCountry?: () => void
-  onNextCountry?: () => void
-  reconciliationHref: string
-  journalHref: string
-  dashboardHref: string
+  isReadOnly?: boolean
+  pdfDownloadAction?: {
+    label: string
+    disabled?: boolean
+    onClick: () => Promise<void>
+  }
+  exchangeRateEditor?: {
+    value?: number
+    draft: string
+    onDraftChange: (value: string) => void
+    onSave: () => Promise<void>
+  }
+  exchangeRateNeedsAttention?: boolean
+  onExchangeRateAttentionHandled?: () => void
+  summaryMetric?: {
+    label: string
+    value: string
+  }
   onMakeJournalEntry: () => Promise<void>
 }) {
   const [isSaving, setIsSaving] = React.useState(false)
+  const [isSavingExchangeRate, setIsSavingExchangeRate] = React.useState(false)
+  const [isDownloadingPdf, setIsDownloadingPdf] = React.useState(false)
+  const exchangeRateInputRef = React.useRef<HTMLInputElement>(null)
   const countryTotal = entries.reduce(
     (sum, entry) => sum + entry.countryTotal,
     0
@@ -4076,10 +5427,27 @@ function JournalEntryPreview({
     0
   )
   const hasDetailedJournal = Boolean(journalRows?.length)
+  const hasCustomSimpleJournal = Boolean(simpleRows?.length)
+  const summaryLineLabel = hasCustomSimpleJournal
+    ? "Journal lines"
+    : sourceDocumentCount === undefined
+      ? "Journal lines"
+      : "Source documents"
+  const summaryLineValue = hasCustomSimpleJournal
+    ? (simpleRows?.filter((row) => row.account).length ?? 0)
+    : sourceDocumentCount === undefined
+      ? (journalRows?.length ?? 0)
+      : `${sourceDocumentCount} / 4`
   const exchangeRateLabel =
     entries.length === 1
       ? entries[0]?.exchangeRate?.toFixed(4) || "Not applied"
       : "By country"
+
+  React.useEffect(() => {
+    if (exchangeRateNeedsAttention) {
+      exchangeRateInputRef.current?.focus()
+    }
+  }, [exchangeRateNeedsAttention])
 
   async function makeJournalEntry() {
     setIsSaving(true)
@@ -4091,32 +5459,36 @@ function JournalEntryPreview({
     }
   }
 
+  async function saveExchangeRate() {
+    if (!exchangeRateEditor) {
+      return
+    }
+
+    setIsSavingExchangeRate(true)
+
+    try {
+      await exchangeRateEditor.onSave()
+    } finally {
+      setIsSavingExchangeRate(false)
+    }
+  }
+
+  async function downloadPdf() {
+    if (!pdfDownloadAction) {
+      return
+    }
+
+    setIsDownloadingPdf(true)
+
+    try {
+      await pdfDownloadAction.onClick()
+    } finally {
+      setIsDownloadingPdf(false)
+    }
+  }
+
   return (
     <div className="flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
-      <div className="grid min-h-9 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-3">
-        <Button
-          variant="outline"
-          size="icon-sm"
-          className="h-9 w-9 rounded-full md:h-9 md:w-9"
-          aria-label="Back to reconciliation report"
-          onClick={onBack}
-        >
-          <ArrowLeftIcon />
-        </Button>
-        <CountryProcessBreadcrumb
-          activeView="journal"
-          reconciliationHref={reconciliationHref}
-          journalHref={journalHref}
-          dashboardHref={dashboardHref}
-        />
-        <div className="flex items-center gap-2">
-          <CountryNavigationButtons
-            onPrevious={onPreviousCountry}
-            onNext={onNextCountry}
-          />
-        </div>
-      </div>
-
       <div className="grid flex-1 place-items-start md:place-items-center">
         <section
           role="dialog"
@@ -4125,78 +5497,151 @@ function JournalEntryPreview({
             hasDetailedJournal ? "max-w-6xl" : "max-w-3xl"
           }`}
         >
-          <div className="border-b p-5">
-            <h2
-              id="journal-entry-title"
-              className="text-xl font-semibold tracking-normal"
-            >
-              Create Journal Entry
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">{countryName}</p>
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b p-5">
+            <div>
+              <h2
+                id="journal-entry-title"
+                className="text-xl font-semibold tracking-normal"
+              >
+                Create Journal Entry
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {countryName}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              {pdfDownloadAction ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={downloadPdf}
+                  disabled={
+                    isReadOnly || pdfDownloadAction.disabled || isDownloadingPdf
+                  }
+                >
+                  <DownloadIcon />
+                  {isDownloadingPdf ? "Downloading" : pdfDownloadAction.label}
+                </Button>
+              ) : null}
+            </div>
           </div>
 
           <div className="grid gap-4 p-5">
-            <div className="grid gap-3 sm:grid-cols-3">
-              {hasDetailedJournal ? (
-                <>
-                  <div>
-                    <div className="text-xs text-muted-foreground">
-                      {sourceDocumentCount === undefined
-                        ? "Journal lines"
-                        : "Source documents"}
+            {summaryMetric || exchangeRateEditor ? (
+              <div className="grid gap-3 rounded-lg border bg-background px-4 py-3">
+                {summaryMetric ? (
+                  <div className="grid min-h-9 grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+                    <div className="text-sm font-medium text-muted-foreground">
+                      {summaryMetric.label}
                     </div>
-                    <div className="mt-1 font-semibold tabular-nums">
-                      {sourceDocumentCount === undefined
-                        ? (journalRows?.length ?? 0)
-                        : `${sourceDocumentCount} / 4`}
+                    <div className="text-right text-2xl font-semibold tabular-nums">
+                      {summaryMetric.value}
                     </div>
                   </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">
-                      Total debit
-                    </div>
-                    <div className="mt-1 font-semibold tabular-nums">
-                      {formatAmount(journalDebitTotal ?? 0)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">
-                      Total credit
-                    </div>
-                    <div className="mt-1 font-semibold tabular-nums">
-                      {formatAmount(journalCreditTotal ?? 0)}
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <div className="text-xs text-muted-foreground">
-                      Country report total
-                    </div>
-                    <div className="mt-1 font-semibold tabular-nums">
-                      {formatAmount(countryTotal)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">
+                ) : null}
+                {exchangeRateEditor ? (
+                  <div className="grid min-h-9 grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+                    <label
+                      htmlFor="frabemar-exchange-rate"
+                      className="text-sm font-medium text-muted-foreground"
+                    >
                       Exchange rate
-                    </div>
-                    <div className="mt-1 font-semibold tabular-nums">
-                      {exchangeRateLabel}
-                    </div>
+                    </label>
+                    <Input
+                      ref={exchangeRateInputRef}
+                      id="frabemar-exchange-rate"
+                      type="text"
+                      inputMode="decimal"
+                      value={exchangeRateEditor.draft}
+                      onChange={(event) => {
+                        const nextValue = event.target.value
+
+                        if (/^\d*(?:[.,]\d{0,4})?$/.test(nextValue)) {
+                          onExchangeRateAttentionHandled?.()
+                          exchangeRateEditor.onDraftChange(nextValue)
+                        }
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          saveExchangeRate()
+                        }
+                      }}
+                      onBlur={() => {
+                        if (!isReadOnly && !isSavingExchangeRate) {
+                          saveExchangeRate()
+                        }
+                      }}
+                      disabled={isReadOnly || isSavingExchangeRate}
+                      className={`h-9 w-36 text-right tabular-nums ${
+                        exchangeRateNeedsAttention
+                          ? "border-destructive focus-visible:ring-destructive/30"
+                          : ""
+                      }`}
+                    />
                   </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">
-                      Journal total
+                ) : null}
+              </div>
+            ) : null}
+
+            {!exchangeRateEditor && !hasCustomSimpleJournal ? (
+              <div className="grid gap-3 sm:grid-cols-3">
+                {hasDetailedJournal ? (
+                  <>
+                    <div>
+                      <div className="text-xs text-muted-foreground">
+                        {summaryLineLabel}
+                      </div>
+                      <div className="mt-1 font-semibold tabular-nums">
+                        {summaryLineValue}
+                      </div>
                     </div>
-                    <div className="mt-1 font-semibold tabular-nums">
-                      {formatAmount(journalTotal)}
+                    <div>
+                      <div className="text-xs text-muted-foreground">
+                        Total debit
+                      </div>
+                      <div className="mt-1 font-semibold tabular-nums">
+                        {formatAmount(journalDebitTotal ?? 0)}
+                      </div>
                     </div>
-                  </div>
-                </>
-              )}
-            </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">
+                        Total credit
+                      </div>
+                      <div className="mt-1 font-semibold tabular-nums">
+                        {formatAmount(journalCreditTotal ?? 0)}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <div className="text-xs text-muted-foreground">
+                        Country report total
+                      </div>
+                      <div className="mt-1 font-semibold tabular-nums">
+                        {formatAmount(countryTotal)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">
+                        Exchange rate
+                      </div>
+                      <div className="mt-1 font-semibold tabular-nums">
+                        {exchangeRateLabel}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">
+                        Journal total
+                      </div>
+                      <div className="mt-1 font-semibold tabular-nums">
+                        {formatAmount(journalTotal)}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : null}
 
             <div className="overflow-hidden rounded-lg border">
               <Table
@@ -4247,7 +5692,38 @@ function JournalEntryPreview({
                         </TableRow>
                       ))
                     : null}
-                  {!hasDetailedJournal ? (
+                  {hasCustomSimpleJournal
+                    ? simpleRows?.map((row, index) => (
+                        <React.Fragment key={`${row.account}-${index}`}>
+                          {row.sectionGapBefore ? (
+                            <TableRow className="h-3 border-0">
+                              <TableCell colSpan={3} className="p-0" />
+                            </TableRow>
+                          ) : null}
+                          <TableRow>
+                            <TableCell className="font-medium">
+                              <div>{row.account}</div>
+                              {row.lineDescription ? (
+                                <div className="text-xs font-normal text-muted-foreground">
+                                  {row.lineDescription}
+                                </div>
+                              ) : null}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {row.debit === undefined
+                                ? "-"
+                                : formatAmount(row.debit)}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {row.credit === undefined
+                                ? "-"
+                                : formatAmount(row.credit)}
+                            </TableCell>
+                          </TableRow>
+                        </React.Fragment>
+                      ))
+                    : null}
+                  {!hasDetailedJournal && !hasCustomSimpleJournal ? (
                     <TableRow>
                       <TableCell className="font-medium">Income</TableCell>
                       <TableCell className="text-right tabular-nums">
@@ -4258,7 +5734,7 @@ function JournalEntryPreview({
                       </TableCell>
                     </TableRow>
                   ) : null}
-                  {!hasDetailedJournal
+                  {!hasDetailedJournal && !hasCustomSimpleJournal
                     ? entries.map((entry) => (
                         <TableRow key={entry.countryName}>
                           <TableCell className="font-medium">
@@ -4279,7 +5755,7 @@ function JournalEntryPreview({
                         </TableRow>
                       ))
                     : null}
-                  {!hasDetailedJournal
+                  {!hasDetailedJournal && !hasCustomSimpleJournal
                     ? additionalRows?.map((row, index) => (
                         <TableRow key={`${row.account}-${index}`}>
                           <TableCell className="font-medium">
@@ -4298,33 +5774,32 @@ function JournalEntryPreview({
                         </TableRow>
                       ))
                     : null}
-                  <TableRow className="bg-muted/40 font-semibold">
-                    <TableCell>Total</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatAmount(
-                        hasDetailedJournal
-                          ? (journalDebitTotal ?? 0)
-                          : simpleDebitTotal
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatAmount(
-                        hasDetailedJournal
-                          ? (journalCreditTotal ?? 0)
-                          : simpleCreditTotal
-                      )}
-                    </TableCell>
-                    {hasDetailedJournal ? <TableCell colSpan={2} /> : null}
-                  </TableRow>
+                  {!hasCustomSimpleJournal ? (
+                    <TableRow className="bg-muted/40 font-semibold">
+                      <TableCell>Total</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatAmount(
+                          hasDetailedJournal
+                            ? (journalDebitTotal ?? 0)
+                            : simpleDebitTotal
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatAmount(
+                          hasDetailedJournal
+                            ? (journalCreditTotal ?? 0)
+                            : simpleCreditTotal
+                        )}
+                      </TableCell>
+                      {hasDetailedJournal ? <TableCell colSpan={2} /> : null}
+                    </TableRow>
+                  ) : null}
                 </TableBody>
               </Table>
             </div>
           </div>
 
           <div className="flex justify-end gap-2 border-t p-4">
-            <Button variant="outline" onClick={onBack}>
-              Back
-            </Button>
             <Button onClick={makeJournalEntry} disabled={isSaving}>
               Make Journal Entry
             </Button>
@@ -4335,73 +5810,511 @@ function JournalEntryPreview({
   )
 }
 
-function InvoiceJournalPlaceholder({
+function InvoiceUploadStep({
   countryName,
-  onBack,
-  onPreviousCountry,
-  onNextCountry,
-  reconciliationHref,
-  journalHref,
+  invoiceDocument,
+  isComplete,
+  isReadOnly,
+  isUploading,
+  congoInvoiceValues,
+  visaUsedValue,
+  onVisaUsedChange,
+  onSaveVisaUsed,
+  onChooseFile,
+  onFiles,
   dashboardHref,
 }: {
   countryName: string
-  onBack: () => void
-  onPreviousCountry?: () => void
-  onNextCountry?: () => void
-  reconciliationHref: string
-  journalHref: string
+  invoiceDocument?: InvoiceDocument
+  isComplete: boolean
+  isReadOnly: boolean
+  isUploading: boolean
+  congoInvoiceValues?: CongoInvoiceJournalValues
+  visaUsedValue?: string
+  onVisaUsedChange?: (value: string) => void
+  onSaveVisaUsed?: () => void
+  onChooseFile: () => void
+  onFiles: (files: File[]) => void
   dashboardHref: string
 }) {
+  const [isDragging, setIsDragging] = React.useState(false)
+  const requiresVisaUsed = Boolean(onVisaUsedChange)
+  const needsVisaUsed =
+    requiresVisaUsed && invoiceDocument && congoInvoiceValues && !isComplete
+
+  function handleDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault()
+    setIsDragging(false)
+
+    if (isReadOnly || isComplete) {
+      return
+    }
+
+    const files = Array.from(event.dataTransfer.files ?? [])
+
+    if (files.length) {
+      onFiles(files)
+    }
+  }
+
   return (
     <div className="flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
-      <div className="grid min-h-9 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-3">
-        <Button
-          variant="outline"
-          size="icon-sm"
-          className="h-9 w-9 rounded-full md:h-9 md:w-9"
-          aria-label="Back to reconciliation report"
-          onClick={onBack}
-        >
-          <ArrowLeftIcon />
-        </Button>
-        <CountryProcessBreadcrumb
-          activeView="journal"
-          reconciliationHref={reconciliationHref}
-          journalHref={journalHref}
-          dashboardHref={dashboardHref}
-        />
-        <div className="flex items-center gap-2">
-          <CountryNavigationButtons
-            onPrevious={onPreviousCountry}
-            onNext={onNextCountry}
-          />
-        </div>
-      </div>
+      <div className="grid flex-1 place-items-stretch">
+        {isComplete ? (
+          <section className="grid min-h-[22rem] place-items-center rounded-xl border bg-background p-6 text-center md:min-h-[26rem]">
+            <div className="grid max-w-xl gap-4">
+              <div className="mx-auto grid size-14 place-items-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/35 dark:text-emerald-200">
+                <CheckCircle2Icon className="size-6" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-semibold tracking-normal">
+                  Invoice Saved
+                </h2>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {invoiceDocument?.fileNames?.join(", ") ||
+                    invoiceDocument?.fileName ||
+                    `${countryName} invoice`}
+                </p>
+              </div>
+              <Button render={<AppLink href={dashboardHref} />}>
+                Country Dashboard
+              </Button>
+            </div>
+          </section>
+        ) : needsVisaUsed ? (
+          <section className="grid min-h-[22rem] place-items-center rounded-xl border bg-background p-6 md:min-h-[26rem]">
+            <div className="grid w-full max-w-xl gap-5">
+              <div className="text-center">
+                <div className="mx-auto grid size-14 place-items-center rounded-full bg-muted">
+                  <FileOutputIcon className="size-6 text-muted-foreground" />
+                </div>
+                <h2 className="mt-4 text-2xl font-semibold tracking-normal">
+                  Enter Visa Used
+                </h2>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {invoiceDocument.fileName}
+                </p>
+              </div>
+              <div className="grid gap-3 rounded-lg border bg-muted/25 p-4 sm:grid-cols-3">
+                <div>
+                  <div className="text-xs text-muted-foreground">
+                    Visa points
+                  </div>
+                  <div className="mt-1 font-semibold tabular-nums">
+                    {formatAmount(congoInvoiceValues.invoiceVisaPointsTotal)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">
+                    Commission
+                  </div>
+                  <div className="mt-1 font-semibold tabular-nums">
+                    {formatAmount(congoInvoiceValues.invoiceCommission)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">
+                    Bank charges
+                  </div>
+                  <div className="mt-1 font-semibold tabular-nums">
+                    {formatAmount(congoInvoiceValues.invoiceBankCharges)}
+                  </div>
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <label
+                  htmlFor="congo-visa-used"
+                  className="text-sm font-medium"
+                >
+                  Visa Used
+                </label>
+                <Input
+                  id="congo-visa-used"
+                  value={visaUsedValue ?? ""}
+                  onChange={(event) => onVisaUsedChange?.(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault()
+                      onSaveVisaUsed?.()
+                    }
+                  }}
+                  inputMode="decimal"
+                  disabled={isReadOnly || isUploading}
+                />
+              </div>
+              <div className="flex justify-center">
+                <Button
+                  type="button"
+                  onClick={onSaveVisaUsed}
+                  disabled={isReadOnly || isUploading}
+                >
+                  {isUploading ? "Saving" : "Save Visa Used"}
+                </Button>
+              </div>
+            </div>
+          </section>
+        ) : (
+          <div
+            role="button"
+            tabIndex={0}
+            className={
+              "grid min-h-[22rem] cursor-pointer place-items-center rounded-xl border border-dashed bg-background p-6 text-center transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-[26rem] " +
+              (isDragging ? "border-primary bg-muted/60" : "hover:bg-muted/40")
+            }
+            onClick={() => {
+              if (!isReadOnly) {
+                onChooseFile()
+              }
+            }}
+            onKeyDown={(event) => {
+              if (!isReadOnly && (event.key === "Enter" || event.key === " ")) {
+                event.preventDefault()
+                onChooseFile()
+              }
+            }}
+            onDragOver={(event) => {
+              if (isReadOnly) {
+                return
+              }
 
-      <div className="grid flex-1 place-items-start md:place-items-center">
-        <section className="w-full max-w-3xl overflow-hidden rounded-lg border bg-background">
-          <div className="border-b p-5">
-            <h2 className="text-xl font-semibold tracking-normal">
-              Journal Entry
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">{countryName}</p>
+              event.preventDefault()
+              setIsDragging(true)
+            }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleDrop}
+          >
+            <div className="grid max-w-xl gap-4">
+              <div className="mx-auto grid size-14 place-items-center rounded-full bg-muted">
+                <UploadIcon className="size-6 text-muted-foreground" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-semibold tracking-normal">
+                  Upload {countryName} Invoice
+                </h2>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Drop the invoice here, or choose the invoice file.
+                </p>
+              </div>
+              <div className="flex justify-center gap-2">
+                <Button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onChooseFile()
+                  }}
+                  disabled={isReadOnly || isUploading}
+                >
+                  <FileOutputIcon />
+                  {isUploading ? "Saving" : "Choose Invoice"}
+                </Button>
+              </div>
+            </div>
           </div>
-          <div className="grid gap-3 p-5">
-            <p className="text-sm leading-6 text-muted-foreground">
-              This country requires an invoice. The journal entry for invoice
-              records will be created later.
-            </p>
-          </div>
-          <div className="flex justify-end gap-2 border-t p-4">
-            <Button variant="outline" onClick={onBack}>
-              Back
-            </Button>
-            <Button render={<AppLink href={dashboardHref} />}>
-              Country Dashboard
-            </Button>
-          </div>
-        </section>
+        )}
       </div>
+    </div>
+  )
+}
+
+function FrabemarInvoicePackageStep({
+  packageDocument,
+  isReadOnly,
+  isSaving,
+  sharedExchangeRateDisplay,
+  onSave,
+  onSaveSharedExchangeRate,
+  onDownloadAllCommissionInvoices,
+  onMakeJournalEntries,
+}: {
+  packageDocument?: FrabemarInvoicePackage
+  isReadOnly: boolean
+  isSaving: boolean
+  sharedExchangeRateDisplay: string
+  onSave: (files: File[], pastedReportText: string) => Promise<void>
+  onSaveSharedExchangeRate: (value: string) => Promise<boolean>
+  onDownloadAllCommissionInvoices: () => Promise<void>
+  onMakeJournalEntries: (exchangeRateText: string) => Promise<boolean>
+}) {
+  const [selectedFiles, setSelectedFiles] = React.useState<File[]>([])
+  const [pastedReportText, setPastedReportText] = React.useState(
+    packageDocument?.pastedReportText ?? ""
+  )
+  const [sharedExchangeRateDraft, setSharedExchangeRateDraft] = React.useState(
+    sharedExchangeRateDisplay
+  )
+  const [isSharedExchangeRateInvalid, setIsSharedExchangeRateInvalid] =
+    React.useState(false)
+  const [isDownloadingAll, setIsDownloadingAll] = React.useState(false)
+  const [isDragging, setIsDragging] = React.useState(false)
+  const savedInvoiceNames =
+    packageDocument?.invoices.map((invoice) => invoice.fileName) ?? []
+  const displayedInvoiceNames = selectedFiles.length
+    ? selectedFiles.map((file) => file.name)
+    : savedInvoiceNames
+  const hasSelectedInvoicePackage = selectedFiles.length >= 4
+  const showPasteReportStep = hasSelectedInvoicePackage && !packageDocument
+
+  React.useEffect(() => {
+    setPastedReportText(packageDocument?.pastedReportText ?? "")
+    setSelectedFiles([])
+  }, [packageDocument])
+
+  React.useEffect(() => {
+    setSharedExchangeRateDraft(sharedExchangeRateDisplay)
+  }, [sharedExchangeRateDisplay])
+
+  function addFiles(files: File[]) {
+    setSelectedFiles((current) => [...current, ...files])
+  }
+
+  function handleDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault()
+    setIsDragging(false)
+
+    if (isReadOnly) {
+      return
+    }
+
+    const files = Array.from(event.dataTransfer.files ?? [])
+
+    if (files.length) {
+      addFiles(files)
+    }
+  }
+
+  function chooseInvoiceFiles() {
+    document.getElementById("frabemar-invoice-files")?.click()
+  }
+
+  async function saveSharedExchangeRate() {
+    const didSave = await onSaveSharedExchangeRate(sharedExchangeRateDraft)
+
+    setIsSharedExchangeRateInvalid(!didSave)
+    return didSave
+  }
+
+  async function makeJournalEntries() {
+    const didSave = await onMakeJournalEntries(sharedExchangeRateDraft)
+
+    setIsSharedExchangeRateInvalid(!didSave)
+  }
+
+  async function downloadAllCommissionInvoices() {
+    setIsDownloadingAll(true)
+
+    try {
+      await onDownloadAllCommissionInvoices()
+    } finally {
+      setIsDownloadingAll(false)
+    }
+  }
+
+  const parsedSharedExchangeRate = parseFrabemarExchangeRate(
+    sharedExchangeRateDraft
+  )
+  const frabemarReviewRows = packageDocument
+    ? FRABEMAR_CHILD_COUNTRIES.map((country) => {
+        const countryValue = packageDocument.countryValues[country.id]
+        const netAmount = countryValue
+          ? roundMoneyAmount(
+              countryValue.invoiceTotal - countryValue.commission
+            )
+          : 0
+        const journalAmount = parsedSharedExchangeRate
+          ? roundMoneyAmount(netAmount * parsedSharedExchangeRate)
+          : 0
+
+        return {
+          country,
+          countryValue,
+          netAmount,
+          journalAmount,
+        }
+      })
+    : []
+  const totalWireTransferAmount = packageDocument
+    ? roundMoneyAmount(
+        FRABEMAR_CHILD_COUNTRIES.reduce((total, country) => {
+          const countryValue = packageDocument.countryValues[country.id]
+
+          if (!countryValue) {
+            return total
+          }
+
+          return total + countryValue.invoiceTotal - countryValue.commission
+        }, 0)
+      )
+    : 0
+  const totalJournalAmount = roundMoneyAmount(
+    frabemarReviewRows.reduce((total, row) => total + row.journalAmount, 0)
+  )
+  const frabemarCombinedJournalRows: JournalEntryRow[] = packageDocument
+    ? [
+        {
+          account: "Income",
+          debit: totalJournalAmount,
+        },
+        ...frabemarReviewRows.map((row) => ({
+          account: row.country.accountName,
+          credit: row.journalAmount,
+          lineDescription: parsedSharedExchangeRate
+            ? `${formatAmount(row.netAmount)} * ${formatFrabemarExchangeRate(
+                parsedSharedExchangeRate
+              )}`
+            : undefined,
+        })),
+      ]
+    : []
+
+  if (packageDocument) {
+    return (
+      <JournalEntryPreview
+        countryName="Frabemar"
+        entries={[]}
+        simpleRows={frabemarCombinedJournalRows}
+        isReadOnly={isReadOnly}
+        pdfDownloadAction={{
+          label: "Download All PDFs",
+          disabled: isReadOnly || isDownloadingAll,
+          onClick: downloadAllCommissionInvoices,
+        }}
+        exchangeRateEditor={{
+          draft: sharedExchangeRateDraft,
+          onDraftChange: (value) => {
+            setIsSharedExchangeRateInvalid(false)
+            setSharedExchangeRateDraft(value)
+          },
+          onSave: async () => {
+            await saveSharedExchangeRate()
+          },
+        }}
+        exchangeRateNeedsAttention={isSharedExchangeRateInvalid}
+        onExchangeRateAttentionHandled={() =>
+          setIsSharedExchangeRateInvalid(false)
+        }
+        summaryMetric={{
+          label: "Total EUR to WT",
+          value: formatCurrencyAmount(totalWireTransferAmount, "EUR"),
+        }}
+        onMakeJournalEntry={makeJournalEntries}
+      />
+    )
+  }
+
+  return (
+    <div className="flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
+      <section className="grid flex-1 place-items-stretch">
+        <input
+          id="frabemar-invoice-files"
+          type="file"
+          className="hidden"
+          accept=".pdf,.csv,.xls,.xlsx,application/pdf,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          multiple
+          onChange={(event) => {
+            addFiles(Array.from(event.target.files ?? []))
+            event.target.value = ""
+          }}
+        />
+        {showPasteReportStep ? (
+          <div className="grid gap-3">
+            <Textarea
+              value={pastedReportText}
+              onChange={(event) => setPastedReportText(event.target.value)}
+              placeholder="Paste report data"
+              className="[field-sizing:fixed] min-h-48 resize-none overflow-auto rounded-lg font-mono text-sm"
+              disabled={isReadOnly || isSaving}
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setSelectedFiles([])
+                  setPastedReportText("")
+                }}
+                disabled={isReadOnly || isSaving}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => onSave(selectedFiles, pastedReportText)}
+                disabled={
+                  isReadOnly ||
+                  isSaving ||
+                  selectedFiles.length < 4 ||
+                  !pastedReportText.trim()
+                }
+              >
+                <ClipboardPasteIcon />
+                {isSaving ? "Importing" : "Import Paste"}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div
+            role="button"
+            tabIndex={0}
+            className={
+              "grid min-h-[22rem] cursor-pointer place-items-center rounded-xl border border-dashed bg-background p-6 text-center transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-[26rem] " +
+              (isDragging ? "border-primary bg-muted/60" : "hover:bg-muted/40")
+            }
+            onClick={() => {
+              if (!isReadOnly) {
+                chooseInvoiceFiles()
+              }
+            }}
+            onKeyDown={(event) => {
+              if (!isReadOnly && (event.key === "Enter" || event.key === " ")) {
+                event.preventDefault()
+                chooseInvoiceFiles()
+              }
+            }}
+            onDragOver={(event) => {
+              if (isReadOnly) {
+                return
+              }
+
+              event.preventDefault()
+              setIsDragging(true)
+            }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleDrop}
+          >
+            <div className="grid max-w-xl gap-4">
+              <div className="mx-auto grid size-14 place-items-center rounded-full bg-muted">
+                <UploadIcon className="size-6 text-muted-foreground" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-semibold tracking-normal">
+                  Upload Frabemar Invoices
+                </h2>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {displayedInvoiceNames.length
+                    ? `${displayedInvoiceNames.join(", ")}. Add ${Math.max(
+                        4 - displayedInvoiceNames.length,
+                        0
+                      )} more.`
+                    : "Drop the four invoice files here, or choose invoice files."}
+                </p>
+              </div>
+              <div className="flex justify-center gap-2">
+                <Button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    chooseInvoiceFiles()
+                  }}
+                  disabled={isReadOnly || isSaving}
+                >
+                  <FileOutputIcon />
+                  {isSaving ? "Saving" : "Choose Invoices"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
     </div>
   )
 }
@@ -4413,7 +6326,7 @@ export function MonthEndCountryReconciliationView({
 }: {
   period?: string
   countryId?: string
-  view?: "auto" | "dashboard" | "reconciliation" | "journal"
+  view?: "auto" | "dashboard" | "reconciliation" | "invoice" | "journal"
 }) {
   const router = useRouter()
   const [record, setRecord] = React.useState<MonthEndRecord>()
@@ -4442,11 +6355,22 @@ export function MonthEndCountryReconciliationView({
   const [cameroonDmiPasteText, setCameroonDmiPasteText] = React.useState("")
   const [isSavingCameroonDmiPaste, setIsSavingCameroonDmiPaste] =
     React.useState(false)
+  const [isUploadingInvoice, setIsUploadingInvoice] = React.useState(false)
+  const [isSavingFrabemarInvoices, setIsSavingFrabemarInvoices] =
+    React.useState(false)
+  const [frabemarExchangeRateText, setFrabemarExchangeRateText] =
+    React.useState("")
+  const [
+    isFrabemarExchangeRateNeedsAttention,
+    setIsFrabemarExchangeRateNeedsAttention,
+  ] = React.useState(false)
+  const [congoVisaUsedText, setCongoVisaUsedText] = React.useState("")
   const [uploadError, setUploadError] = React.useState("")
   const [isUploadingCountryReport, setIsUploadingCountryReport] =
     React.useState(false)
   const masterInputRef = React.useRef<HTMLInputElement>(null)
   const countryReportInputRef = React.useRef<HTMLInputElement>(null)
+  const invoiceInputRef = React.useRef<HTMLInputElement>(null)
   const pasteReportTextareaRef = React.useRef<HTMLTextAreaElement>(null)
   const pasteReportActionsRef = React.useRef<HTMLDivElement>(null)
   const shouldScrollPastedReportRef = React.useRef(false)
@@ -4492,10 +6416,12 @@ export function MonthEndCountryReconciliationView({
           getMonthEndRecord(period),
           getMonthEndTemplate(),
         ])
-        const linkedCountryRows = getLinkedCountryRows(
-          activeCountryId,
-          template.countries
-        )
+        const isFrabemarParent = activeCountryId === FRABEMAR_COUNTRY_ID
+        const linkedCountryRows = isFrabemarParent
+          ? template.countries.filter((item) =>
+              FRABEMAR_CHILD_COUNTRY_IDS.includes(item.id)
+            )
+          : getLinkedCountryRows(activeCountryId, template.countries)
         const linkedIds = linkedCountryRows.map((item) => item.id)
         const navigationIds = Array.from(
           new Set(
@@ -4505,12 +6431,15 @@ export function MonthEndCountryReconciliationView({
           )
         )
         const matchedCountry =
-          linkedCountryRows[0] ??
+          (isFrabemarParent
+            ? template.countries.find((item) => item.id === activeCountryId)
+            : linkedCountryRows[0]) ??
           template.countries.find((item) => item.id === activeCountryId) ??
           loadMonthEndTemplate().countries.find(
             (item) => item.id === activeCountryId
           )
         const displayName =
+          (isFrabemarParent ? matchedCountry?.name : "") ||
           formatCombinedCountryName(linkedCountryRows) ||
           matchedCountry?.name ||
           ""
@@ -4521,14 +6450,32 @@ export function MonthEndCountryReconciliationView({
         const [masterRecords, reportRecords, savedReconciliation] =
           monthEndRecord
             ? await Promise.all([
-                listMonthEndMasterRecords({
-                  monthEndId: monthEndRecord.id,
-                  countryId: activeCountryId,
-                }),
-                listMonthEndCountryReportRecords({
-                  monthEndId: monthEndRecord.id,
-                  countryId: activeCountryId,
-                }),
+                isFrabemarParent
+                  ? Promise.all(
+                      FRABEMAR_CHILD_COUNTRY_IDS.map((childCountryId) =>
+                        listMonthEndMasterRecords({
+                          monthEndId: monthEndRecord.id,
+                          countryId: childCountryId,
+                        })
+                      )
+                    ).then((recordGroups) => recordGroups.flat())
+                  : listMonthEndMasterRecords({
+                      monthEndId: monthEndRecord.id,
+                      countryId: activeCountryId,
+                    }),
+                isFrabemarParent
+                  ? Promise.all(
+                      FRABEMAR_CHILD_COUNTRY_IDS.map((childCountryId) =>
+                        listMonthEndCountryReportRecords({
+                          monthEndId: monthEndRecord.id,
+                          countryId: childCountryId,
+                        })
+                      )
+                    ).then((recordGroups) => recordGroups.flat())
+                  : listMonthEndCountryReportRecords({
+                      monthEndId: monthEndRecord.id,
+                      countryId: activeCountryId,
+                    }),
                 activeCountryId === "frabemar-gabon"
                   ? getMonthEndCountryReconciliation<ReconciliationSnapshot>({
                       monthEndId: monthEndRecord.id,
@@ -4550,6 +6497,41 @@ export function MonthEndCountryReconciliationView({
         setCountryNavigationIds(navigationIds)
         setCanPasteReport(supportsPasteReport)
         setDatabaseReconciliationSnapshot(savedReconciliation?.snapshot)
+        const savedCongoInvoiceValues =
+          activeCountryId === "republic-of-congo"
+            ? parseCongoInvoiceJournalValues(
+                monthEndRecord?.checked[
+                  congoInvoiceJournalValuesKey(activeCountryId)
+                ]
+              )
+            : undefined
+
+        setCongoVisaUsedText(
+          savedCongoInvoiceValues && savedCongoInvoiceValues.visaUsed > 0
+            ? formatAmount(savedCongoInvoiceValues.visaUsed)
+            : ""
+        )
+        const savedFrabemarExchangeRateDisplay =
+          activeCountryId &&
+          FRABEMAR_CHILD_COUNTRY_IDS.includes(activeCountryId)
+            ? monthEndRecord?.checked[exchangeRateDisplayKey(activeCountryId)]
+            : undefined
+        const savedFrabemarExchangeRate =
+          activeCountryId &&
+          FRABEMAR_CHILD_COUNTRY_IDS.includes(activeCountryId)
+            ? monthEndRecord?.checked[exchangeRateKey(activeCountryId)]
+            : undefined
+
+        setFrabemarExchangeRateText(
+          typeof savedFrabemarExchangeRateDisplay === "string" &&
+            savedFrabemarExchangeRateDisplay
+            ? savedFrabemarExchangeRateDisplay
+            : typeof savedFrabemarExchangeRate === "number" &&
+                Number.isFinite(savedFrabemarExchangeRate) &&
+                savedFrabemarExchangeRate > 0
+              ? formatFrabemarExchangeRate(savedFrabemarExchangeRate)
+              : ""
+        )
         const transactionDates = new Map<string, string>()
 
         for (const linkedCountryId of linkedIds.length
@@ -4615,6 +6597,21 @@ export function MonthEndCountryReconciliationView({
     }
   }, [activeCountryId])
 
+  React.useEffect(() => {
+    if (activeCountryId !== "republic-of-congo") {
+      setCongoVisaUsedText("")
+    }
+  }, [activeCountryId])
+
+  React.useEffect(() => {
+    if (
+      !activeCountryId ||
+      !FRABEMAR_CHILD_COUNTRY_IDS.includes(activeCountryId)
+    ) {
+      setFrabemarExchangeRateText("")
+    }
+  }, [activeCountryId])
+
   const sortedRecords = React.useMemo(
     () =>
       records
@@ -4634,13 +6631,15 @@ export function MonthEndCountryReconciliationView({
       }),
     [activeCountryId, countryReportRecords, record?.period, records]
   )
+  const checkedReconciliationSnapshot = activeCountryId
+    ? parseReconciliationSnapshot(
+        record?.checked[reconciliationSnapshotKey(activeCountryId)]
+      )
+    : undefined
   const storedReconciliationSnapshot =
     activeCountryId === "frabemar-gabon"
-      ? (databaseReconciliationSnapshot ??
-        parseReconciliationSnapshot(
-          record?.checked[reconciliationSnapshotKey(activeCountryId)]
-        ))
-      : undefined
+      ? (databaseReconciliationSnapshot ?? checkedReconciliationSnapshot)
+      : checkedReconciliationSnapshot
   const displayedReconciliation = React.useMemo(
     () =>
       applyReconciliationSnapshot({
@@ -4706,6 +6705,14 @@ export function MonthEndCountryReconciliationView({
     }
 
     window.setTimeout(() => countryReportInputRef.current?.click(), 0)
+  }
+
+  function openInvoiceFilePicker() {
+    if (isMonthClosed) {
+      return
+    }
+
+    window.setTimeout(() => invoiceInputRef.current?.click(), 0)
   }
 
   const saveGabonSnapshotToDatabase = React.useCallback(
@@ -5056,6 +7063,131 @@ export function MonthEndCountryReconciliationView({
     window.dispatchEvent(new Event("month-end:records-updated"))
   }
 
+  async function reconcileSelectedPair(
+    countryRecord: MonthEndCountryReportRecord,
+    masterRecord: MonthEndMasterRecord
+  ) {
+    if (!record || !activeCountryId || isMonthClosed) {
+      return
+    }
+
+    const latestRecord = (await getMonthEndRecord(record.period)) ?? record
+    const checked = { ...latestRecord.checked }
+    const snapshotKey = reconciliationSnapshotKey(activeCountryId)
+    const nextReconciliation = addManualReconciliationMatch({
+      reconciliation: displayedReconciliation,
+      countryRecord,
+      masterRecord,
+    })
+    const snapshot = makeReconciliationSnapshot({
+      countryId: activeCountryId,
+      period: latestRecord.period,
+      reconciliation: nextReconciliation,
+      rolledInternalIds: parseApprovedInternalIds(
+        checked[rollApprovalKey(activeCountryId)]
+      ),
+      leftInvoiceRecordIds: parseApprovedInternalIds(
+        checked[leftInvoiceKey(activeCountryId)]
+      ),
+      resolvedCountryReportRows: parseResolvedCountryReportRows(
+        checked[resolvedCountryReportRowsKey(activeCountryId)]
+      ),
+    })
+
+    checked[snapshotKey] = JSON.stringify(snapshot)
+    delete checked[journalEntrySnapshotKey(activeCountryId)]
+
+    for (const linkedCountryId of linkedCountryIds.length
+      ? linkedCountryIds
+      : [activeCountryId]) {
+      delete checked[monthEndTaskKey(linkedCountryId, "journal")]
+    }
+
+    const updatedRecord = {
+      ...latestRecord,
+      checked,
+      updatedAt: new Date().toISOString(),
+    }
+
+    await saveMonthEndRecord(updatedRecord)
+    if (activeCountryId === "frabemar-gabon") {
+      await saveGabonSnapshotToDatabase(snapshot, updatedRecord)
+    }
+    setRecord(updatedRecord)
+    window.dispatchEvent(new Event("month-end:records-updated"))
+  }
+
+  async function unreconcileMatchedRows(rows: MatchedDisplayRow[]) {
+    if (!record || !activeCountryId || isMonthClosed || !rows.length) {
+      return
+    }
+
+    const latestRecord = (await getMonthEndRecord(record.period)) ?? record
+    const checked = { ...latestRecord.checked }
+    const snapshotKey = reconciliationSnapshotKey(activeCountryId)
+    const matchedRowsToUnreconcile = rows.filter(
+      (row): row is Extract<MatchedDisplayRow, { kind: "matched" }> =>
+        row.kind === "matched"
+    )
+    const clearedCountryRecordIds = new Set(
+      rows
+        .filter((row) => row.kind === "cleared")
+        .map((row) => row.countryRecord.id)
+    )
+    const nextResolvedCountryRows = parseResolvedCountryReportRows(
+      checked[resolvedCountryReportRowsKey(activeCountryId)]
+    ).filter((row) => !clearedCountryRecordIds.has(row.id))
+    const nextReconciliation = removeReconciliationMatches({
+      reconciliation: displayedReconciliation,
+      countryRecords: matchedRowsToUnreconcile.map((row) => row.countryRecord),
+      masterRecords: matchedRowsToUnreconcile.map((row) => row.masterRecord),
+    })
+    const snapshot = makeReconciliationSnapshot({
+      countryId: activeCountryId,
+      period: latestRecord.period,
+      reconciliation: nextReconciliation,
+      rolledInternalIds: parseApprovedInternalIds(
+        checked[rollApprovalKey(activeCountryId)]
+      ),
+      leftInvoiceRecordIds: parseApprovedInternalIds(
+        checked[leftInvoiceKey(activeCountryId)]
+      ),
+      resolvedCountryReportRows: nextResolvedCountryRows,
+    })
+
+    checked[snapshotKey] = JSON.stringify(snapshot)
+
+    if (nextResolvedCountryRows.length) {
+      checked[resolvedCountryReportRowsKey(activeCountryId)] = JSON.stringify(
+        nextResolvedCountryRows
+      )
+    } else {
+      delete checked[resolvedCountryReportRowsKey(activeCountryId)]
+    }
+
+    delete checked[journalEntrySnapshotKey(activeCountryId)]
+
+    for (const linkedCountryId of linkedCountryIds.length
+      ? linkedCountryIds
+      : [activeCountryId]) {
+      delete checked[monthEndTaskKey(linkedCountryId, "reconcile")]
+      delete checked[monthEndTaskKey(linkedCountryId, "journal")]
+    }
+
+    const updatedRecord = {
+      ...latestRecord,
+      checked,
+      updatedAt: new Date().toISOString(),
+    }
+
+    await saveMonthEndRecord(updatedRecord)
+    if (activeCountryId === "frabemar-gabon") {
+      await saveGabonSnapshotToDatabase(snapshot, updatedRecord)
+    }
+    setRecord(updatedRecord)
+    window.dispatchEvent(new Event("month-end:records-updated"))
+  }
+
   async function proceedFromReconciliation() {
     if (!record || !activeCountryId || isMonthClosed) {
       return
@@ -5275,12 +7407,16 @@ export function MonthEndCountryReconciliationView({
     for (const linkedCountryId of workflowCountryIds) {
       delete checked[monthEndTaskKey(linkedCountryId, "reconcile")]
       delete checked[monthEndTaskKey(linkedCountryId, "journal")]
+      delete checked[monthEndTaskKey(linkedCountryId, "invoice")]
       delete checked[rollApprovalKey(linkedCountryId)]
       delete checked[leftInvoiceKey(linkedCountryId)]
       delete checked[journalEntrySnapshotKey(linkedCountryId)]
+      delete checked[invoiceDocumentKey(linkedCountryId)]
+      delete checked[congoInvoiceJournalValuesKey(linkedCountryId)]
       delete checked[resolvedCountryReportRowsKey(linkedCountryId)]
       delete checked[reconciliationSnapshotKey(linkedCountryId)]
       delete checked[sourceFileNameKey(linkedCountryId, "country")]
+      delete checked[sourceFileNameKey(linkedCountryId, "invoice")]
       delete checked[cameroonDmiMappingKey(linkedCountryId)]
       delete checked[cameroonCommissionTotalKey(linkedCountryId)]
       delete checked[cameroonReportTotalKey(linkedCountryId)]
@@ -5289,9 +7425,13 @@ export function MonthEndCountryReconciliationView({
     delete checked[rollApprovalKey(activeCountryId)]
     delete checked[leftInvoiceKey(activeCountryId)]
     delete checked[journalEntrySnapshotKey(activeCountryId)]
+    delete checked[invoiceDocumentKey(activeCountryId)]
+    delete checked[congoInvoiceJournalValuesKey(activeCountryId)]
+    delete checked[monthEndTaskKey(activeCountryId, "invoice")]
     delete checked[resolvedCountryReportRowsKey(activeCountryId)]
     delete checked[reconciliationSnapshotKey(activeCountryId)]
     delete checked[sourceFileNameKey(activeCountryId, "country")]
+    delete checked[sourceFileNameKey(activeCountryId, "invoice")]
     delete checked[cameroonDmiMappingKey(activeCountryId)]
     delete checked[cameroonCommissionTotalKey(activeCountryId)]
     delete checked[cameroonReportTotalKey(activeCountryId)]
@@ -5321,6 +7461,7 @@ export function MonthEndCountryReconciliationView({
     setRecord(updatedRecord)
     setDatabaseReconciliationSnapshot(undefined)
     setCountryReportRecords([])
+    setCongoVisaUsedText("")
     window.dispatchEvent(new Event("month-end:records-updated"))
     router.push(reconciliationReportHref)
   }
@@ -5346,8 +7487,119 @@ export function MonthEndCountryReconciliationView({
     window.dispatchEvent(new Event("month-end:records-updated"))
   }
 
+  async function saveFrabemarExchangeRateForCountry(
+    countryId: string,
+    value: string
+  ) {
+    if (
+      !record ||
+      !FRABEMAR_CHILD_COUNTRY_IDS.includes(countryId) ||
+      isMonthClosed
+    ) {
+      return false
+    }
+
+    const exchangeRate = parseFrabemarExchangeRate(value)
+
+    if (exchangeRate === undefined) {
+      return false
+    }
+
+    setUploadError("")
+    setIsFrabemarExchangeRateNeedsAttention(false)
+
+    try {
+      const latestRecord = (await getMonthEndRecord(record.period)) ?? record
+      const exchangeRateDisplay = value.trim().replace(",", ".")
+      const checked = {
+        ...latestRecord.checked,
+        [exchangeRateKey(countryId)]: exchangeRate,
+        [exchangeRateDisplayKey(countryId)]: exchangeRateDisplay,
+      }
+
+      delete checked[journalEntrySnapshotKey(countryId)]
+
+      const updatedRecord = {
+        ...latestRecord,
+        checked,
+        updatedAt: new Date().toISOString(),
+      }
+
+      await saveMonthEndRecord(updatedRecord)
+      setRecord(updatedRecord)
+      if (countryId === activeCountryId) {
+        setFrabemarExchangeRateText(exchangeRateDisplay)
+      }
+      window.dispatchEvent(new Event("month-end:records-updated"))
+      return true
+    } catch (error) {
+      setUploadError(
+        getUploadErrorMessage(error, "Could not save Frabemar exchange rate.")
+      )
+      return false
+    }
+  }
+
+  async function saveFrabemarExchangeRate() {
+    if (!activeCountryId) {
+      return
+    }
+
+    await saveFrabemarExchangeRateForCountry(
+      activeCountryId,
+      frabemarExchangeRateText
+    )
+  }
+
+  async function saveFrabemarExchangeRateForPackage(value: string) {
+    if (!record || activeCountryId !== FRABEMAR_COUNTRY_ID || isMonthClosed) {
+      return false
+    }
+
+    const exchangeRate = parseFrabemarExchangeRate(value)
+
+    if (exchangeRate === undefined) {
+      return false
+    }
+
+    setUploadError("")
+
+    try {
+      const latestRecord = (await getMonthEndRecord(record.period)) ?? record
+      const exchangeRateDisplay = value.trim().replace(",", ".")
+      const checked = { ...latestRecord.checked }
+
+      for (const childCountryId of FRABEMAR_CHILD_COUNTRY_IDS) {
+        checked[exchangeRateKey(childCountryId)] = exchangeRate
+        checked[exchangeRateDisplayKey(childCountryId)] = exchangeRateDisplay
+        delete checked[journalEntrySnapshotKey(childCountryId)]
+      }
+
+      const updatedRecord = {
+        ...latestRecord,
+        checked,
+        updatedAt: new Date().toISOString(),
+      }
+
+      await saveMonthEndRecord(updatedRecord)
+      setRecord(updatedRecord)
+      window.dispatchEvent(new Event("month-end:records-updated"))
+      return true
+    } catch (error) {
+      setUploadError(
+        getUploadErrorMessage(error, "Could not save Frabemar exchange rate.")
+      )
+      return false
+    }
+  }
+
   async function makeJournalEntry() {
     if (!record || !activeCountryId || isMonthClosed) {
+      return
+    }
+
+    if (isFrabemarChildCountry && !frabemarExchangeRate) {
+      setIsFrabemarExchangeRateNeedsAttention(true)
       return
     }
 
@@ -5358,6 +7610,9 @@ export function MonthEndCountryReconciliationView({
       entries: displayedJournalEntries,
       additionalRows: displayedAdditionalJournalRows.length
         ? displayedAdditionalJournalRows
+        : undefined,
+      simpleRows: displayedSimpleJournalRows.length
+        ? displayedSimpleJournalRows
         : undefined,
       rows: displayedJournalRows.length ? displayedJournalRows : undefined,
       sourceDocumentCount: displayedSourceDocumentCount || undefined,
@@ -5381,6 +7636,582 @@ export function MonthEndCountryReconciliationView({
     setRecord(updatedRecord)
     window.dispatchEvent(new Event("month-end:records-updated"))
     router.push(countryDashboardHref)
+  }
+
+  async function uploadInvoiceFiles(files: File[]) {
+    if (
+      !record ||
+      !activeCountryId ||
+      !country?.invoiceRequired ||
+      isMonthClosed
+    ) {
+      return
+    }
+
+    if (!files.length) {
+      return
+    }
+
+    setIsUploadingInvoice(true)
+    setUploadError("")
+
+    try {
+      const latestRecord = (await getMonthEndRecord(record.period)) ?? record
+      const checked = { ...latestRecord.checked }
+      const fileNames = files.map((file) => file.name)
+      const invoiceFile =
+        files.find((file) => {
+          const extension = file.name.split(".").pop()?.toLowerCase()
+
+          return extension === "pdf" || file.type === "application/pdf"
+        }) ?? files[0]
+      const invoiceDocument: InvoiceDocument = {
+        fileName: invoiceFile.name,
+        fileNames,
+        fileSize: files.reduce((total, file) => total + file.size, 0),
+        fileType: invoiceFile.type,
+        uploadedAt: new Date().toISOString(),
+      }
+
+      if (activeCountryId === "republic-of-congo") {
+        if (
+          invoiceFile.name.split(".").pop()?.toLowerCase() !== "pdf" &&
+          invoiceFile.type !== "application/pdf"
+        ) {
+          throw new Error("Upload the Republic of Congo invoice PDF.")
+        }
+
+        const invoiceText = await extractPdfText(invoiceFile)
+        const parsedInvoice = parseCongoInvoiceText(invoiceText)
+
+        if (parsedInvoice.visaPointsTotal <= 0) {
+          throw new Error(
+            "Could not find Republic of Congo visa points on the invoice."
+          )
+        }
+
+        const invoiceCommission = roundJournalAmount(
+          parsedInvoice.visaPointsTotal * 0.1
+        )
+        const congoValues: CongoInvoiceJournalValues = {
+          invoiceVisaPointsTotal: roundJournalAmount(
+            parsedInvoice.visaPointsTotal
+          ),
+          invoiceCommission,
+          invoiceBankCharges: roundJournalAmount(parsedInvoice.bankCharges),
+          wireFee: 16,
+          visaUsed: 0,
+          visaUsedCommission: 0,
+          visaUsedIncome: 0,
+          invoiceFileName: invoiceFile.name,
+          savedAt: new Date().toISOString(),
+        }
+
+        checked[congoInvoiceJournalValuesKey(activeCountryId)] =
+          JSON.stringify(congoValues)
+        delete checked[monthEndTaskKey(activeCountryId, "invoice")]
+      } else {
+        checked[monthEndTaskKey(activeCountryId, "invoice")] = true
+      }
+
+      checked[sourceFileNameKey(activeCountryId, "invoice")] =
+        fileNames.join(", ")
+      checked[invoiceDocumentKey(activeCountryId)] =
+        JSON.stringify(invoiceDocument)
+      delete checked[journalEntrySnapshotKey(activeCountryId)]
+
+      const updatedRecord = {
+        ...latestRecord,
+        checked,
+        updatedAt: new Date().toISOString(),
+      }
+
+      await saveMonthEndRecord(updatedRecord)
+      setRecord(updatedRecord)
+      if (activeCountryId === "republic-of-congo") {
+        setCongoVisaUsedText("")
+      }
+      window.dispatchEvent(new Event("month-end:records-updated"))
+      router.push(journalEntryHref)
+    } catch (error) {
+      setUploadError(getUploadErrorMessage(error, "Could not save invoice."))
+    } finally {
+      setIsUploadingInvoice(false)
+    }
+  }
+
+  async function saveCongoVisaUsed() {
+    if (
+      !record ||
+      activeCountryId !== "republic-of-congo" ||
+      !country?.invoiceRequired ||
+      isMonthClosed
+    ) {
+      return
+    }
+
+    setIsUploadingInvoice(true)
+    setUploadError("")
+
+    try {
+      const latestRecord = (await getMonthEndRecord(record.period)) ?? record
+      const checked = { ...latestRecord.checked }
+      const congoValues = parseCongoInvoiceJournalValues(
+        checked[congoInvoiceJournalValuesKey(activeCountryId)]
+      )
+      const visaUsed = parseCongoMoneyValue(congoVisaUsedText)
+
+      if (!congoValues) {
+        throw new Error("Upload the Republic of Congo invoice first.")
+      }
+
+      if (visaUsed <= 0) {
+        throw new Error("Enter the Republic of Congo Visa Used amount.")
+      }
+
+      const visaUsedCommission = roundJournalAmount(visaUsed * 0.1)
+      const nextCongoValues: CongoInvoiceJournalValues = {
+        ...congoValues,
+        visaUsed: roundJournalAmount(visaUsed),
+        visaUsedCommission,
+        visaUsedIncome: roundJournalAmount(visaUsed - visaUsedCommission),
+        savedAt: new Date().toISOString(),
+      }
+
+      checked[congoInvoiceJournalValuesKey(activeCountryId)] =
+        JSON.stringify(nextCongoValues)
+      checked[monthEndTaskKey(activeCountryId, "invoice")] = true
+      delete checked[journalEntrySnapshotKey(activeCountryId)]
+
+      const updatedRecord = {
+        ...latestRecord,
+        checked,
+        updatedAt: new Date().toISOString(),
+      }
+
+      await saveMonthEndRecord(updatedRecord)
+      setRecord(updatedRecord)
+      setCongoVisaUsedText(formatAmount(nextCongoValues.visaUsed))
+      window.dispatchEvent(new Event("month-end:records-updated"))
+      router.push(journalEntryHref)
+    } catch (error) {
+      setUploadError(getUploadErrorMessage(error, "Could not save Visa Used."))
+    } finally {
+      setIsUploadingInvoice(false)
+    }
+  }
+
+  async function clearInvoiceAndReset() {
+    if (!record || !activeCountryId || isMonthClosed) {
+      return
+    }
+
+    setUploadError("")
+
+    try {
+      const latestRecord = (await getMonthEndRecord(record.period)) ?? record
+      const checked = { ...latestRecord.checked }
+      const invoiceCountryIds = Array.from(
+        new Set([activeCountryId, ...linkedCountryIds])
+      )
+
+      for (const invoiceCountryId of invoiceCountryIds) {
+        delete checked[sourceFileNameKey(invoiceCountryId, "invoice")]
+        delete checked[invoiceDocumentKey(invoiceCountryId)]
+        delete checked[congoInvoiceJournalValuesKey(invoiceCountryId)]
+        delete checked[monthEndTaskKey(invoiceCountryId, "invoice")]
+        delete checked[journalEntrySnapshotKey(invoiceCountryId)]
+      }
+
+      const updatedRecord = {
+        ...latestRecord,
+        checked,
+        updatedAt: new Date().toISOString(),
+      }
+
+      await saveMonthEndRecord(updatedRecord)
+      setRecord(updatedRecord)
+      setCongoVisaUsedText("")
+      window.dispatchEvent(new Event("month-end:records-updated"))
+      router.push(journalEntryHref)
+    } catch (error) {
+      setUploadError(getUploadErrorMessage(error, "Could not reset invoice."))
+    }
+  }
+
+  async function saveFrabemarInvoicePackage(
+    files: File[],
+    pastedFrabemarReportText: string
+  ) {
+    if (!record || activeCountryId !== FRABEMAR_COUNTRY_ID || isMonthClosed) {
+      return
+    }
+
+    if (files.length < 4) {
+      setUploadError("Upload all 4 Frabemar invoices.")
+      return
+    }
+
+    if (!pastedFrabemarReportText.trim()) {
+      setUploadError("Paste the Frabemar text report.")
+      return
+    }
+
+    setIsSavingFrabemarInvoices(true)
+    setUploadError("")
+
+    try {
+      const latestRecord = (await getMonthEndRecord(record.period)) ?? record
+      const checked = { ...latestRecord.checked }
+      const uploadedAt = new Date().toISOString()
+      const commissionsByCountryId = parseFrabemarCommissionReport(
+        pastedFrabemarReportText
+      )
+      const invoices: InvoiceDocument[] = files.map((file) => ({
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type,
+        uploadedAt,
+      }))
+      const countryValues: FrabemarInvoicePackage["countryValues"] = {}
+
+      for (const file of files) {
+        const countryId = findFrabemarCountryId(file.name)
+
+        if (!countryId) {
+          continue
+        }
+
+        if (
+          file.name.split(".").pop()?.toLowerCase() !== "pdf" &&
+          file.type !== "application/pdf"
+        ) {
+          throw new Error("Upload PDF invoices for Frabemar.")
+        }
+
+        const invoiceText = await extractPdfText(file)
+        const invoiceTotal = parseFrabemarInvoiceTotal(invoiceText)
+        const invoiceNumber = parseFrabemarInvoiceNumber(invoiceText, file.name)
+
+        countryValues[countryId] = {
+          invoiceTotal: roundJournalAmount(invoiceTotal),
+          commission: roundJournalAmount(
+            commissionsByCountryId.get(countryId) ?? 0
+          ),
+          invoiceFileName: file.name,
+          invoiceNumber,
+          commissionInvoiceNumber: frabemarCommissionInvoiceNumber(
+            latestRecord.period,
+            countryId
+          ),
+        }
+      }
+
+      const missingCountries = FRABEMAR_CHILD_COUNTRIES.filter(
+        (country) =>
+          !countryValues[country.id] ||
+          countryValues[country.id].invoiceTotal <= 0
+      )
+
+      if (missingCountries.length) {
+        throw new Error(
+          `Could not find invoice total for ${missingCountries
+            .map((country) => country.accountName.replace("Frabemar : ", ""))
+            .join(", ")}.`
+        )
+      }
+
+      const packageDocument: FrabemarInvoicePackage = {
+        invoices,
+        countryValues,
+        pastedReportText: pastedFrabemarReportText.trim(),
+        savedAt: uploadedAt,
+      }
+      const packageInvoiceDocument: InvoiceDocument = {
+        fileName: "Frabemar invoice package",
+        fileNames: invoices.map((invoice) => invoice.fileName),
+        fileSize: invoices.reduce(
+          (total, invoice) => total + invoice.fileSize,
+          0
+        ),
+        fileType: "Frabemar invoices",
+        uploadedAt,
+      }
+
+      checked[frabemarInvoicePackageKey()] = JSON.stringify(packageDocument)
+      checked[sourceFileNameKey(FRABEMAR_COUNTRY_ID, "invoice")] =
+        packageInvoiceDocument.fileNames?.join(", ") ?? ""
+      checked[invoiceDocumentKey(FRABEMAR_COUNTRY_ID)] = JSON.stringify(
+        packageInvoiceDocument
+      )
+      checked[monthEndTaskKey(FRABEMAR_COUNTRY_ID, "invoice")] = true
+
+      for (const childCountryId of FRABEMAR_CHILD_COUNTRY_IDS) {
+        const childInvoice = invoices.find(
+          (invoice) =>
+            invoice.fileName === countryValues[childCountryId].invoiceFileName
+        )
+        const childInvoiceDocument: InvoiceDocument = {
+          fileName: countryValues[childCountryId].invoiceFileName,
+          fileSize: childInvoice?.fileSize ?? 0,
+          fileType: childInvoice?.fileType ?? "application/pdf",
+          uploadedAt,
+        }
+        const childCountryValues: FrabemarCountryJournalValues = {
+          ...countryValues[childCountryId],
+          savedAt: uploadedAt,
+        }
+
+        checked[monthEndTaskKey(childCountryId, "invoice")] = true
+        checked[sourceFileNameKey(childCountryId, "invoice")] =
+          childInvoiceDocument.fileName
+        checked[invoiceDocumentKey(childCountryId)] =
+          JSON.stringify(childInvoiceDocument)
+        checked[frabemarCountryJournalValuesKey(childCountryId)] =
+          JSON.stringify(childCountryValues)
+        delete checked[journalEntrySnapshotKey(childCountryId)]
+      }
+
+      const updatedRecord = {
+        ...latestRecord,
+        checked,
+        updatedAt: new Date().toISOString(),
+      }
+
+      await saveMonthEndRecord(updatedRecord)
+      setRecord(updatedRecord)
+      window.dispatchEvent(new Event("month-end:records-updated"))
+    } catch (error) {
+      setUploadError(
+        getUploadErrorMessage(error, "Could not save Frabemar invoices.")
+      )
+    } finally {
+      setIsSavingFrabemarInvoices(false)
+    }
+  }
+
+  async function clearFrabemarInvoicePackage() {
+    if (!record || activeCountryId !== FRABEMAR_COUNTRY_ID || isMonthClosed) {
+      return
+    }
+
+    setIsSavingFrabemarInvoices(true)
+    setUploadError("")
+
+    try {
+      const latestRecord = (await getMonthEndRecord(record.period)) ?? record
+      const checked = { ...latestRecord.checked }
+
+      delete checked[frabemarInvoicePackageKey()]
+      delete checked[sourceFileNameKey(FRABEMAR_COUNTRY_ID, "invoice")]
+      delete checked[invoiceDocumentKey(FRABEMAR_COUNTRY_ID)]
+      delete checked[monthEndTaskKey(FRABEMAR_COUNTRY_ID, "invoice")]
+      delete checked[monthEndTaskKey(FRABEMAR_COUNTRY_ID, "journal")]
+      delete checked[journalEntrySnapshotKey(FRABEMAR_COUNTRY_ID)]
+
+      for (const childCountryId of FRABEMAR_CHILD_COUNTRY_IDS) {
+        delete checked[monthEndTaskKey(childCountryId, "invoice")]
+        delete checked[monthEndTaskKey(childCountryId, "journal")]
+        delete checked[sourceFileNameKey(childCountryId, "invoice")]
+        delete checked[invoiceDocumentKey(childCountryId)]
+        delete checked[frabemarCountryJournalValuesKey(childCountryId)]
+        delete checked[journalEntrySnapshotKey(childCountryId)]
+      }
+
+      const updatedRecord = {
+        ...latestRecord,
+        checked,
+        updatedAt: new Date().toISOString(),
+      }
+
+      await saveMonthEndRecord(updatedRecord)
+      setRecord(updatedRecord)
+      window.dispatchEvent(new Event("month-end:records-updated"))
+    } catch (error) {
+      setUploadError(
+        getUploadErrorMessage(error, "Could not reset Frabemar invoices.")
+      )
+    } finally {
+      setIsSavingFrabemarInvoices(false)
+    }
+  }
+
+  async function downloadFrabemarCommissionInvoice(countryId: string) {
+    if (!record) {
+      return
+    }
+
+    const packageDocument = parseFrabemarInvoicePackage(
+      record.checked[frabemarInvoicePackageKey()]
+    )
+    const countryConfig = FRABEMAR_CHILD_COUNTRIES.find(
+      (country) => country.id === countryId
+    )
+    const countryValue = packageDocument?.countryValues[countryId]
+
+    if (!countryConfig || !countryValue || !countryConfig.hasCommission) {
+      setUploadError(
+        "No Frabemar commission invoice is available for this country."
+      )
+      return
+    }
+
+    if (!countryValue.invoiceNumber) {
+      setUploadError("Could not find the customer reference invoice number.")
+      return
+    }
+
+    setUploadError("")
+
+    try {
+      await downloadFrabemarCommissionInvoicePdf({
+        countryName: countryConfig.accountName.replace("Frabemar : ", ""),
+        invoiceNumber:
+          frabemarCommissionInvoiceNumber(record.period, countryId) ||
+          countryValue.commissionInvoiceNumber,
+        customerReference: countryValue.invoiceNumber,
+        invoiceDate: formatTransactionDate(new Date().toISOString()),
+        commissionAmount: countryValue.commission,
+      })
+    } catch (error) {
+      setUploadError(
+        getUploadErrorMessage(error, "Could not download commission PDF.")
+      )
+    }
+  }
+
+  async function downloadAllFrabemarCommissionInvoices() {
+    if (!record) {
+      return
+    }
+
+    const packageDocument = parseFrabemarInvoicePackage(
+      record.checked[frabemarInvoicePackageKey()]
+    )
+
+    if (!packageDocument) {
+      setUploadError("No Frabemar commission invoices are available.")
+      return
+    }
+
+    setUploadError("")
+
+    for (const country of FRABEMAR_CHILD_COUNTRIES) {
+      const countryValue = packageDocument.countryValues[country.id]
+
+      if (
+        !country.hasCommission ||
+        !countryValue?.commission ||
+        !countryValue.invoiceNumber
+      ) {
+        continue
+      }
+
+      await downloadFrabemarCommissionInvoicePdf({
+        countryName: country.accountName.replace("Frabemar : ", ""),
+        invoiceNumber:
+          frabemarCommissionInvoiceNumber(record.period, country.id) ||
+          countryValue.commissionInvoiceNumber,
+        customerReference: countryValue.invoiceNumber,
+        invoiceDate: formatTransactionDate(new Date().toISOString()),
+        commissionAmount: countryValue.commission,
+      })
+    }
+  }
+
+  async function makeFrabemarPackageJournalEntries(exchangeRateText: string) {
+    if (!record || activeCountryId !== FRABEMAR_COUNTRY_ID || isMonthClosed) {
+      return false
+    }
+
+    const exchangeRate = parseFrabemarExchangeRate(exchangeRateText)
+
+    if (exchangeRate === undefined) {
+      return false
+    }
+
+    const didSaveExchangeRate =
+      await saveFrabemarExchangeRateForPackage(exchangeRateText)
+
+    if (!didSaveExchangeRate) {
+      return false
+    }
+
+    try {
+      const latestRecord = (await getMonthEndRecord(record.period)) ?? record
+      const packageDocument = parseFrabemarInvoicePackage(
+        latestRecord.checked[frabemarInvoicePackageKey()]
+      )
+
+      if (!packageDocument) {
+        setUploadError("Upload the Frabemar invoices before making journals.")
+        return false
+      }
+
+      const checked = { ...latestRecord.checked }
+      const exchangeRateDisplay = exchangeRateText.trim().replace(",", ".")
+      const countryRows = FRABEMAR_CHILD_COUNTRIES.flatMap((country) => {
+        const countryValue = packageDocument.countryValues[country.id]
+
+        if (!countryValue) {
+          return []
+        }
+
+        const netAmount = roundJournalAmount(
+          countryValue.invoiceTotal - countryValue.commission
+        )
+        const journalAmount = roundJournalAmount(netAmount * exchangeRate)
+
+        return [
+          {
+            account: country.accountName,
+            credit: journalAmount,
+            lineDescription: `${formatAmount(netAmount)} * ${exchangeRateDisplay}`,
+          },
+        ]
+      })
+      const totalJournalAmount = roundJournalAmount(
+        countryRows.reduce((total, row) => total + (row.credit ?? 0), 0)
+      )
+      const snapshot: JournalEntrySnapshot = {
+        createdAt: new Date().toISOString(),
+        entries: [],
+        simpleRows: [
+          {
+            account: "Income",
+            debit: totalJournalAmount,
+          },
+          ...countryRows,
+        ],
+      }
+
+      const serializedSnapshot = JSON.stringify(snapshot)
+
+      for (const country of FRABEMAR_CHILD_COUNTRIES) {
+        checked[journalEntrySnapshotKey(country.id)] = serializedSnapshot
+        checked[monthEndTaskKey(country.id, "journal")] = true
+      }
+
+      checked[journalEntrySnapshotKey(FRABEMAR_COUNTRY_ID)] = serializedSnapshot
+      checked[monthEndTaskKey(FRABEMAR_COUNTRY_ID, "journal")] = true
+
+      const updatedRecord = {
+        ...latestRecord,
+        checked,
+        updatedAt: new Date().toISOString(),
+      }
+
+      await saveMonthEndRecord(updatedRecord)
+      setRecord(updatedRecord)
+      window.dispatchEvent(new Event("month-end:records-updated"))
+      router.push(countryDashboardHref)
+      return true
+    } catch (error) {
+      setUploadError(
+        getUploadErrorMessage(error, "Could not make Frabemar journal entries.")
+      )
+      return false
+    }
   }
 
   async function uploadMasterFile(file: File) {
@@ -5918,9 +8749,6 @@ export function MonthEndCountryReconciliationView({
   const countryReportLabel = country
     ? `${countryDisplayName || country.name} Report`
     : "Country Report"
-  const backHref = period
-    ? `/month-end?period=${encodeURIComponent(period)}`
-    : "/month-end"
   const countryRouteQuery = new URLSearchParams()
 
   if (period) {
@@ -6126,18 +8954,42 @@ export function MonthEndCountryReconciliationView({
     : activeCountryId
       ? [activeCountryId]
       : []
+  const isFrabemarChildCountry = Boolean(
+    activeCountryId && FRABEMAR_CHILD_COUNTRY_IDS.includes(activeCountryId)
+  )
   const isReconciliationComplete =
     workflowCountryIds.length > 0 &&
     workflowCountryIds.every(
       (linkedCountryId) =>
         record?.checked[monthEndTaskKey(linkedCountryId, "reconcile")] === true
     )
+  const isInvoiceComplete =
+    activeCountryId && country?.invoiceRequired === true
+      ? record?.checked[monthEndTaskKey(activeCountryId, "invoice")] === true
+      : false
+  const activeCountryJournalComplete = activeCountryId
+    ? record?.checked[monthEndTaskKey(activeCountryId, "journal")] === true
+    : false
+  const isFrabemarMasterJournalComplete =
+    record?.checked[monthEndTaskKey(FRABEMAR_COUNTRY_ID, "journal")] === true
+  const isJournalComplete =
+    activeCountryJournalComplete ||
+    ((activeCountryId === FRABEMAR_COUNTRY_ID || isFrabemarChildCountry) &&
+      isFrabemarMasterJournalComplete)
+  const shouldAutoOpenDashboard =
+    isReconciliationComplete ||
+    (activeCountryId === FRABEMAR_COUNTRY_ID && isJournalComplete) ||
+    (isFrabemarChildCountry && isJournalComplete)
+  const requestedView = view === "invoice" ? "journal" : view
   const resolvedView =
-    view === "auto"
-      ? isReconciliationComplete
+    requestedView === "auto"
+      ? shouldAutoOpenDashboard
         ? "dashboard"
         : "reconciliation"
-      : view
+      : requestedView
+  const shouldShowFrabemarPackage =
+    activeCountryId === FRABEMAR_COUNTRY_ID &&
+    (resolvedView === "journal" || !isReconciliationComplete)
   const journalCountries = linkedCountries.length
     ? linkedCountries
     : country
@@ -6306,10 +9158,107 @@ export function MonthEndCountryReconciliationView({
             debit: roundJournalAmount(cameroonCommissionTotal),
           },
           {
-            account: "Chase Main Account",
+            account: "Accounts Payable",
             credit: roundJournalAmount(cameroonCommissionTotal),
           },
         ].filter((row) => (row.debit ?? row.credit ?? 0) > 0)
+      : []
+  const frabemarCountryConfig = FRABEMAR_CHILD_COUNTRIES.find(
+    (item) => item.id === activeCountryId
+  )
+  const frabemarCountryJournalValues = activeCountryId
+    ? parseFrabemarCountryJournalValues(
+        record?.checked[frabemarCountryJournalValuesKey(activeCountryId)]
+      )
+    : undefined
+  const frabemarExchangeRateValue =
+    activeCountryId && frabemarCountryConfig
+      ? record?.checked[exchangeRateKey(activeCountryId)]
+      : undefined
+  const frabemarExchangeRate =
+    typeof frabemarExchangeRateValue === "number" &&
+    Number.isFinite(frabemarExchangeRateValue) &&
+    frabemarExchangeRateValue > 0
+      ? frabemarExchangeRateValue
+      : undefined
+  const frabemarNetInvoiceAmount = frabemarCountryJournalValues
+    ? roundJournalAmount(
+        frabemarCountryJournalValues.invoiceTotal -
+          frabemarCountryJournalValues.commission
+      )
+    : 0
+  const frabemarConvertedNetInvoiceAmount = roundJournalAmount(
+    frabemarNetInvoiceAmount * (frabemarExchangeRate ?? 0)
+  )
+  const frabemarJournalRows: JournalEntryRow[] =
+    frabemarCountryConfig && frabemarCountryJournalValues
+      ? [
+          {
+            account: "Income",
+            debit: frabemarConvertedNetInvoiceAmount,
+          },
+          {
+            account: "Accounts Payable",
+            credit: frabemarConvertedNetInvoiceAmount,
+            lineDescription: frabemarExchangeRate
+              ? `${formatAmount(frabemarNetInvoiceAmount)} * ${formatFrabemarExchangeRate(frabemarExchangeRate)}`
+              : undefined,
+          },
+        ]
+      : []
+  const congoInvoiceJournalValues =
+    activeCountryId === "republic-of-congo"
+      ? parseCongoInvoiceJournalValues(
+          record?.checked[congoInvoiceJournalValuesKey(activeCountryId)]
+        )
+      : undefined
+  const congoInvoicePaymentTotal = congoInvoiceJournalValues
+    ? roundJournalAmount(
+        congoInvoiceJournalValues.invoiceVisaPointsTotal -
+          congoInvoiceJournalValues.invoiceCommission +
+          congoInvoiceJournalValues.invoiceBankCharges
+      )
+    : 0
+  const congoJournalRows: JournalEntryRow[] =
+    congoInvoiceJournalValues && congoInvoiceJournalValues.visaUsed > 0
+      ? [
+          {
+            account: "Prepaid Accounts : Republic of Congo",
+            debit: congoInvoiceJournalValues.invoiceVisaPointsTotal,
+          },
+          {
+            account: "Prepaid Accounts : Republic of Congo : Commission",
+            credit: congoInvoiceJournalValues.invoiceCommission,
+          },
+          {
+            account: "Bank Charges",
+            debit: congoInvoiceJournalValues.invoiceBankCharges,
+          },
+          {
+            account: "Accounts Payable",
+            credit: congoInvoicePaymentTotal,
+          },
+          {
+            account: "Prepaid Accounts : Republic of Congo",
+            credit: congoInvoiceJournalValues.visaUsed,
+          },
+          {
+            account: "Prepaid Accounts : Republic of Congo : Commission",
+            debit: congoInvoiceJournalValues.visaUsedCommission,
+          },
+          {
+            account: "Income",
+            debit: congoInvoiceJournalValues.visaUsedIncome,
+          },
+          {
+            account: "Chase Main Account",
+            credit: congoInvoiceJournalValues.wireFee,
+          },
+          {
+            account: "Bank Charges : Wire Fees",
+            debit: congoInvoiceJournalValues.wireFee,
+          },
+        ]
       : []
   const antaserJournalRows: JournalEntryRow[] = antaserJournalDocuments.length
     ? [
@@ -6345,23 +9294,159 @@ export function MonthEndCountryReconciliationView({
         })),
       ]
     : []
-  const savedJournalEntry =
+  const activeJournalEntry =
     activeCountryId && activeCountryId !== "cameroon"
       ? parseJournalEntrySnapshot(
           record?.checked[journalEntrySnapshotKey(activeCountryId)]
         )
       : undefined
+  const frabemarMasterJournalEntry = isFrabemarChildCountry
+    ? parseJournalEntrySnapshot(
+        record?.checked[journalEntrySnapshotKey(FRABEMAR_COUNTRY_ID)]
+      )
+    : undefined
+  const savedJournalEntry = frabemarMasterJournalEntry ?? activeJournalEntry
   const displayedJournalEntries = savedJournalEntry?.entries ?? journalEntries
   const displayedAdditionalJournalRows =
     activeCountryId === "cameroon"
       ? cameroonAdditionalJournalRows
       : (savedJournalEntry?.additionalRows ?? [])
+  const displayedSimpleJournalRows =
+    activeCountryId === "republic-of-congo"
+      ? congoJournalRows
+      : (savedJournalEntry?.simpleRows ??
+        (frabemarJournalRows.length ? frabemarJournalRows : []))
   const displayedJournalRows =
     savedJournalEntry?.rows ??
     (antaserJournalRows.length ? antaserJournalRows : [])
   const displayedSourceDocumentCount =
     savedJournalEntry?.sourceDocumentCount ??
     (antaserJournalRows.length ? antaserJournalDocuments.length : undefined)
+  const frabemarPackageExchangeRateDisplay =
+    FRABEMAR_CHILD_COUNTRY_IDS.map((childCountryId) => {
+      const displayValue =
+        record?.checked[exchangeRateDisplayKey(childCountryId)]
+      const exchangeRateValue = record?.checked[exchangeRateKey(childCountryId)]
+
+      return typeof displayValue === "string" && displayValue
+        ? displayValue
+        : typeof exchangeRateValue === "number" &&
+            Number.isFinite(exchangeRateValue) &&
+            exchangeRateValue > 0
+          ? formatFrabemarExchangeRate(exchangeRateValue)
+          : ""
+    }).find(Boolean) ?? ""
+  const activeInvoiceDocument = parseInvoiceDocument(
+    record?.checked[invoiceDocumentKey(activeCountryId ?? "")]
+  )
+  const frabemarPackageDocument = parseFrabemarInvoicePackage(
+    record?.checked[frabemarInvoicePackageKey()]
+  )
+  const showCountryHeaderControls = hasLoaded
+  const backHref = period
+    ? `/month-end?period=${encodeURIComponent(period)}`
+    : "/month-end"
+  const countryHeaderLeading = showCountryHeaderControls ? (
+    <Button
+      variant="outline"
+      className="h-8 rounded-md"
+      aria-label="Back to month end"
+      render={<AppLink href={backHref} />}
+    >
+      <ArrowLeftIcon />
+      Back
+    </Button>
+  ) : undefined
+  const showCountryNavigation =
+    showCountryHeaderControls && !shouldShowFrabemarPackage
+  const countryHeaderMenu =
+    showCountryHeaderControls && shouldShowFrabemarPackage
+      ? frabemarPackageDocument && !isMonthClosed
+        ? {
+            label: "Frabemar invoice actions",
+            disabled: isSavingFrabemarInvoices,
+            itemLabel: "Clear Invoice and Reset",
+            onClick: clearFrabemarInvoicePackage,
+          }
+        : undefined
+      : resolvedView === "reconciliation" && !isMonthClosed
+        ? {
+            label: "More actions",
+            itemLabel: isReconciliationComplete
+              ? "Reopen Reconciliation"
+              : "Clear Recon and Start Over",
+            onClick: isReconciliationComplete
+              ? reopenReconciliation
+              : clearReconciliationAndStartOver,
+          }
+        : resolvedView === "journal" &&
+            country?.invoiceRequired === true &&
+            !isMonthClosed &&
+            (isInvoiceComplete || Boolean(activeInvoiceDocument))
+          ? {
+              label: "Invoice actions",
+              disabled: isUploadingInvoice,
+              itemLabel: "Clear Invoice and Reset",
+              onClick: clearInvoiceAndReset,
+            }
+          : undefined
+  const countryHeaderActions = showCountryHeaderControls ? (
+    <>
+      {showCountryNavigation ? (
+        <CountryNavigationButtons
+          onPrevious={
+            previousCountryHref
+              ? () => router.push(previousCountryHref)
+              : undefined
+          }
+          onNext={
+            nextCountryHref ? () => router.push(nextCountryHref) : undefined
+          }
+        />
+      ) : null}
+      {countryHeaderMenu ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="outline"
+                className="size-8 rounded-md p-0"
+                aria-label={countryHeaderMenu.label}
+                disabled={countryHeaderMenu.disabled}
+              />
+            }
+          >
+            <EllipsisVerticalIcon />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-64">
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={countryHeaderMenu.onClick}
+            >
+              <ListChecksIcon />
+              {countryHeaderMenu.itemLabel}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
+    </>
+  ) : undefined
+  const showCountryProcessMenu =
+    hasLoaded &&
+    (!shouldShowFrabemarPackage ||
+      (Boolean(frabemarPackageDocument) && isReconciliationComplete))
+  const countryProcessMenu = showCountryProcessMenu ? (
+    <CountryProcessBreadcrumb
+      activeView={shouldShowFrabemarPackage ? "journal" : resolvedView}
+      reconciliationHref={reconciliationReportHref}
+      journalHref={journalEntryHref}
+      dashboardHref={countryDashboardHref}
+      hideReconciliation={
+        shouldShowFrabemarPackage ||
+        (resolvedView === "journal" && isFrabemarChildCountry)
+      }
+    />
+  ) : undefined
 
   return (
     <SidebarProvider
@@ -6375,9 +9460,59 @@ export function MonthEndCountryReconciliationView({
       <AppSidebar variant="inset" />
       <SidebarInset className="md:overflow-y-auto">
         <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
-          <SiteHeader title={title} />
+          <SiteHeader
+            title={title}
+            leadingContent={countryHeaderLeading}
+            actions={countryHeaderActions}
+            bottomContent={countryProcessMenu}
+          />
+          <HiddenFileInput
+            ref={masterInputRef}
+            accept=".csv,text/csv"
+            onFiles={(files) => {
+              const file = files[0]
+
+              if (file) {
+                uploadMasterFile(file)
+              }
+            }}
+          />
+          <HiddenFileInput
+            ref={countryReportInputRef}
+            accept=".csv,.pdf,.xls,.xlsx,text/csv,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            multiple
+            onFiles={uploadCountryReports}
+          />
+          <HiddenFileInput
+            ref={invoiceInputRef}
+            accept=".pdf,.csv,.xls,.xlsx,application/pdf,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            onFiles={uploadInvoiceFiles}
+          />
+          {uploadError || loadError ? (
+            <div className="px-4 pt-4 lg:px-6">
+              {uploadError ? (
+                <p className="text-sm text-destructive">{uploadError}</p>
+              ) : null}
+              {loadError ? (
+                <p className="text-sm text-destructive">{loadError}</p>
+              ) : null}
+            </div>
+          ) : null}
           {!hasLoaded ? (
             <CountryReconciliationSkeleton />
+          ) : shouldShowFrabemarPackage ? (
+            <FrabemarInvoicePackageStep
+              packageDocument={frabemarPackageDocument}
+              isReadOnly={isMonthClosed}
+              isSaving={isSavingFrabemarInvoices}
+              sharedExchangeRateDisplay={frabemarPackageExchangeRateDisplay}
+              onSave={saveFrabemarInvoicePackage}
+              onSaveSharedExchangeRate={saveFrabemarExchangeRateForPackage}
+              onDownloadAllCommissionInvoices={
+                downloadAllFrabemarCommissionInvoices
+              }
+              onMakeJournalEntries={makeFrabemarPackageJournalEntries}
+            />
           ) : resolvedView === "dashboard" ? (
             <CountryReconciliationDashboard
               countryName={
@@ -6391,38 +9526,39 @@ export function MonthEndCountryReconciliationView({
               leftInvoiceRecordIds={leftInvoiceRecordIds}
               activeSection={activeDashboardSection}
               onActiveSectionChange={saveCountryDashboardSection}
-              onBack={() => router.push(backHref)}
-              onPreviousCountry={
-                previousCountryHref
-                  ? () => router.push(previousCountryHref)
-                  : undefined
-              }
-              onNextCountry={
-                nextCountryHref ? () => router.push(nextCountryHref) : undefined
-              }
-              reconciliationHref={reconciliationReportHref}
-              journalHref={journalEntryHref}
-              dashboardHref={countryDashboardHref}
             />
           ) : resolvedView === "journal" ? (
-            country?.invoiceRequired === true ? (
-              <InvoiceJournalPlaceholder
+            country?.invoiceRequired === true && !isInvoiceComplete ? (
+              <InvoiceUploadStep
                 countryName={
                   countryDisplayName || country?.name || "Unknown country"
                 }
-                onBack={() => router.push(reconciliationReportHref)}
-                onPreviousCountry={
-                  previousCountryHref
-                    ? () => router.push(previousCountryHref)
+                invoiceDocument={activeInvoiceDocument}
+                isComplete={isInvoiceComplete}
+                isReadOnly={isMonthClosed}
+                isUploading={isUploadingInvoice}
+                congoInvoiceValues={
+                  activeCountryId === "republic-of-congo"
+                    ? congoInvoiceJournalValues
                     : undefined
                 }
-                onNextCountry={
-                  nextCountryHref
-                    ? () => router.push(nextCountryHref)
+                visaUsedValue={
+                  activeCountryId === "republic-of-congo"
+                    ? congoVisaUsedText
                     : undefined
                 }
-                reconciliationHref={reconciliationReportHref}
-                journalHref={journalEntryHref}
+                onVisaUsedChange={
+                  activeCountryId === "republic-of-congo"
+                    ? setCongoVisaUsedText
+                    : undefined
+                }
+                onSaveVisaUsed={
+                  activeCountryId === "republic-of-congo"
+                    ? saveCongoVisaUsed
+                    : undefined
+                }
+                onChooseFile={openInvoiceFilePicker}
+                onFiles={uploadInvoiceFiles}
                 dashboardHref={countryDashboardHref}
               />
             ) : (
@@ -6432,94 +9568,49 @@ export function MonthEndCountryReconciliationView({
                 }
                 entries={displayedJournalEntries}
                 additionalRows={displayedAdditionalJournalRows}
+                simpleRows={displayedSimpleJournalRows}
                 journalRows={displayedJournalRows}
                 sourceDocumentCount={displayedSourceDocumentCount}
-                onBack={() => router.push(reconciliationReportHref)}
-                onPreviousCountry={
-                  previousCountryHref
-                    ? () => router.push(previousCountryHref)
+                isReadOnly={isMonthClosed}
+                pdfDownloadAction={
+                  isFrabemarChildCountry
+                    ? {
+                        label: "Download PDF",
+                        disabled:
+                          !frabemarCountryConfig?.hasCommission ||
+                          !frabemarCountryJournalValues?.commission ||
+                          !frabemarCountryJournalValues.invoiceNumber,
+                        onClick: () =>
+                          activeCountryId
+                            ? downloadFrabemarCommissionInvoice(activeCountryId)
+                            : Promise.resolve(),
+                      }
                     : undefined
                 }
-                onNextCountry={
-                  nextCountryHref
-                    ? () => router.push(nextCountryHref)
+                exchangeRateEditor={
+                  isFrabemarChildCountry
+                    ? {
+                        value: frabemarExchangeRate,
+                        draft: frabemarExchangeRateText,
+                        onDraftChange: (value) => {
+                          setIsFrabemarExchangeRateNeedsAttention(false)
+                          setFrabemarExchangeRateText(value)
+                        },
+                        onSave: saveFrabemarExchangeRate,
+                      }
                     : undefined
                 }
-                reconciliationHref={reconciliationReportHref}
-                journalHref={journalEntryHref}
-                dashboardHref={countryDashboardHref}
+                exchangeRateNeedsAttention={
+                  isFrabemarExchangeRateNeedsAttention
+                }
+                onExchangeRateAttentionHandled={() =>
+                  setIsFrabemarExchangeRateNeedsAttention(false)
+                }
                 onMakeJournalEntry={makeJournalEntry}
               />
             )
           ) : (
             <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
-              <div className="grid min-h-9 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-3">
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  className="h-9 w-9 rounded-full md:h-9 md:w-9"
-                  aria-label="Back to month end"
-                  render={<AppLink href={backHref} />}
-                >
-                  <ArrowLeftIcon />
-                </Button>
-                <CountryProcessBreadcrumb
-                  activeView="reconciliation"
-                  reconciliationHref={reconciliationReportHref}
-                  journalHref={journalEntryHref}
-                  dashboardHref={countryDashboardHref}
-                />
-                <div className="flex items-center gap-2">
-                  <CountryNavigationButtons
-                    onPrevious={
-                      previousCountryHref
-                        ? () => router.push(previousCountryHref)
-                        : undefined
-                    }
-                    onNext={
-                      nextCountryHref
-                        ? () => router.push(nextCountryHref)
-                        : undefined
-                    }
-                  />
-                  {!isMonthClosed ? (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <Button
-                            variant="outline"
-                            size="icon-sm"
-                            className="h-9 w-9 rounded-full md:h-9 md:w-9"
-                            aria-label="More actions"
-                          />
-                        }
-                      >
-                        <EllipsisVerticalIcon />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="min-w-64">
-                        {isReconciliationComplete ? (
-                          <DropdownMenuItem
-                            variant="destructive"
-                            onClick={reopenReconciliation}
-                          >
-                            <ListChecksIcon />
-                            Reopen Reconciliation
-                          </DropdownMenuItem>
-                        ) : (
-                          <DropdownMenuItem
-                            variant="destructive"
-                            onClick={clearReconciliationAndStartOver}
-                          >
-                            <ListChecksIcon />
-                            Clear Recon and Start Over
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ) : null}
-                </div>
-              </div>
-
               {isPasteReportOpen && !isMonthClosed ? (
                 <Card className="max-h-[min(70vh,42rem)] overflow-hidden rounded-lg py-0 shadow-sm">
                   <CardContent className="flex max-h-[min(70vh,42rem)] min-h-0 flex-col gap-3 p-3">
@@ -6602,32 +9693,6 @@ export function MonthEndCountryReconciliationView({
                 </Card>
               ) : null}
 
-              <HiddenFileInput
-                ref={masterInputRef}
-                accept=".csv,text/csv"
-                onFiles={(files) => {
-                  const file = files[0]
-
-                  if (file) {
-                    uploadMasterFile(file)
-                  }
-                }}
-              />
-              <HiddenFileInput
-                ref={countryReportInputRef}
-                accept=".csv,.pdf,.xls,.xlsx,text/csv,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                multiple
-                onFiles={uploadCountryReports}
-              />
-
-              {uploadError ? (
-                <p className="text-sm text-destructive">{uploadError}</p>
-              ) : null}
-
-              {loadError ? (
-                <p className="text-sm text-destructive">{loadError}</p>
-              ) : null}
-
               {!hasLoaded ? (
                 <CountryReconciliationSkeleton />
               ) : requiresCountryReport &&
@@ -6666,6 +9731,8 @@ export function MonthEndCountryReconciliationView({
                   onDropCountryFiles={uploadCountryReports}
                   canEditCountryData={requiresCountryReport}
                   isReadOnly={isReconciliationComplete || isMonthClosed}
+                  canUnreconcile={!isReconciliationComplete && !isMonthClosed}
+                  showOnlyMatched={isReconciliationComplete}
                   countryId={activeCountryId}
                   countryName={
                     countryDisplayName || country?.name || "Unknown country"
@@ -6679,7 +9746,9 @@ export function MonthEndCountryReconciliationView({
                   matchedMasterCount={reconciliationCounts.master}
                   onRollInvoices={rollInvoices}
                   onLeaveInvoices={leaveInvoices}
+                  onReconcileSelectedPair={reconcileSelectedPair}
                   onReconcileCountryRows={reconcileCountryRows}
+                  onUnreconcileMatchedRows={unreconcileMatchedRows}
                   onPasteDmiReport={
                     activeCountryId === "cameroon" &&
                     hasCountryReport &&

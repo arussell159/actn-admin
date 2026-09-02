@@ -90,6 +90,13 @@ const workflowTaskIcons: Record<CloseTaskId, React.ElementType> = {
   reconcile: ClipboardCheckIcon,
   journal: Building2Icon,
 }
+const FRABEMAR_COUNTRY_ID = "frabemar"
+const FRABEMAR_CHILD_COUNTRY_IDS = [
+  "frabemar-gabon",
+  "frabemar-dr-congo",
+  "frabemar-mali",
+  "frabemar-republic-of-guinea",
+]
 
 function taskKey(scope: string, taskId: string) {
   return `${scope}__${taskId}`
@@ -103,12 +110,91 @@ function masterSourceFileNameKey(rowId: string) {
   return `${rowId}__master_source_file`
 }
 
-function countryRecordHref(period: string, countryId: string) {
+function countryRecordHref(
+  period: string,
+  countryId: string,
+  row?: TemplateCountryRow,
+  checked?: Record<string, unknown>
+) {
   const canonicalCountryId = getCanonicalCountryId(countryId)
+  const isFrabemarPackage = countryId === FRABEMAR_COUNTRY_ID
+  const isFrabemarChild = FRABEMAR_CHILD_COUNTRY_IDS.includes(countryId)
+  const isFrabemarMasterJournalComplete =
+    checked?.[taskKey(FRABEMAR_COUNTRY_ID, "journal")] === true
+  const isJournalComplete =
+    checked?.[taskKey(countryId, "journal")] === true ||
+    checked?.[taskKey(canonicalCountryId, "journal")] === true ||
+    ((isFrabemarPackage || isFrabemarChild) && isFrabemarMasterJournalComplete)
+  const shouldOpenJournal =
+    !isJournalComplete &&
+    (isFrabemarPackage ||
+      (row?.invoiceRequired === true &&
+        checked?.[taskKey(row.id, "reconcile")] === true))
+  const viewQuery = isJournalComplete
+    ? "&view=dashboard"
+    : shouldOpenJournal
+      ? "&view=journal"
+      : ""
 
   return `/month-end/country?period=${encodeURIComponent(
     period
-  )}&country=${encodeURIComponent(canonicalCountryId)}`
+  )}&country=${encodeURIComponent(
+    isFrabemarPackage ? countryId : canonicalCountryId
+  )}${viewQuery}`
+}
+
+const monthEndReturnPointKey = "month-end:return-point"
+
+function saveMonthEndReturnPoint(period: string, countryId: string) {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  window.sessionStorage.setItem(
+    monthEndReturnPointKey,
+    JSON.stringify({
+      period,
+      countryId,
+      scrollY: window.scrollY,
+    })
+  )
+}
+
+function readMonthEndReturnPoint(
+  period?: string
+): { period: string; countryId?: string; scrollY: number } | undefined {
+  if (typeof window === "undefined") {
+    return undefined
+  }
+
+  try {
+    const rawValue = window.sessionStorage.getItem(monthEndReturnPointKey)
+    const parsed: unknown = rawValue ? JSON.parse(rawValue) : undefined
+
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "period" in parsed &&
+      "scrollY" in parsed &&
+      typeof parsed.period === "string" &&
+      typeof parsed.scrollY === "number" &&
+      (!period || parsed.period === period)
+    ) {
+      window.sessionStorage.removeItem(monthEndReturnPointKey)
+      return {
+        period: parsed.period,
+        countryId:
+          "countryId" in parsed && typeof parsed.countryId === "string"
+            ? parsed.countryId
+            : undefined,
+        scrollY: parsed.scrollY,
+      }
+    }
+  } catch {
+    window.sessionStorage.removeItem(monthEndReturnPointKey)
+  }
+
+  return undefined
 }
 
 function asBool(value: unknown) {
@@ -121,6 +207,32 @@ function asString(value: unknown) {
 
 function asNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined
+}
+
+function exchangeRateDisplayKey(rowId: string) {
+  return `${rowId}__exchange_rate_display`
+}
+
+function parseExchangeRate(value: string) {
+  const normalizedValue = value.trim().replace(",", ".")
+
+  if (!/^\d+(?:\.\d{1,4})?$/.test(normalizedValue)) {
+    return undefined
+  }
+
+  const exchangeRate = Number(normalizedValue)
+
+  return Number.isFinite(exchangeRate) && exchangeRate > 0
+    ? exchangeRate
+    : undefined
+}
+
+function formatExchangeRate(value: number) {
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4,
+    useGrouping: false,
+  })
 }
 
 function ProgressBar({ value }: { value: number }) {
@@ -362,7 +474,11 @@ export function MonthEndView({ period }: { period?: string } = {}) {
   }, [period])
 
   React.useEffect(() => {
-    if (!hasLoaded || !recordRef.current || recordRef.current.status === "Closed") {
+    if (
+      !hasLoaded ||
+      !recordRef.current ||
+      recordRef.current.status === "Closed"
+    ) {
       return
     }
 
@@ -390,16 +506,42 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     return () => window.clearTimeout(timeoutId)
   }, [checked, hasLoaded])
 
+  const hasRecord = Boolean(record)
+  const recordStatus = record?.status
+
   React.useEffect(() => {
-    if (period && record?.status === "Open") {
+    if (period && recordStatus === "Open") {
       router.replace("/month-end")
       return
     }
 
-    if (!period && hasLoaded && !record) {
+    if (!period && hasLoaded && !hasRecord) {
       router.replace("/month-end/new")
     }
-  }, [hasLoaded, period, record?.status, router])
+  }, [hasLoaded, hasRecord, period, recordStatus, router])
+
+  const activeRecordPeriod = record?.period
+
+  React.useEffect(() => {
+    if (!hasLoaded || !activeRecordPeriod) {
+      return
+    }
+
+    const returnPoint = readMonthEndReturnPoint(activeRecordPeriod)
+
+    if (!returnPoint) {
+      return
+    }
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        window.scrollTo({
+          top: returnPoint.scrollY,
+          behavior: "instant",
+        })
+      })
+    })
+  }, [activeRecordPeriod, hasLoaded])
 
   const checkableRows = template.countries.filter(
     (row) => row.checkable !== false
@@ -562,9 +704,13 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     }
 
     const exchangeRate = asNumber(checked[exchangeRateKey(rowId)])
+    const exchangeRateDisplay = asString(checked[exchangeRateDisplayKey(rowId)])
 
     setEditingExchangeRateRowId(rowId)
-    setExchangeRateDraft(exchangeRate === undefined ? "" : String(exchangeRate))
+    setExchangeRateDraft(
+      exchangeRateDisplay ||
+        (exchangeRate === undefined ? "" : formatExchangeRate(exchangeRate))
+    )
   }
 
   function cancelEditExchangeRate() {
@@ -578,10 +724,10 @@ export function MonthEndView({ period }: { period?: string } = {}) {
       return
     }
 
-    const trimmedValue = exchangeRateDraft.trim()
-    const nextValue = Number(trimmedValue)
+    const trimmedValue = exchangeRateDraft.trim().replace(",", ".")
+    const nextValue = parseExchangeRate(trimmedValue)
 
-    if (trimmedValue && (!Number.isFinite(nextValue) || nextValue <= 0)) {
+    if (trimmedValue && nextValue === undefined) {
       return
     }
 
@@ -590,10 +736,12 @@ export function MonthEndView({ period }: { period?: string } = {}) {
 
       if (!trimmedValue) {
         delete nextChecked[exchangeRateKey(rowId)]
+        delete nextChecked[exchangeRateDisplayKey(rowId)]
         return nextChecked
       }
 
-      nextChecked[exchangeRateKey(rowId)] = nextValue
+      nextChecked[exchangeRateKey(rowId)] = nextValue ?? 0
+      nextChecked[exchangeRateDisplayKey(rowId)] = trimmedValue
 
       return nextChecked
     })
@@ -1137,6 +1285,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                     <div className="grid gap-3 md:hidden">
                       {template.countries.map((row, rowIndex) => {
                         const isParentRow = row.checkable === false
+                        const isFrabemarParentRow = row.id === "frabemar"
                         const requiredTasks = getRequiredTasks(row)
                         const childRows = isParentRow
                           ? template.countries
@@ -1156,6 +1305,9 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                         const rowNote = asString(checked[noteKey(row.id)])
                         const exchangeRate = asNumber(
                           checked[exchangeRateKey(row.id)]
+                        )
+                        const exchangeRateDisplay = asString(
+                          checked[exchangeRateDisplayKey(row.id)]
                         )
                         const isEditingNote = editingNoteRowId === row.id
                         const actionRows = isParentRow ? childRows : [row]
@@ -1206,15 +1358,23 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                   paddingLeft: `${row.indent * 1}rem`,
                                 }}
                               >
-                                {isParentRow ? (
+                                {isParentRow && !isFrabemarParentRow ? (
                                   <div className="truncate">{row.name}</div>
                                 ) : (
                                   <AppLink
                                     href={countryRecordHref(
                                       activePeriod,
-                                      row.id
+                                      row.id,
+                                      row,
+                                      checked
                                     )}
                                     className="block truncate underline-offset-4 hover:underline"
+                                    onClick={() =>
+                                      saveMonthEndReturnPoint(
+                                        activePeriod,
+                                        row.id
+                                      )
+                                    }
                                   >
                                     {row.name}
                                   </AppLink>
@@ -1223,7 +1383,10 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                   <div className="mt-1 text-xs text-muted-foreground">
                                     {doneCount}/{requiredTasks.length} complete
                                     {exchangeRate !== undefined
-                                      ? ` · Rate ${exchangeRate.toFixed(2)}`
+                                      ? ` · Rate ${
+                                          exchangeRateDisplay ||
+                                          formatExchangeRate(exchangeRate)
+                                        }`
                                       : ""}
                                   </div>
                                 ) : null}
@@ -1384,6 +1547,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                       <TableBody>
                         {template.countries.map((row, rowIndex) => {
                           const isParentRow = row.checkable === false
+                          const isFrabemarParentRow = row.id === "frabemar"
                           const requiredTasks = getRequiredTasks(row)
                           const childRows = isParentRow
                             ? template.countries
@@ -1403,6 +1567,9 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                           const rowNote = asString(checked[noteKey(row.id)])
                           const exchangeRate = asNumber(
                             checked[exchangeRateKey(row.id)]
+                          )
+                          const exchangeRateDisplay = asString(
+                            checked[exchangeRateDisplayKey(row.id)]
                           )
                           const isEditingNote = editingNoteRowId === row.id
                           const isEditingExchangeRate =
@@ -1451,7 +1618,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                     : "pr-8 font-medium whitespace-nowrap"
                                 }
                               >
-                                {isParentRow ? (
+                                {isParentRow && !isFrabemarParentRow ? (
                                   <span
                                     className="block"
                                     style={{
@@ -1464,9 +1631,17 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                   <AppLink
                                     href={countryRecordHref(
                                       activePeriod,
-                                      row.id
+                                      row.id,
+                                      row,
+                                      checked
                                     )}
                                     className="block underline-offset-4 hover:underline"
+                                    onClick={() =>
+                                      saveMonthEndReturnPoint(
+                                        activePeriod,
+                                        row.id
+                                      )
+                                    }
                                     style={{
                                       marginLeft: `${row.indent * 1.75}rem`,
                                     }}
@@ -1536,11 +1711,17 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                           type="text"
                                           inputMode="decimal"
                                           value={exchangeRateDraft}
-                                          onChange={(event) =>
-                                            setExchangeRateDraft(
-                                              event.target.value
-                                            )
-                                          }
+                                          onChange={(event) => {
+                                            const nextValue = event.target.value
+
+                                            if (
+                                              /^\d*(?:[.,]\d{0,4})?$/.test(
+                                                nextValue
+                                              )
+                                            ) {
+                                              setExchangeRateDraft(nextValue)
+                                            }
+                                          }}
                                           onKeyDown={(event) => {
                                             if (event.key === "Enter") {
                                               saveExchangeRate(row.id)
@@ -1588,7 +1769,8 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                       >
                                         {exchangeRate === undefined
                                           ? ""
-                                          : exchangeRate.toFixed(4)}
+                                          : exchangeRateDisplay ||
+                                            formatExchangeRate(exchangeRate)}
                                       </button>
                                     )}
                                   </>

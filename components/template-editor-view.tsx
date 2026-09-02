@@ -387,6 +387,8 @@ export function TemplateEditorView() {
   const [activeCountryId, setActiveCountryId] = React.useState<string | null>(
     null
   )
+  const [activeCountrySettingsSection, setActiveCountrySettingsSection] =
+    React.useState<CountrySettingsSection>("report-mapping")
   const [mappingHeaders, setMappingHeaders] =
     React.useState<ReportMappingSamples>({})
   const [showCountryExitPrompt, setShowCountryExitPrompt] =
@@ -454,6 +456,19 @@ export function TemplateEditorView() {
       isMounted = false
     }
   }, [])
+
+  React.useEffect(() => {
+    setActiveCountrySettingsSection("report-mapping")
+  }, [activeCountryId])
+
+  React.useEffect(() => {
+    if (
+      activeCountrySettingsSection === "country-information" &&
+      itemForm?.mode !== "edit-country"
+    ) {
+      setActiveCountrySettingsSection("report-mapping")
+    }
+  }, [activeCountrySettingsSection, itemForm])
 
   function persist(nextTemplate: MonthEndTemplate) {
     saveMonthEndTemplate(nextTemplate)
@@ -641,6 +656,51 @@ export function TemplateEditorView() {
 
     saveTaskForm(itemForm)
   }
+
+  const activeCountryDetailsForm =
+    itemForm?.mode === "edit-country" ? itemForm : null
+  const activeCountrySettingsItems = getCountrySettingsItems(
+    activeCountryDetailsForm
+  )
+  const showActiveSettingsHeader = Boolean(activeModuleId)
+  const settingsHeaderTitle = showActiveSettingsHeader
+    ? (activeCountry?.name ?? activeModule?.name ?? "Settings")
+    : "Settings"
+  const settingsHeaderLeading = showActiveSettingsHeader ? (
+    <Button
+      variant="outline"
+      className="h-8 rounded-md"
+      aria-label={activeCountry ? "Back to countries" : "Back to settings"}
+      onClick={() => {
+        if (activeCountry) {
+          requestCloseActiveCountry()
+          return
+        }
+
+        setActiveModuleId(null)
+        setItemForm(null)
+        setActiveCountryId(null)
+      }}
+    >
+      <ArrowLeftIcon />
+      Back
+    </Button>
+  ) : undefined
+  const settingsHeaderActions =
+    showActiveSettingsHeader && !activeCountry ? (
+      <Button className="h-8 rounded-md" onClick={startAddItem}>
+        <PlusIcon />
+        Add New
+      </Button>
+    ) : undefined
+  const settingsHeaderTabs =
+    activeModuleId === countriesModuleId && activeCountry ? (
+      <CountrySettingsNavigation
+        items={activeCountrySettingsItems}
+        activeSection={activeCountrySettingsSection}
+        onActiveSectionChange={setActiveCountrySettingsSection}
+      />
+    ) : undefined
 
   function saveCountryForm(
     form: Extract<ItemForm, { mode: "add-country" | "edit-country" }>
@@ -1110,7 +1170,12 @@ export function TemplateEditorView() {
       <AppSidebar variant="inset" />
       <SidebarInset>
         <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
-          <SiteHeader title="Settings" />
+          <SiteHeader
+            title={settingsHeaderTitle}
+            leadingContent={settingsHeaderLeading}
+            actions={settingsHeaderActions}
+            bottomContent={settingsHeaderTabs}
+          />
           <div className="grid gap-4 px-4 py-4 lg:px-6">
             {!activeModuleId ? (
               <section className="grid gap-4">
@@ -1259,41 +1324,6 @@ export function TemplateEditorView() {
               </section>
             ) : (
               <section className="grid gap-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <Button
-                      variant="outline"
-                      size="icon-sm"
-                      className="h-9 w-9 shrink-0 rounded-full md:h-9 md:w-9"
-                      aria-label={
-                        activeCountry
-                          ? "Back to countries"
-                          : "Back to settings"
-                      }
-                      onClick={() => {
-                        if (activeCountry) {
-                          requestCloseActiveCountry()
-                          return
-                        }
-
-                        setActiveModuleId(null)
-                        setItemForm(null)
-                        setActiveCountryId(null)
-                      }}
-                    >
-                      <ArrowLeftIcon />
-                    </Button>
-                    <h1 className="min-w-0 truncate text-lg font-semibold">
-                      {activeCountry?.name ?? activeModule?.name}
-                    </h1>
-                  </div>
-                  {activeCountry ? null : (
-                    <Button onClick={startAddItem}>
-                      <PlusIcon />
-                      Add New
-                    </Button>
-                  )}
-                </div>
                 <div className="grid gap-4">
                   {itemForm ? (
                     itemForm.mode === "edit-country" ? null : (
@@ -1312,14 +1342,16 @@ export function TemplateEditorView() {
                     <CountryMappingPanel
                       ref={countryMappingPanelRef}
                       country={activeCountry}
-                      detailsForm={
-                        itemForm?.mode === "edit-country" ? itemForm : null
-                      }
+                      detailsForm={activeCountryDetailsForm}
                       parentRows={parentRows}
                       template={template}
                       mappingHeaders={activeCountryMappingHeaders}
                       showExitPrompt={showCountryExitPrompt}
+                      activeSettingsSection={activeCountrySettingsSection}
                       onChangeDetailsForm={setItemForm}
+                      onActiveSettingsSectionChange={
+                        setActiveCountrySettingsSection
+                      }
                       onSaveDetailsForm={saveItemForm}
                       onSaveAndExit={saveMappingsAndCloseCountry}
                       onDiscardAndExit={discardMappingsAndCloseCountry}
@@ -1671,7 +1703,57 @@ type CountryMappingPanelHandle = {
   discardMappings: () => void
 }
 
-type CountrySettingsSection = "country-information" | "report-mapping" | "ai-rules"
+type CountrySettingsSection =
+  "country-information" | "report-mapping" | "ai-rules"
+
+function getCountrySettingsItems(
+  detailsForm: Extract<ItemForm, { mode: "edit-country" }> | null
+) {
+  return [
+    ...(detailsForm
+      ? [{ id: "country-information" as const, label: "Country Information" }]
+      : []),
+    { id: "report-mapping" as const, label: "Report Mapping" },
+    { id: "ai-rules" as const, label: "AI Rules & Notes" },
+  ] satisfies Array<{
+    id: CountrySettingsSection
+    label: string
+  }>
+}
+
+function CountrySettingsNavigation({
+  items,
+  activeSection,
+  onActiveSectionChange,
+}: {
+  items: Array<{
+    id: CountrySettingsSection
+    label: string
+  }>
+  activeSection: CountrySettingsSection
+  onActiveSectionChange: (section: CountrySettingsSection) => void
+}) {
+  return (
+    <NavigationMenu className="max-w-none justify-start">
+      <NavigationMenuList className="min-w-0 flex-wrap justify-start gap-6">
+        {items.map((item) => (
+          <NavigationMenuItem key={item.id}>
+            <button
+              type="button"
+              className={cn(
+                "-mb-px inline-flex h-9 items-center border-b border-transparent bg-transparent px-0 py-1 text-sm font-medium text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30",
+                activeSection === item.id && "border-foreground text-foreground"
+              )}
+              onClick={() => onActiveSectionChange(item.id)}
+            >
+              {item.label}
+            </button>
+          </NavigationMenuItem>
+        ))}
+      </NavigationMenuList>
+    </NavigationMenu>
+  )
+}
 
 const CountryMappingPanel = React.forwardRef<
   CountryMappingPanelHandle,
@@ -1685,7 +1767,9 @@ const CountryMappingPanel = React.forwardRef<
       ReportSampleField[]
     >
     showExitPrompt: boolean
+    activeSettingsSection: CountrySettingsSection
     onChangeDetailsForm: (form: ItemForm) => void
+    onActiveSettingsSectionChange: (section: CountrySettingsSection) => void
     onSaveDetailsForm: () => void
     onSaveAndExit: () => void
     onDiscardAndExit: () => void
@@ -1712,7 +1796,9 @@ const CountryMappingPanel = React.forwardRef<
     template,
     mappingHeaders,
     showExitPrompt,
+    activeSettingsSection,
     onChangeDetailsForm,
+    onActiveSettingsSectionChange,
     onSaveDetailsForm,
     onSaveAndExit,
     onDiscardAndExit,
@@ -1726,8 +1812,6 @@ const CountryMappingPanel = React.forwardRef<
 ) {
   const [activeMappingTab, setActiveMappingTab] =
     React.useState("country-report")
-  const [activeSettingsSection, setActiveSettingsSection] =
-    React.useState<CountrySettingsSection>("report-mapping")
   const [showResetConfirm, setShowResetConfirm] = React.useState(false)
   const [isEditingAiNotes, setIsEditingAiNotes] = React.useState(false)
   const [isSavingAiNotes, setIsSavingAiNotes] = React.useState(false)
@@ -1744,29 +1828,17 @@ const CountryMappingPanel = React.forwardRef<
       : "paste"
   const countryAiRules = getCountryAiRules(country)
   const hasUnsavedAiNotes = aiNotesDraft !== (country.aiNotes ?? "")
-  const countrySettingsItems: Array<{
-    id: CountrySettingsSection
-    label: string
-  }> = [
-    ...(detailsForm
-      ? [{ id: "country-information" as const, label: "Country Information" }]
-      : []),
-    { id: "report-mapping", label: "Report Mapping" },
-    { id: "ai-rules", label: "AI Rules & Notes" },
-  ]
-
   React.useEffect(() => {
     setAiNotesDraft(country.aiNotes ?? "")
     setIsEditingAiNotes(false)
     setIsSavingAiNotes(false)
-    setActiveSettingsSection("report-mapping")
   }, [country.id, country.aiNotes])
 
   React.useEffect(() => {
     if (!detailsForm && activeSettingsSection === "country-information") {
-      setActiveSettingsSection("report-mapping")
+      onActiveSettingsSectionChange("report-mapping")
     }
-  }, [activeSettingsSection, detailsForm])
+  }, [activeSettingsSection, detailsForm, onActiveSettingsSectionChange])
 
   async function saveAiNotes() {
     const trimmedDraft = aiNotesDraft.trim()
@@ -1843,25 +1915,6 @@ const CountryMappingPanel = React.forwardRef<
           </div>
         </div>
       ) : null}
-      <NavigationMenu className="max-w-none justify-start border-b">
-        <NavigationMenuList className="min-w-0 flex-wrap justify-start gap-6">
-          {countrySettingsItems.map((item) => (
-            <NavigationMenuItem key={item.id}>
-              <button
-                type="button"
-                className={cn(
-                  "-mb-px inline-flex h-9 items-center border-b border-transparent bg-transparent px-0 py-1 text-sm font-medium text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30",
-                  activeSettingsSection === item.id &&
-                    "border-foreground text-foreground"
-                )}
-                onClick={() => setActiveSettingsSection(item.id)}
-              >
-                {item.label}
-              </button>
-            </NavigationMenuItem>
-          ))}
-        </NavigationMenuList>
-      </NavigationMenu>
       {detailsForm && activeSettingsSection === "country-information" ? (
         <section className="grid gap-3">
           <CountryFields
@@ -1885,191 +1938,197 @@ const CountryMappingPanel = React.forwardRef<
           onValueChange={setActiveMappingTab}
           className="min-h-0 flex-1 gap-4"
         >
-        <div className="flex items-center gap-3">
-          <div className="-mx-4 min-w-0 flex-1 overflow-x-auto px-4 md:mx-0 md:px-0">
-            <TabsList className="h-auto min-h-11 w-max min-w-full flex-nowrap items-center gap-1 rounded-[1.375rem] p-1 md:min-w-0">
-              <TabsTrigger
-                value="country-report"
-                className="h-9 flex-none rounded-[1.05rem] px-4 py-2 leading-none"
+          <div className="flex items-center gap-3">
+            <div className="-mx-4 min-w-0 flex-1 overflow-x-auto px-4 md:mx-0 md:px-0">
+              <TabsList className="h-auto min-h-11 w-max min-w-full flex-nowrap items-center gap-1 rounded-[1.375rem] p-1 md:min-w-0">
+                <TabsTrigger
+                  value="country-report"
+                  className="h-9 flex-none rounded-[1.05rem] px-4 py-2 leading-none"
+                >
+                  Country Report
+                </TabsTrigger>
+                <TabsTrigger
+                  value="master-report"
+                  className="h-9 flex-none rounded-[1.05rem] px-4 py-2 leading-none"
+                >
+                  NetSuite Master
+                </TabsTrigger>
+              </TabsList>
+            </div>
+            <div className="flex shrink-0 items-center justify-end gap-2">
+              <Button
+                variant="outline"
+                className="h-9"
+                onClick={() => activeMappingRef.current?.openSample()}
               >
-                Country Report
-              </TabsTrigger>
-              <TabsTrigger
-                value="master-report"
-                className="h-9 flex-none rounded-[1.05rem] px-4 py-2 leading-none"
+                <FileSpreadsheetIcon />
+                {activeSampleMode === "paste"
+                  ? "Paste Report Sample"
+                  : "Upload Report Sample"}
+              </Button>
+              <DropdownMenu
+                onOpenChange={(open) => {
+                  if (!open) {
+                    setShowResetConfirm(false)
+                  }
+                }}
               >
-                NetSuite Master
-              </TabsTrigger>
-            </TabsList>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9 rounded-full p-0"
+                      aria-label="Report mapping actions"
+                    />
+                  }
+                >
+                  <MoreHorizontalIcon />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-40">
+                  {showResetConfirm ? (
+                    <>
+                      <button
+                        type="button"
+                        className="relative flex min-h-10 w-full cursor-default items-center gap-2 rounded-xl px-2 py-2 text-left text-sm whitespace-nowrap text-destructive outline-hidden select-none hover:bg-destructive/10 hover:text-destructive focus:bg-destructive/10 focus:text-destructive md:min-h-7 md:py-1.5 [&_svg]:size-4 [&_svg]:shrink-0"
+                        onClick={() => {
+                          activeMappingRef.current?.resetToDefaultMapping()
+                          setShowResetConfirm(false)
+                        }}
+                      >
+                        <Trash2Icon />
+                        Confirm Reset
+                      </button>
+                      <button
+                        type="button"
+                        className="relative flex min-h-10 w-full cursor-default items-center gap-2 rounded-xl px-2 py-2 text-left text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground md:min-h-7 md:py-1.5 [&_svg]:size-4 [&_svg]:shrink-0"
+                        onClick={() => {
+                          setShowResetConfirm(false)
+                        }}
+                      >
+                        <XIcon />
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <DropdownMenuItem
+                        onClick={() =>
+                          activeMappingRef.current?.addExtraField()
+                        }
+                      >
+                        <PlusIcon />
+                        Add Field
+                      </DropdownMenuItem>
+                      <button
+                        type="button"
+                        className="relative flex min-h-10 w-full cursor-default items-center gap-2 rounded-xl px-2 py-2 text-left text-sm text-destructive outline-hidden select-none hover:bg-destructive/10 hover:text-destructive focus:bg-destructive/10 focus:text-destructive md:min-h-7 md:py-1.5 [&_svg]:size-4 [&_svg]:shrink-0"
+                        onClick={() => {
+                          setShowResetConfirm(true)
+                        }}
+                      >
+                        <Trash2Icon />
+                        Reset
+                      </button>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
-          <div className="flex shrink-0 items-center justify-end gap-2">
-            <Button
-              variant="outline"
-              className="h-9"
-              onClick={() => activeMappingRef.current?.openSample()}
-            >
-              <FileSpreadsheetIcon />
-              {activeSampleMode === "paste"
-                ? "Paste Report Sample"
-                : "Upload Report Sample"}
-            </Button>
-            <DropdownMenu
-              onOpenChange={(open) => {
-                if (!open) {
-                  setShowResetConfirm(false)
-                }
-              }}
-            >
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-9 w-9 rounded-full p-0"
-                    aria-label="Report mapping actions"
-                  />
-                }
-              >
-                <MoreHorizontalIcon />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-40">
-                {showResetConfirm ? (
-                  <>
-                    <button
-                      type="button"
-                      className="relative flex min-h-10 w-full cursor-default items-center gap-2 rounded-xl px-2 py-2 text-left text-sm whitespace-nowrap text-destructive outline-hidden select-none hover:bg-destructive/10 hover:text-destructive focus:bg-destructive/10 focus:text-destructive md:min-h-7 md:py-1.5 [&_svg]:size-4 [&_svg]:shrink-0"
-                      onClick={() => {
-                        activeMappingRef.current?.resetToDefaultMapping()
-                        setShowResetConfirm(false)
-                      }}
-                    >
-                      <Trash2Icon />
-                      Confirm Reset
-                    </button>
-                    <button
-                      type="button"
-                      className="relative flex min-h-10 w-full cursor-default items-center gap-2 rounded-xl px-2 py-2 text-left text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground md:min-h-7 md:py-1.5 [&_svg]:size-4 [&_svg]:shrink-0"
-                      onClick={() => {
-                        setShowResetConfirm(false)
-                      }}
-                    >
-                      <XIcon />
-                      Cancel
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <DropdownMenuItem
-                      onClick={() => activeMappingRef.current?.addExtraField()}
-                    >
-                      <PlusIcon />
-                      Add Field
-                    </DropdownMenuItem>
-                    <button
-                      type="button"
-                      className="relative flex min-h-10 w-full cursor-default items-center gap-2 rounded-xl px-2 py-2 text-left text-sm text-destructive outline-hidden select-none hover:bg-destructive/10 hover:text-destructive focus:bg-destructive/10 focus:text-destructive md:min-h-7 md:py-1.5 [&_svg]:size-4 [&_svg]:shrink-0"
-                      onClick={() => {
-                        setShowResetConfirm(true)
-                      }}
-                    >
-                      <Trash2Icon />
-                      Reset
-                    </button>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-        <TabsContent value="country-report" className="m-0">
-          <ReportMappingCard
-            ref={countryReportMappingRef}
-            mappingKind="countryReport"
-            fields={countryReportMappingFields}
-            mapping={country.countryReportMapping}
-            sampleHeaders={mappingHeaders.countryReport}
-            sampleMode={country.requiresPasteReport ? "paste" : "upload"}
-            onLoadSample={onLoadSample}
-            onLoadSampleText={onLoadSampleText}
-            onSave={(mapping) => onSaveMapping("countryReportMapping", mapping)}
-          />
-        </TabsContent>
-        <TabsContent value="master-report" className="m-0">
-          <ReportMappingCard
-            ref={masterReportMappingRef}
-            mappingKind="masterReport"
-            fields={masterReportMappingFields}
-            mapping={country.masterReportMapping}
-            sampleHeaders={mappingHeaders.masterReport}
-            sampleMode="upload"
-            onLoadSample={onLoadSample}
-            onLoadSampleText={onLoadSampleText}
-            onSave={(mapping) => onSaveMapping("masterReportMapping", mapping)}
-          />
-        </TabsContent>
+          <TabsContent value="country-report" className="m-0">
+            <ReportMappingCard
+              ref={countryReportMappingRef}
+              mappingKind="countryReport"
+              fields={countryReportMappingFields}
+              mapping={country.countryReportMapping}
+              sampleHeaders={mappingHeaders.countryReport}
+              sampleMode={country.requiresPasteReport ? "paste" : "upload"}
+              onLoadSample={onLoadSample}
+              onLoadSampleText={onLoadSampleText}
+              onSave={(mapping) =>
+                onSaveMapping("countryReportMapping", mapping)
+              }
+            />
+          </TabsContent>
+          <TabsContent value="master-report" className="m-0">
+            <ReportMappingCard
+              ref={masterReportMappingRef}
+              mappingKind="masterReport"
+              fields={masterReportMappingFields}
+              mapping={country.masterReportMapping}
+              sampleHeaders={mappingHeaders.masterReport}
+              sampleMode="upload"
+              onLoadSample={onLoadSample}
+              onLoadSampleText={onLoadSampleText}
+              onSave={(mapping) =>
+                onSaveMapping("masterReportMapping", mapping)
+              }
+            />
+          </TabsContent>
         </Tabs>
       ) : null}
       {activeSettingsSection === "ai-rules" ? (
-      <section className="grid gap-3">
-        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-          <div>
-            <p className="text-sm text-muted-foreground">
-              Rules printed from the current mapper and reconciliation logic.
-            </p>
-          </div>
-          {!isEditingAiNotes ? (
-            <Button
-              variant="outline"
-              className="shrink-0"
-              onClick={() => setIsEditingAiNotes(true)}
-            >
-              <PencilIcon />
-              Edit Notes
-            </Button>
-          ) : null}
-        </div>
-        <div className="grid gap-2 rounded-lg border bg-muted/20 p-3 text-sm">
-          {countryAiRules.map((rule) => (
-            <div key={rule} className="leading-6">
-              {rule}
+        <section className="grid gap-3">
+          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">
+                Rules printed from the current mapper and reconciliation logic.
+              </p>
             </div>
-          ))}
-        </div>
-        {isEditingAiNotes ? (
-          <div className="grid gap-3">
-            <Textarea
-              value={aiNotesDraft}
-              onChange={(event) => setAiNotesDraft(event.target.value)}
-              placeholder="Add country-specific AI notes here."
-              className="min-h-36"
-            />
-            <div className="flex justify-end gap-2">
+            {!isEditingAiNotes ? (
               <Button
                 variant="outline"
-                onClick={() => {
-                  setAiNotesDraft(country.aiNotes ?? "")
-                  setIsEditingAiNotes(false)
-                }}
-                disabled={isSavingAiNotes}
+                className="shrink-0"
+                onClick={() => setIsEditingAiNotes(true)}
               >
-                Cancel
+                <PencilIcon />
+                Edit Notes
               </Button>
-              <Button onClick={saveAiNotes} disabled={isSavingAiNotes}>
-                {isSavingAiNotes ? (
-                  <Loader2Icon className="animate-spin" />
-                ) : (
-                  <SaveIcon />
-                )}
-                Save Notes
-              </Button>
+            ) : null}
+          </div>
+          <div className="grid gap-2 rounded-lg border bg-muted/20 p-3 text-sm">
+            {countryAiRules.map((rule) => (
+              <div key={rule} className="leading-6">
+                {rule}
+              </div>
+            ))}
+          </div>
+          {isEditingAiNotes ? (
+            <div className="grid gap-3">
+              <Textarea
+                value={aiNotesDraft}
+                onChange={(event) => setAiNotesDraft(event.target.value)}
+                placeholder="Add country-specific AI notes here."
+                className="min-h-36"
+              />
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setAiNotesDraft(country.aiNotes ?? "")
+                    setIsEditingAiNotes(false)
+                  }}
+                  disabled={isSavingAiNotes}
+                >
+                  Cancel
+                </Button>
+                <Button onClick={saveAiNotes} disabled={isSavingAiNotes}>
+                  {isSavingAiNotes ? (
+                    <Loader2Icon className="animate-spin" />
+                  ) : (
+                    <SaveIcon />
+                  )}
+                  Save Notes
+                </Button>
+              </div>
             </div>
-          </div>
-        ) : country.aiNotes?.trim() ? (
-          <div className="whitespace-pre-wrap text-sm leading-6">
-            {country.aiNotes}
-          </div>
-        ) : null}
-      </section>
+          ) : country.aiNotes?.trim() ? (
+            <div className="text-sm leading-6 whitespace-pre-wrap">
+              {country.aiNotes}
+            </div>
+          ) : null}
+        </section>
       ) : null}
     </div>
   )
@@ -2146,9 +2205,7 @@ function inferRepeatingPaymentRows(lines: string[]) {
 
     if (
       !descriptionLine ||
-      !/^\d{1,2}\/\d{1,2}\/\d{4}(?:\s+\d{1,2}:\d{2}:\d{2})?$/.test(
-        dateLine
-      ) ||
+      !/^\d{1,2}\/\d{1,2}\/\d{4}(?:\s+\d{1,2}:\d{2}:\d{2})?$/.test(dateLine) ||
       !/^\d[\d\s.,]*$/.test(amountLine)
     ) {
       return undefined
@@ -2226,7 +2283,11 @@ async function readMappingUpload(file: File) {
     }
 
     if (extension === "xlsx" || extension === "xls") {
-      return { text: await extractWorkbookRows(file), imageDataUrl, diagnostics }
+      return {
+        text: await extractWorkbookRows(file),
+        imageDataUrl,
+        diagnostics,
+      }
     }
 
     return { text: await file.text(), imageDataUrl, diagnostics }
@@ -2319,7 +2380,8 @@ function sampleFieldsFromTable(
   )
   const normalizedColumns = Array.from(
     { length: columnCount },
-    (_, columnIndex) => columns[columnIndex]?.trim() || `Column ${columnIndex + 1}`
+    (_, columnIndex) =>
+      columns[columnIndex]?.trim() || `Column ${columnIndex + 1}`
   )
 
   return normalizedColumns
@@ -2705,22 +2767,22 @@ const ReportMappingCard = React.forwardRef<
     : sampleHeaders.length
       ? sampleHeaders
       : [
-        ...Object.values(draft.fields)
-          .filter(Boolean)
-          .map((sourceColumn) => ({
-            sourceColumn,
-            label: sourceColumn,
-            previewValues: [],
-          })),
-        ...(draft.extraFields
-          ?.map((field) => field.sourceColumn)
-          .filter(Boolean)
-          .map((sourceColumn) => ({
-            sourceColumn,
-            label: sourceColumn,
-            previewValues: [],
-          })) ?? []),
-      ]
+          ...Object.values(draft.fields)
+            .filter(Boolean)
+            .map((sourceColumn) => ({
+              sourceColumn,
+              label: sourceColumn,
+              previewValues: [],
+            })),
+          ...(draft.extraFields
+            ?.map((field) => field.sourceColumn)
+            .filter(Boolean)
+            .map((sourceColumn) => ({
+              sourceColumn,
+              label: sourceColumn,
+              previewValues: [],
+            })) ?? []),
+        ]
   React.useEffect(() => {
     setDraft(
       mapping ?? {
@@ -2838,7 +2900,10 @@ const ReportMappingCard = React.forwardRef<
     return "Unassigned"
   }
 
-  function assignSourceColumn(sourceColumn: string, targetValue: string | null) {
+  function assignSourceColumn(
+    sourceColumn: string,
+    targetValue: string | null
+  ) {
     setHasPendingSample(true)
     setDraft((current) => {
       const clearedFields = Object.fromEntries(
@@ -2912,7 +2977,8 @@ const ReportMappingCard = React.forwardRef<
     rawPreviewRows.length && previewColumns.length
       ? rawPreviewRows.slice(0, 12)
       : []
-  const shouldShowMappingTable = samplePreview !== null || previewColumns.length > 0
+  const shouldShowMappingTable =
+    samplePreview !== null || previewColumns.length > 0
   const hasUnsavedMappingChanges =
     hasPendingSample ||
     serializeReportMapping(draft) !== serializeReportMapping(mapping)
@@ -3131,209 +3197,199 @@ const ReportMappingCard = React.forwardRef<
 
   return (
     <div className="grid gap-4">
-        {sampleMode === "upload" ? (
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".csv,.pdf,.xls,.xlsx,image/*,text/csv,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            className="sr-only"
-            onChange={(event) => {
-              const file = event.currentTarget.files?.[0]
+      {sampleMode === "upload" ? (
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".csv,.pdf,.xls,.xlsx,image/*,text/csv,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          className="sr-only"
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0]
 
-              if (file) {
-                handleSampleFile(file)
-              }
+            if (file) {
+              handleSampleFile(file)
+            }
 
-              event.currentTarget.value = ""
-            }}
+            event.currentTarget.value = ""
+          }}
+        />
+      ) : null}
+      {sampleMode === "paste" && showPasteSample ? (
+        <div className="grid gap-3 rounded-lg border bg-muted/20 p-3">
+          <Textarea
+            value={pasteSample}
+            onChange={(event) => setPasteSample(event.target.value)}
+            placeholder="Paste the report rows here."
+            className="min-h-36"
           />
-        ) : null}
-        {sampleMode === "paste" && showPasteSample ? (
-          <div className="grid gap-3 rounded-lg border bg-muted/20 p-3">
-            <Textarea
-              value={pasteSample}
-              onChange={(event) => setPasteSample(event.target.value)}
-              placeholder="Paste the report rows here."
-              className="min-h-36"
-            />
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setShowPasteSample(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleSamplePaste}
-                disabled={!pasteSample.trim()}
-              >
-                Use Sample
-              </Button>
-            </div>
-          </div>
-        ) : null}
-        {shouldShowMappingTable ? (
-          <div className="grid gap-3">
-            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-              <div className="min-w-0">
-                <span className="block truncate text-sm font-medium">
-                  {samplePreview?.fileName ?? "Saved mapping"}
-                </span>
-              </div>
-              {samplePreview ? (
-                <div className="flex shrink-0 items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => requestAiMappingSuggestions()}
-                    disabled={isAiSuggesting}
-                  >
-                    {isAiSuggesting ? (
-                      <Loader2Icon className="animate-spin" />
-                    ) : (
-                      <SparklesIcon />
-                    )}
-                    AI Suggest
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-            {samplePreview?.imageDataUrl ? (
-              <div className="max-h-72 overflow-auto rounded-md border bg-muted/20">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={samplePreview.imageDataUrl}
-                  alt={`Preview of ${samplePreview.fileName}`}
-                  className="h-auto max-w-full"
-                />
-              </div>
-            ) : null}
-            {isAiSuggesting ? (
-              <MappingTableSkeleton progress={aiProgress} />
-            ) : null}
-            {!isAiSuggesting && previewColumns.length ? (
-              <div className="overflow-auto rounded-lg border bg-background p-3">
-                <div
-                  className="grid min-w-max"
-                  style={{
-                    gridTemplateColumns: `repeat(${previewColumns.length}, minmax(14rem, 1fr))`,
-                  }}
-                >
-                  {previewColumns.map((column, columnIndex) => (
-                    <div
-                      key={`${column.sourceColumn}-${columnIndex}`}
-                      className="grid justify-items-center gap-1 border-b px-2 pb-3"
-                    >
-                      <Select
-                        value={getAssignedTargetValue(column.sourceColumn)}
-                        onValueChange={(value) =>
-                          assignSourceColumn(column.sourceColumn, value)
-                        }
-                      >
-                        <SelectTrigger className="h-8 w-max min-w-56 max-w-none justify-center bg-background px-3 text-center text-xs whitespace-nowrap">
-                          {formatColumnAssignment(column.sourceColumn)}
-                        </SelectTrigger>
-                        <SelectContent
-                          align="center"
-                          alignItemWithTrigger={false}
-                          className="w-max min-w-64"
-                        >
-                          <SelectGroup>
-                            <SelectItem value={reportMappingNoneValue}>
-                              Unassigned
-                            </SelectItem>
-                            {fields.map((field) => (
-                              <SelectItem
-                                key={field.id}
-                                value={`core:${field.id}`}
-                              >
-                                {field.label}
-                              </SelectItem>
-                            ))}
-                            {(draft.extraFields ?? []).map((field) => (
-                              <SelectItem
-                                key={field.id}
-                                value={`extra:${field.id}`}
-                              >
-                                {field.label || "Extra Field"}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                      {!isGenericMappingColumn(column.label) ? (
-                        <span className="max-w-60 truncate text-center text-[11px] font-normal text-muted-foreground">
-                          {column.label}
-                        </span>
-                      ) : null}
-                    </div>
-                  ))}
-                  {(previewDataRows.length ? previewDataRows : [[]]).map(
-                    (row, rowIndex) => (
-                      <React.Fragment
-                        key={`${samplePreview?.fileName ?? "saved-mapping"}-${rowIndex}`}
-                      >
-                        {previewColumns.map((column, cellIndex) => (
-                          <div
-                            key={`${samplePreview?.fileName ?? "saved-mapping"}-${rowIndex}-${column.sourceColumn}`}
-                            className="min-h-10 truncate border-b px-2 py-2 text-center text-xs"
-                            title={
-                              row[cellIndex] ||
-                              (previewDataRows.length
-                                ? "-"
-                                : column.sourceColumn)
-                            }
-                          >
-                            {row[cellIndex] ||
-                              (previewDataRows.length
-                                ? "-"
-                                : column.sourceColumn)}
-                          </div>
-                        ))}
-                      </React.Fragment>
-                    )
-                  )}
-                </div>
-              </div>
-            ) : !isAiSuggesting && samplePreview?.textLines.length ? (
-              <div className="max-h-56 overflow-auto rounded-md border bg-muted/20 p-3 text-xs">
-                {samplePreview.textLines.map((line, index) => (
-                  <div key={`${samplePreview.fileName}-line-${index}`}>
-                    {line}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-            {[...(samplePreview?.diagnostics ?? [])]
-              .filter(Boolean)
-              .length ? (
-              <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-950">
-                {[...(samplePreview?.diagnostics ?? [])]
-                  .filter(Boolean)
-                  .map((message, index) => (
-                    <div key={`${message}-${index}`}>{message}</div>
-                  ))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-        {hasUnsavedMappingChanges ? (
           <div className="flex justify-end gap-2">
-            {shouldShowMappingTable ? (
-              <Button
-                variant="outline"
-                onClick={isAiSuggesting ? cancelAiMapping : discardChanges}
-              >
-                <XIcon />
-                Cancel
-              </Button>
-            ) : null}
-            <Button onClick={saveMapping}>
-              <SaveIcon />
-              Save Mapping
+            <Button variant="outline" onClick={() => setShowPasteSample(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSamplePaste} disabled={!pasteSample.trim()}>
+              Use Sample
             </Button>
           </div>
-        ) : null}
+        </div>
+      ) : null}
+      {shouldShowMappingTable ? (
+        <div className="grid gap-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div className="min-w-0">
+              <span className="block truncate text-sm font-medium">
+                {samplePreview?.fileName ?? "Saved mapping"}
+              </span>
+            </div>
+            {samplePreview ? (
+              <div className="flex shrink-0 items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => requestAiMappingSuggestions()}
+                  disabled={isAiSuggesting}
+                >
+                  {isAiSuggesting ? (
+                    <Loader2Icon className="animate-spin" />
+                  ) : (
+                    <SparklesIcon />
+                  )}
+                  AI Suggest
+                </Button>
+              </div>
+            ) : null}
+          </div>
+          {samplePreview?.imageDataUrl ? (
+            <div className="max-h-72 overflow-auto rounded-md border bg-muted/20">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={samplePreview.imageDataUrl}
+                alt={`Preview of ${samplePreview.fileName}`}
+                className="h-auto max-w-full"
+              />
+            </div>
+          ) : null}
+          {isAiSuggesting ? (
+            <MappingTableSkeleton progress={aiProgress} />
+          ) : null}
+          {!isAiSuggesting && previewColumns.length ? (
+            <div className="overflow-auto rounded-lg border bg-background p-3">
+              <div
+                className="grid min-w-max"
+                style={{
+                  gridTemplateColumns: `repeat(${previewColumns.length}, minmax(14rem, 1fr))`,
+                }}
+              >
+                {previewColumns.map((column, columnIndex) => (
+                  <div
+                    key={`${column.sourceColumn}-${columnIndex}`}
+                    className="grid justify-items-center gap-1 border-b px-2 pb-3"
+                  >
+                    <Select
+                      value={getAssignedTargetValue(column.sourceColumn)}
+                      onValueChange={(value) =>
+                        assignSourceColumn(column.sourceColumn, value)
+                      }
+                    >
+                      <SelectTrigger className="h-8 w-max max-w-none min-w-56 justify-center bg-background px-3 text-center text-xs whitespace-nowrap">
+                        {formatColumnAssignment(column.sourceColumn)}
+                      </SelectTrigger>
+                      <SelectContent
+                        align="center"
+                        alignItemWithTrigger={false}
+                        className="w-max min-w-64"
+                      >
+                        <SelectGroup>
+                          <SelectItem value={reportMappingNoneValue}>
+                            Unassigned
+                          </SelectItem>
+                          {fields.map((field) => (
+                            <SelectItem
+                              key={field.id}
+                              value={`core:${field.id}`}
+                            >
+                              {field.label}
+                            </SelectItem>
+                          ))}
+                          {(draft.extraFields ?? []).map((field) => (
+                            <SelectItem
+                              key={field.id}
+                              value={`extra:${field.id}`}
+                            >
+                              {field.label || "Extra Field"}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    {!isGenericMappingColumn(column.label) ? (
+                      <span className="max-w-60 truncate text-center text-[11px] font-normal text-muted-foreground">
+                        {column.label}
+                      </span>
+                    ) : null}
+                  </div>
+                ))}
+                {(previewDataRows.length ? previewDataRows : [[]]).map(
+                  (row, rowIndex) => (
+                    <React.Fragment
+                      key={`${samplePreview?.fileName ?? "saved-mapping"}-${rowIndex}`}
+                    >
+                      {previewColumns.map((column, cellIndex) => (
+                        <div
+                          key={`${samplePreview?.fileName ?? "saved-mapping"}-${rowIndex}-${column.sourceColumn}`}
+                          className="min-h-10 truncate border-b px-2 py-2 text-center text-xs"
+                          title={
+                            row[cellIndex] ||
+                            (previewDataRows.length ? "-" : column.sourceColumn)
+                          }
+                        >
+                          {row[cellIndex] ||
+                            (previewDataRows.length
+                              ? "-"
+                              : column.sourceColumn)}
+                        </div>
+                      ))}
+                    </React.Fragment>
+                  )
+                )}
+              </div>
+            </div>
+          ) : !isAiSuggesting && samplePreview?.textLines.length ? (
+            <div className="max-h-56 overflow-auto rounded-md border bg-muted/20 p-3 text-xs">
+              {samplePreview.textLines.map((line, index) => (
+                <div key={`${samplePreview.fileName}-line-${index}`}>
+                  {line}
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {[...(samplePreview?.diagnostics ?? [])].filter(Boolean).length ? (
+            <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-950">
+              {[...(samplePreview?.diagnostics ?? [])]
+                .filter(Boolean)
+                .map((message, index) => (
+                  <div key={`${message}-${index}`}>{message}</div>
+                ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {hasUnsavedMappingChanges ? (
+        <div className="flex justify-end gap-2">
+          {shouldShowMappingTable ? (
+            <Button
+              variant="outline"
+              onClick={isAiSuggesting ? cancelAiMapping : discardChanges}
+            >
+              <XIcon />
+              Cancel
+            </Button>
+          ) : null}
+          <Button onClick={saveMapping}>
+            <SaveIcon />
+            Save Mapping
+          </Button>
+        </div>
+      ) : null}
     </div>
   )
 })

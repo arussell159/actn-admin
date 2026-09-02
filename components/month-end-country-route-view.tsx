@@ -12,6 +12,7 @@ export function MonthEndCountryRouteView() {
   const view =
     requestedView === "dashboard" ||
     requestedView === "reconciliation" ||
+    requestedView === "invoice" ||
     requestedView === "journal"
       ? requestedView
       : "auto"
