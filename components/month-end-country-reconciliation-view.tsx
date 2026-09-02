@@ -286,8 +286,8 @@ type ReconciliationSnapshot = {
   autoRolledMasterRecordIds: string[]
   autoRolledInternalIds: string[]
   autoLeftMasterRecordIds: string[]
-  manuallyRolledInternalIds: string[]
-  manuallyLeftMasterRecordIds: string[]
+  rolledInternalIds: string[]
+  leftInvoiceRecordIds: string[]
   resolvedCountryReportRows: ResolvedCountryReportRow[]
   missingCountryRecordIds: string[]
   missingMasterRecordIds: string[]
@@ -321,6 +321,48 @@ function parseResolvedCountryReportRows(value: unknown) {
   } catch {}
 
   return []
+}
+
+function parseReconciliationSnapshot(value: unknown) {
+  if (typeof value !== "string" || !value) {
+    return undefined
+  }
+
+  try {
+    const parsed = JSON.parse(value)
+
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "countryId" in parsed &&
+      typeof parsed.countryId === "string"
+    ) {
+      return parsed as ReconciliationSnapshot
+    }
+  } catch {}
+
+  return undefined
+}
+
+function reconciliationSnapshotComparable(
+  snapshot: ReconciliationSnapshot | undefined
+) {
+  if (!snapshot) {
+    return ""
+  }
+
+  const content: Partial<ReconciliationSnapshot> = { ...snapshot }
+
+  delete content.savedAt
+
+  return JSON.stringify(content)
+}
+
+function approvedIdsMatch(value: unknown, ids: string[]) {
+  return (
+    serializeApprovedInternalIds(parseApprovedInternalIds(value)) ===
+    serializeApprovedInternalIds(ids)
+  )
 }
 
 function parseCountryDashboardSection(value: unknown): CountryDashboardSection {
@@ -1088,8 +1130,8 @@ function makeReconciliationSnapshot({
       .map((internalId) => internalId?.trim() ?? "")
       .filter(Boolean),
     autoLeftMasterRecordIds: Array.from(reconciliation.autoLeftMasterIds),
-    manuallyRolledInternalIds: rolledInternalIds,
-    manuallyLeftMasterRecordIds: leftInvoiceRecordIds,
+    rolledInternalIds,
+    leftInvoiceRecordIds,
     resolvedCountryReportRows,
     missingCountryRecordIds: reconciliation.missingFromNetSuite.map(
       (record) => record.id
@@ -3939,6 +3981,7 @@ export function MonthEndCountryReconciliationView({
   const pasteReportTextareaRef = React.useRef<HTMLTextAreaElement>(null)
   const pasteReportActionsRef = React.useRef<HTMLDivElement>(null)
   const shouldScrollPastedReportRef = React.useRef(false)
+  const gabonReconciliationSaveRef = React.useRef("")
   const activeCountryId = countryId
     ? getCanonicalCountryId(countryId)
     : undefined
@@ -5135,6 +5178,125 @@ export function MonthEndCountryReconciliationView({
         record?.checked[resolvedCountryReportRowsKey(activeCountryId)]
       )
     : []
+
+  React.useEffect(() => {
+    if (
+      !record ||
+      activeCountryId !== "frabemar-gabon" ||
+      isMonthClosed ||
+      !records.length ||
+      !countryReportRecords.length
+    ) {
+      return
+    }
+
+    let isCancelled = false
+
+    async function saveGabonReconciliationState() {
+      if (!record || !activeCountryId) {
+        return
+      }
+
+      const latestRecord = (await getMonthEndRecord(record.period)) ?? record
+      const approvalKey = rollApprovalKey(activeCountryId)
+      const leaveKey = leftInvoiceKey(activeCountryId)
+      const snapshotKey = reconciliationSnapshotKey(activeCountryId)
+      const checked = { ...latestRecord.checked }
+      const existingRolledInternalIds = parseApprovedInternalIds(
+        checked[approvalKey]
+      )
+      const existingLeftRecordIds = parseApprovedInternalIds(checked[leaveKey])
+      const latestResolvedRows = parseResolvedCountryReportRows(
+        checked[resolvedCountryReportRowsKey(activeCountryId)]
+      )
+      const autoRolledInternalIds = Array.from(
+        reconciliation.autoRolledMasterIds
+      )
+        .map((recordId) =>
+          records.find((masterRecord) => masterRecord.id === recordId)
+        )
+        .map((masterRecord) => masterRecord?.sourceInternalId.trim() ?? "")
+        .filter(Boolean)
+      const autoLeftRecordIds = Array.from(reconciliation.autoLeftMasterIds)
+      const nextRolledInternalIds = Array.from(
+        new Set([...existingRolledInternalIds, ...autoRolledInternalIds])
+      )
+      const nextLeftRecordIds = Array.from(
+        new Set([...existingLeftRecordIds, ...autoLeftRecordIds])
+      )
+      const snapshot = makeReconciliationSnapshot({
+        countryId: activeCountryId,
+        period: latestRecord.period,
+        reconciliation,
+        rolledInternalIds: nextRolledInternalIds,
+        leftInvoiceRecordIds: nextLeftRecordIds,
+        resolvedCountryReportRows: latestResolvedRows,
+      })
+      const comparableSnapshot = reconciliationSnapshotComparable(snapshot)
+      const existingComparableSnapshot = reconciliationSnapshotComparable(
+        parseReconciliationSnapshot(checked[snapshotKey])
+      )
+
+      if (
+        comparableSnapshot === existingComparableSnapshot &&
+        approvedIdsMatch(checked[approvalKey], nextRolledInternalIds) &&
+        approvedIdsMatch(checked[leaveKey], nextLeftRecordIds)
+      ) {
+        return
+      }
+
+      if (gabonReconciliationSaveRef.current === comparableSnapshot) {
+        return
+      }
+
+      gabonReconciliationSaveRef.current = comparableSnapshot
+
+      if (nextRolledInternalIds.length) {
+        checked[approvalKey] = serializeApprovedInternalIds(
+          nextRolledInternalIds
+        )
+      } else {
+        delete checked[approvalKey]
+      }
+
+      if (nextLeftRecordIds.length) {
+        checked[leaveKey] = serializeApprovedInternalIds(nextLeftRecordIds)
+      } else {
+        delete checked[leaveKey]
+      }
+
+      checked[snapshotKey] = JSON.stringify(snapshot)
+
+      const updatedRecord = {
+        ...latestRecord,
+        checked,
+        updatedAt: new Date().toISOString(),
+      }
+
+      await saveMonthEndRecord(updatedRecord)
+
+      if (!isCancelled) {
+        setRecord(updatedRecord)
+        window.dispatchEvent(new Event("month-end:records-updated"))
+      }
+    }
+
+    saveGabonReconciliationState().catch(() => {
+      gabonReconciliationSaveRef.current = ""
+    })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [
+    activeCountryId,
+    countryReportRecords,
+    isMonthClosed,
+    reconciliation,
+    record,
+    records,
+  ])
+
   const activeDashboardSection = activeCountryId
     ? parseCountryDashboardSection(
         record?.checked[countryDashboardSectionKey(activeCountryId)]

@@ -2325,7 +2325,7 @@ export function InformationView() {
             />
           ) : null}
           <div className="flex min-h-0 flex-1 px-0 py-0 sm:px-4 sm:py-4 lg:px-6">
-            <Card className="min-h-0 flex-1 rounded-none bg-transparent py-0 shadow-none ring-0 sm:rounded-lg sm:bg-card sm:shadow-sm sm:ring-1">
+            <Card className="min-h-0 flex-1 rounded-none bg-transparent py-0 shadow-none ring-0 sm:rounded-lg sm:bg-card sm:shadow-sm sm:ring-1 md:overflow-visible md:rounded-none md:bg-transparent md:shadow-none md:ring-0">
               {isNotebookLoading ? (
                 <NotebookSkeleton />
               ) : (
