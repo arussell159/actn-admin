@@ -291,8 +291,10 @@ type ReconciliationSnapshot = {
   autoRolledMasterRecordIds: string[]
   autoRolledInternalIds: string[]
   autoLeftMasterRecordIds: string[]
+  autoLeftInternalIds: string[]
   rolledInternalIds: string[]
   leftInvoiceRecordIds: string[]
+  leftInvoiceInternalIds: string[]
   resolvedCountryReportRows: ResolvedCountryReportRow[]
   missingCountryRecordIds: string[]
   missingMasterRecordIds: string[]
@@ -368,6 +370,17 @@ function approvedIdsMatch(value: unknown, ids: string[]) {
     serializeApprovedInternalIds(parseApprovedInternalIds(value)) ===
     serializeApprovedInternalIds(ids)
   )
+}
+
+function masterRecordApprovalIds(record: MonthEndMasterRecord) {
+  return [record.id, record.sourceInternalId.trim()].filter(Boolean)
+}
+
+function isApprovedMasterRecord(
+  record: MonthEndMasterRecord,
+  approvedIds: Set<string>
+) {
+  return masterRecordApprovalIds(record).some((id) => approvedIds.has(id))
 }
 
 function parseCountryDashboardSection(value: unknown): CountryDashboardSection {
@@ -1115,6 +1128,11 @@ function makeReconciliationSnapshot({
       ...reconciliation.missingFromCountry,
     ].map((record) => [record.id, record])
   )
+  const masterRecordsByInternalId = new Map(
+    Array.from(masterRecordsById.values())
+      .map((record) => [record.sourceInternalId.trim(), record] as const)
+      .filter(([internalId]) => Boolean(internalId))
+  )
 
   return {
     countryId,
@@ -1135,8 +1153,21 @@ function makeReconciliationSnapshot({
       .map((internalId) => internalId?.trim() ?? "")
       .filter(Boolean),
     autoLeftMasterRecordIds: Array.from(reconciliation.autoLeftMasterIds),
+    autoLeftInternalIds: Array.from(reconciliation.autoLeftMasterIds)
+      .map((recordId) => masterRecordsById.get(recordId)?.sourceInternalId)
+      .map((internalId) => internalId?.trim() ?? "")
+      .filter(Boolean),
     rolledInternalIds,
     leftInvoiceRecordIds,
+    leftInvoiceInternalIds: leftInvoiceRecordIds
+      .map(
+        (recordId) =>
+          masterRecordsById.get(recordId)?.sourceInternalId ||
+          masterRecordsByInternalId.get(recordId)?.sourceInternalId ||
+          recordId
+      )
+      .map((internalId) => internalId?.trim() ?? "")
+      .filter(Boolean),
     resolvedCountryReportRows,
     missingCountryRecordIds: reconciliation.missingFromNetSuite.map(
       (record) => record.id
@@ -1193,12 +1224,34 @@ function applyReconciliationSnapshot({
   })
   const missingCountryRecordIds = new Set(snapshot.missingCountryRecordIds)
   const missingMasterRecordIds = new Set(snapshot.missingMasterRecordIds)
+  const autoRolledInternalIds = new Set(snapshot.autoRolledInternalIds ?? [])
+  const autoLeftInternalIds = new Set(snapshot.autoLeftInternalIds ?? [])
+  const autoRolledMasterIds = new Set([
+    ...snapshot.autoRolledMasterRecordIds,
+    ...masterRecords
+      .filter(
+        (record) =>
+          record.sourceInternalId &&
+          autoRolledInternalIds.has(record.sourceInternalId)
+      )
+      .map((record) => record.id),
+  ])
+  const autoLeftMasterIds = new Set([
+    ...snapshot.autoLeftMasterRecordIds,
+    ...masterRecords
+      .filter(
+        (record) =>
+          record.sourceInternalId &&
+          autoLeftInternalIds.has(record.sourceInternalId)
+      )
+      .map((record) => record.id),
+  ])
 
   return {
     matched,
     linkedMasterRecordIds: new Set(snapshot.linkedMasterRecordIds),
-    autoRolledMasterIds: new Set(snapshot.autoRolledMasterRecordIds),
-    autoLeftMasterIds: new Set(snapshot.autoLeftMasterRecordIds),
+    autoRolledMasterIds,
+    autoLeftMasterIds,
     missingFromNetSuite: countryRecords.filter((record) =>
       missingCountryRecordIds.has(record.id)
     ),
@@ -1335,7 +1388,7 @@ function ReconciliationWorkbench({
     .filter(
       (record) =>
         missingMasterRecordIds.has(record.id) &&
-        !leftInvoiceRecordIdSet.has(record.id) &&
+        !isApprovedMasterRecord(record, leftInvoiceRecordIdSet) &&
         !hiddenMasterRecordIds.has(record.id) &&
         (!record.sourceInternalId ||
           !rolledInternalIdSet.has(record.sourceInternalId))
@@ -3431,6 +3484,12 @@ function CountryReconciliationDashboard({
   const leftInvoiceRecordIdSet = new Set(leftInvoiceRecordIds)
   const autoRolledRecordIdSet = reconciliation.autoRolledMasterIds
   const autoLeftRecordIdSet = reconciliation.autoLeftMasterIds
+  const autoLeftInternalIdSet = new Set(
+    masterRecords
+      .filter((record) => autoLeftRecordIdSet.has(record.id))
+      .map((record) => record.sourceInternalId.trim())
+      .filter(Boolean)
+  )
   const reconciledRecords = masterRecords.filter((record) =>
     reconciledMasterIds.has(record.id)
   )
@@ -3445,10 +3504,12 @@ function CountryReconciliationDashboard({
   const leftInMonthRecords = masterRecords.filter(
     (record) =>
       autoLeftRecordIdSet.has(record.id) ||
+      (Boolean(record.sourceInternalId) &&
+        autoLeftInternalIdSet.has(record.sourceInternalId)) ||
       (!reconciledMasterIds.has(record.id) &&
         !rolledRecordIds.has(record.id) &&
         (leftInvoiceRecordIdSet.size === 0 ||
-          leftInvoiceRecordIdSet.has(record.id)))
+          isApprovedMasterRecord(record, leftInvoiceRecordIdSet)))
   )
   const dashboardSections: {
     value: CountryDashboardSection
@@ -4484,7 +4545,7 @@ export function MonthEndCountryReconciliationView({
     }
 
     const latestRecord = (await getMonthEndRecord(record.period)) ?? record
-    const recordIds = selectedRecords.map((item) => item.id).filter(Boolean)
+    const recordIds = selectedRecords.flatMap(masterRecordApprovalIds)
     const leaveKey = leftInvoiceKey(activeCountryId)
     const existingRecordIds = parseApprovedInternalIds(
       latestRecord.checked[leaveKey]
@@ -4628,7 +4689,13 @@ export function MonthEndCountryReconciliationView({
         )
         .map((masterRecord) => masterRecord?.sourceInternalId.trim() ?? "")
         .filter(Boolean)
-      const autoLeftRecordIds = Array.from(reconciliation.autoLeftMasterIds)
+      const autoLeftRecordIds = Array.from(
+        reconciliation.autoLeftMasterIds
+      ).flatMap((recordId) => {
+        const masterRecord = records.find((record) => record.id === recordId)
+
+        return masterRecord ? masterRecordApprovalIds(masterRecord) : []
+      })
       const nextRolledInternalIds = Array.from(
         new Set([...existingRolledInternalIds, ...autoRolledInternalIds])
       )
@@ -5390,7 +5457,13 @@ export function MonthEndCountryReconciliationView({
         )
         .map((masterRecord) => masterRecord?.sourceInternalId.trim() ?? "")
         .filter(Boolean)
-      const autoLeftRecordIds = Array.from(reconciliation.autoLeftMasterIds)
+      const autoLeftRecordIds = Array.from(
+        reconciliation.autoLeftMasterIds
+      ).flatMap((recordId) => {
+        const masterRecord = records.find((record) => record.id === recordId)
+
+        return masterRecord ? masterRecordApprovalIds(masterRecord) : []
+      })
       const nextRolledInternalIds = Array.from(
         new Set([...existingRolledInternalIds, ...autoRolledInternalIds])
       )
