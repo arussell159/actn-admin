@@ -102,6 +102,11 @@ import {
   type MonthEndCountryReportRecord,
 } from "@/lib/month-end-country-report-records"
 import {
+  deleteMonthEndCountryReconciliation,
+  getMonthEndCountryReconciliation,
+  saveMonthEndCountryReconciliation,
+} from "@/lib/month-end-country-reconciliations"
+import {
   leftInvoiceKey,
   parseApprovedInternalIds,
   rollApprovalKey,
@@ -1138,6 +1143,67 @@ function makeReconciliationSnapshot({
     ),
     missingMasterRecordIds: reconciliation.missingFromCountry.map(
       (record) => record.id
+    ),
+  }
+}
+
+function applyReconciliationSnapshot({
+  reconciliation,
+  snapshot,
+  masterRecords,
+  countryRecords,
+}: {
+  reconciliation: ReturnType<typeof reconcileRecords>
+  snapshot?: ReconciliationSnapshot
+  masterRecords: MonthEndMasterRecord[]
+  countryRecords: MonthEndCountryReportRecord[]
+}): ReturnType<typeof reconcileRecords> {
+  if (!snapshot) {
+    return reconciliation
+  }
+
+  const masterRecordsById = new Map(
+    masterRecords.map((record) => [record.id, record])
+  )
+  const countryRecordsById = new Map(
+    countryRecords.map((record) => [record.id, record])
+  )
+  const matched = snapshot.matched.flatMap((match) => {
+    const masterRecord = masterRecordsById.get(match.masterRecordId)
+    const countryRecord = countryRecordsById.get(match.countryRecordId)
+
+    if (!masterRecord || !countryRecord) {
+      return []
+    }
+
+    return [
+      {
+        id: `${masterRecord.id}__${countryRecord.id}`,
+        masterRecord,
+        countryRecord,
+        matchedOn:
+          match.matchedOn || match.matchedValue
+            ? {
+                label: match.matchedOn ?? "Saved",
+                value: match.matchedValue ?? "",
+              }
+            : undefined,
+      },
+    ]
+  })
+  const missingCountryRecordIds = new Set(snapshot.missingCountryRecordIds)
+  const missingMasterRecordIds = new Set(snapshot.missingMasterRecordIds)
+
+  return {
+    matched,
+    linkedMasterRecordIds: new Set(snapshot.linkedMasterRecordIds),
+    autoRolledMasterIds: new Set(snapshot.autoRolledMasterRecordIds),
+    autoLeftMasterIds: new Set(snapshot.autoLeftMasterRecordIds),
+    missingFromNetSuite: countryRecords.filter((record) =>
+      missingCountryRecordIds.has(record.id)
+    ),
+    missingFromCountry: masterRecords.filter((record) =>
+      missingMasterRecordIds.has(record.id)
     ),
   }
 }
@@ -3969,6 +4035,8 @@ export function MonthEndCountryReconciliationView({
   const [countryReportRecords, setCountryReportRecords] = React.useState<
     MonthEndCountryReportRecord[]
   >([])
+  const [databaseReconciliationSnapshot, setDatabaseReconciliationSnapshot] =
+    React.useState<ReconciliationSnapshot>()
   const [hasLoaded, setHasLoaded] = React.useState(false)
   const [loadError, setLoadError] = React.useState("")
   const [isPasteReportOpen, setIsPasteReportOpen] = React.useState(false)
@@ -4010,6 +4078,7 @@ export function MonthEndCountryReconciliationView({
 
     async function load() {
       if (!period || !activeCountryId) {
+        setDatabaseReconciliationSnapshot(undefined)
         setHasLoaded(true)
         return
       }
@@ -4017,6 +4086,7 @@ export function MonthEndCountryReconciliationView({
       setLoadError("")
 
       try {
+        setDatabaseReconciliationSnapshot(undefined)
         const [monthEndRecord, template] = await Promise.all([
           getMonthEndRecord(period),
           getMonthEndTemplate(),
@@ -4047,18 +4117,25 @@ export function MonthEndCountryReconciliationView({
           (item) => item.requiresPasteReport
         )
 
-        const [masterRecords, reportRecords] = monthEndRecord
-          ? await Promise.all([
-              listMonthEndMasterRecords({
-                monthEndId: monthEndRecord.id,
-                countryId: activeCountryId,
-              }),
-              listMonthEndCountryReportRecords({
-                monthEndId: monthEndRecord.id,
-                countryId: activeCountryId,
-              }),
-            ])
-          : [[], []]
+        const [masterRecords, reportRecords, savedReconciliation] =
+          monthEndRecord
+            ? await Promise.all([
+                listMonthEndMasterRecords({
+                  monthEndId: monthEndRecord.id,
+                  countryId: activeCountryId,
+                }),
+                listMonthEndCountryReportRecords({
+                  monthEndId: monthEndRecord.id,
+                  countryId: activeCountryId,
+                }),
+                activeCountryId === "frabemar-gabon"
+                  ? getMonthEndCountryReconciliation<ReconciliationSnapshot>({
+                      monthEndId: monthEndRecord.id,
+                      countryId: activeCountryId,
+                    })
+                  : Promise.resolve(undefined),
+              ])
+            : [[], [], undefined]
 
         if (!isMounted) {
           return
@@ -4071,6 +4148,7 @@ export function MonthEndCountryReconciliationView({
         setLinkedCountryIds(linkedIds)
         setCountryNavigationIds(navigationIds)
         setCanPasteReport(supportsPasteReport)
+        setDatabaseReconciliationSnapshot(savedReconciliation?.snapshot)
         const transactionDates = new Map<string, string>()
 
         for (const linkedCountryId of linkedIds.length
@@ -4137,25 +4215,58 @@ export function MonthEndCountryReconciliationView({
       }),
     [activeCountryId, countryReportRecords, record?.period, records]
   )
+  const storedReconciliationSnapshot =
+    activeCountryId === "frabemar-gabon"
+      ? (databaseReconciliationSnapshot ??
+        parseReconciliationSnapshot(
+          record?.checked[reconciliationSnapshotKey(activeCountryId)]
+        ))
+      : undefined
+  const displayedReconciliation = React.useMemo(
+    () =>
+      applyReconciliationSnapshot({
+        reconciliation,
+        snapshot: storedReconciliationSnapshot,
+        masterRecords: records,
+        countryRecords: countryReportRecords,
+      }),
+    [
+      countryReportRecords,
+      records,
+      reconciliation,
+      storedReconciliationSnapshot,
+    ]
+  )
   const reconciliationCounts = React.useMemo(
     () => ({
       country: new Set(
-        reconciliation.matched.map(({ countryRecord }) => countryRecord.id)
+        displayedReconciliation.matched.map(
+          ({ countryRecord }) => countryRecord.id
+        )
       ).size,
       master:
-        reconciliation.matched.length -
-        reconciliation.linkedMasterRecordIds.size,
+        displayedReconciliation.matched.length -
+        displayedReconciliation.linkedMasterRecordIds.size,
     }),
-    [reconciliation.linkedMasterRecordIds.size, reconciliation.matched]
+    [
+      displayedReconciliation.linkedMasterRecordIds.size,
+      displayedReconciliation.matched,
+    ]
   )
   const showCountryColumn = linkedCountryIds.length > 1
   const missingCountryRecordIds = React.useMemo(
-    () => new Set(reconciliation.missingFromNetSuite.map((item) => item.id)),
-    [reconciliation.missingFromNetSuite]
+    () =>
+      new Set(
+        displayedReconciliation.missingFromNetSuite.map((item) => item.id)
+      ),
+    [displayedReconciliation.missingFromNetSuite]
   )
   const missingMasterRecordIds = React.useMemo(
-    () => new Set(reconciliation.missingFromCountry.map((item) => item.id)),
-    [reconciliation.missingFromCountry]
+    () =>
+      new Set(
+        displayedReconciliation.missingFromCountry.map((item) => item.id)
+      ),
+    [displayedReconciliation.missingFromCountry]
   )
   const hasCountryReport = countryReportRecords.length > 0
   const hasMasterRecords = records.length > 0
@@ -4177,6 +4288,23 @@ export function MonthEndCountryReconciliationView({
 
     window.setTimeout(() => countryReportInputRef.current?.click(), 0)
   }
+
+  const saveGabonSnapshotToDatabase = React.useCallback(
+    async (snapshot: ReconciliationSnapshot, monthEndRecord = record) => {
+      if (!monthEndRecord || activeCountryId !== "frabemar-gabon") {
+        return
+      }
+
+      await saveMonthEndCountryReconciliation({
+        monthEndId: monthEndRecord.id,
+        period: monthEndRecord.period,
+        countryId: activeCountryId,
+        snapshot,
+      })
+      setDatabaseReconciliationSnapshot(snapshot)
+    },
+    [activeCountryId, record]
+  )
 
   async function saveMasterWorkflowState(
     fileName: string,
@@ -4222,6 +4350,13 @@ export function MonthEndCountryReconciliationView({
     }
 
     await saveMonthEndRecord(updatedRecord)
+    if (activeCountryId === "frabemar-gabon") {
+      await deleteMonthEndCountryReconciliation({
+        monthEndId: record.id,
+        countryId: activeCountryId,
+      })
+      setDatabaseReconciliationSnapshot(undefined)
+    }
     setRecord(updatedRecord)
     window.dispatchEvent(new Event("month-end:records-updated"))
   }
@@ -4270,6 +4405,13 @@ export function MonthEndCountryReconciliationView({
     }
 
     await saveMonthEndRecord(updatedRecord)
+    if (activeCountryId === "frabemar-gabon") {
+      await deleteMonthEndCountryReconciliation({
+        monthEndId: record.id,
+        countryId: activeCountryId,
+      })
+      setDatabaseReconciliationSnapshot(undefined)
+    }
     setRecord(updatedRecord)
     window.dispatchEvent(new Event("month-end:records-updated"))
   }
@@ -4300,17 +4442,21 @@ export function MonthEndCountryReconciliationView({
       [approvalKey]: serializeApprovedInternalIds(approvedInternalIds),
     }
 
-    if (activeCountryId === "frabemar-gabon") {
-      checked[reconciliationSnapshotKey(activeCountryId)] = JSON.stringify(
-        makeReconciliationSnapshot({
-          countryId: activeCountryId,
-          period: latestRecord.period,
-          reconciliation,
-          rolledInternalIds: approvedInternalIds,
-          leftInvoiceRecordIds,
-          resolvedCountryReportRows,
-        })
-      )
+    const snapshot =
+      activeCountryId === "frabemar-gabon"
+        ? makeReconciliationSnapshot({
+            countryId: activeCountryId,
+            period: latestRecord.period,
+            reconciliation,
+            rolledInternalIds: approvedInternalIds,
+            leftInvoiceRecordIds,
+            resolvedCountryReportRows,
+          })
+        : undefined
+
+    if (snapshot) {
+      checked[reconciliationSnapshotKey(activeCountryId)] =
+        JSON.stringify(snapshot)
     }
 
     const updatedRecord = {
@@ -4320,6 +4466,9 @@ export function MonthEndCountryReconciliationView({
     }
 
     await saveMonthEndRecord(updatedRecord)
+    if (snapshot) {
+      await saveGabonSnapshotToDatabase(snapshot, updatedRecord)
+    }
     setRecord(updatedRecord)
     window.dispatchEvent(new Event("month-end:records-updated"))
 
@@ -4350,17 +4499,21 @@ export function MonthEndCountryReconciliationView({
 
     delete checked[journalEntrySnapshotKey(activeCountryId)]
 
-    if (activeCountryId === "frabemar-gabon") {
-      checked[reconciliationSnapshotKey(activeCountryId)] = JSON.stringify(
-        makeReconciliationSnapshot({
-          countryId: activeCountryId,
-          period: latestRecord.period,
-          reconciliation,
-          rolledInternalIds,
-          leftInvoiceRecordIds: leftRecordIds,
-          resolvedCountryReportRows,
-        })
-      )
+    const snapshot =
+      activeCountryId === "frabemar-gabon"
+        ? makeReconciliationSnapshot({
+            countryId: activeCountryId,
+            period: latestRecord.period,
+            reconciliation,
+            rolledInternalIds,
+            leftInvoiceRecordIds: leftRecordIds,
+            resolvedCountryReportRows,
+          })
+        : undefined
+
+    if (snapshot) {
+      checked[reconciliationSnapshotKey(activeCountryId)] =
+        JSON.stringify(snapshot)
     }
 
     for (const linkedCountryId of linkedCountryIds.length
@@ -4376,6 +4529,9 @@ export function MonthEndCountryReconciliationView({
     }
 
     await saveMonthEndRecord(updatedRecord)
+    if (snapshot) {
+      await saveGabonSnapshotToDatabase(snapshot, updatedRecord)
+    }
     setRecord(updatedRecord)
     window.dispatchEvent(new Event("month-end:records-updated"))
   }
@@ -4411,17 +4567,21 @@ export function MonthEndCountryReconciliationView({
 
     delete checked[journalEntrySnapshotKey(activeCountryId)]
 
-    if (activeCountryId === "frabemar-gabon") {
-      checked[reconciliationSnapshotKey(activeCountryId)] = JSON.stringify(
-        makeReconciliationSnapshot({
-          countryId: activeCountryId,
-          period: latestRecord.period,
-          reconciliation,
-          rolledInternalIds,
-          leftInvoiceRecordIds,
-          resolvedCountryReportRows: nextResolvedRows,
-        })
-      )
+    const snapshot =
+      activeCountryId === "frabemar-gabon"
+        ? makeReconciliationSnapshot({
+            countryId: activeCountryId,
+            period: latestRecord.period,
+            reconciliation,
+            rolledInternalIds,
+            leftInvoiceRecordIds,
+            resolvedCountryReportRows: nextResolvedRows,
+          })
+        : undefined
+
+    if (snapshot) {
+      checked[reconciliationSnapshotKey(activeCountryId)] =
+        JSON.stringify(snapshot)
     }
 
     for (const linkedCountryId of linkedCountryIds.length
@@ -4437,6 +4597,9 @@ export function MonthEndCountryReconciliationView({
     }
 
     await saveMonthEndRecord(updatedRecord)
+    if (snapshot) {
+      await saveGabonSnapshotToDatabase(snapshot, updatedRecord)
+    }
     setRecord(updatedRecord)
     window.dispatchEvent(new Event("month-end:records-updated"))
   }
@@ -4448,6 +4611,7 @@ export function MonthEndCountryReconciliationView({
 
     const latestRecord = (await getMonthEndRecord(record.period)) ?? record
     const checked = { ...latestRecord.checked }
+    let snapshot: ReconciliationSnapshot | undefined
 
     if (activeCountryId === "frabemar-gabon") {
       const approvalKey = rollApprovalKey(activeCountryId)
@@ -4486,16 +4650,16 @@ export function MonthEndCountryReconciliationView({
         delete checked[leaveKey]
       }
 
-      checked[reconciliationSnapshotKey(activeCountryId)] = JSON.stringify(
-        makeReconciliationSnapshot({
-          countryId: activeCountryId,
-          period: latestRecord.period,
-          reconciliation,
-          rolledInternalIds: nextRolledInternalIds,
-          leftInvoiceRecordIds: nextLeftRecordIds,
-          resolvedCountryReportRows,
-        })
-      )
+      snapshot = makeReconciliationSnapshot({
+        countryId: activeCountryId,
+        period: latestRecord.period,
+        reconciliation,
+        rolledInternalIds: nextRolledInternalIds,
+        leftInvoiceRecordIds: nextLeftRecordIds,
+        resolvedCountryReportRows,
+      })
+      checked[reconciliationSnapshotKey(activeCountryId)] =
+        JSON.stringify(snapshot)
     }
 
     for (const linkedCountryId of linkedCountryIds.length
@@ -4511,6 +4675,9 @@ export function MonthEndCountryReconciliationView({
     }
 
     await saveMonthEndRecord(updatedRecord)
+    if (snapshot) {
+      await saveGabonSnapshotToDatabase(snapshot, updatedRecord)
+    }
     setRecord(updatedRecord)
     window.dispatchEvent(new Event("month-end:records-updated"))
     router.push(
@@ -4675,6 +4842,10 @@ export function MonthEndCountryReconciliationView({
           })
       )
     )
+    await deleteMonthEndCountryReconciliation({
+      monthEndId: record.id,
+      countryId: activeCountryId,
+    })
 
     const updatedRecord = {
       ...latestRecord,
@@ -4684,6 +4855,7 @@ export function MonthEndCountryReconciliationView({
 
     await saveMonthEndRecord(updatedRecord)
     setRecord(updatedRecord)
+    setDatabaseReconciliationSnapshot(undefined)
     setCountryReportRecords([])
     window.dispatchEvent(new Event("month-end:records-updated"))
     router.push(reconciliationReportHref)
@@ -5184,6 +5356,7 @@ export function MonthEndCountryReconciliationView({
       !record ||
       activeCountryId !== "frabemar-gabon" ||
       isMonthClosed ||
+      databaseReconciliationSnapshot ||
       !records.length ||
       !countryReportRecords.length
     ) {
@@ -5237,6 +5410,10 @@ export function MonthEndCountryReconciliationView({
         parseReconciliationSnapshot(checked[snapshotKey])
       )
 
+      if (existingComparableSnapshot) {
+        return
+      }
+
       if (
         comparableSnapshot === existingComparableSnapshot &&
         approvedIdsMatch(checked[approvalKey], nextRolledInternalIds) &&
@@ -5274,6 +5451,7 @@ export function MonthEndCountryReconciliationView({
       }
 
       await saveMonthEndRecord(updatedRecord)
+      await saveGabonSnapshotToDatabase(snapshot, updatedRecord)
 
       if (!isCancelled) {
         setRecord(updatedRecord)
@@ -5291,10 +5469,12 @@ export function MonthEndCountryReconciliationView({
   }, [
     activeCountryId,
     countryReportRecords,
+    databaseReconciliationSnapshot,
     isMonthClosed,
     reconciliation,
     record,
     records,
+    saveGabonSnapshotToDatabase,
   ])
 
   const activeDashboardSection = activeCountryId
@@ -5524,7 +5704,7 @@ export function MonthEndCountryReconciliationView({
               }
               masterRecords={records}
               countryRecords={countryReportRecords}
-              reconciliation={reconciliation}
+              reconciliation={displayedReconciliation}
               reconciledCount={reconciliationCounts.country}
               rolledInternalIds={rolledInternalIds}
               leftInvoiceRecordIds={leftInvoiceRecordIds}
@@ -5757,7 +5937,7 @@ export function MonthEndCountryReconciliationView({
                 <ReconciliationWorkbench
                   countryRecords={countryReportRecords}
                   masterRecords={sortedRecords}
-                  matchedRecords={reconciliation.matched}
+                  matchedRecords={displayedReconciliation.matched}
                   missingCountryRecordIds={missingCountryRecordIds}
                   missingMasterRecordIds={missingMasterRecordIds}
                   rolledInternalIds={rolledInternalIds}
@@ -5774,7 +5954,8 @@ export function MonthEndCountryReconciliationView({
                   }
                   countryRecordCount={countryReportRecords.length}
                   masterRecordCount={
-                    records.length - reconciliation.linkedMasterRecordIds.size
+                    records.length -
+                    displayedReconciliation.linkedMasterRecordIds.size
                   }
                   matchedCountryCount={reconciliationCounts.country}
                   matchedMasterCount={reconciliationCounts.master}

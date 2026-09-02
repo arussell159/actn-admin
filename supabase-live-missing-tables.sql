@@ -184,6 +184,59 @@ to authenticated
 using (true)
 with check (true);
 
+create table if not exists public.month_end_country_reconciliations (
+  id text primary key,
+  month_end_id text not null references public.month_end_records(id) on delete cascade,
+  period text not null,
+  country_id text not null,
+  snapshot jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists month_end_country_reconciliations_month_country_idx
+on public.month_end_country_reconciliations(month_end_id, country_id);
+
+alter table public.month_end_country_reconciliations enable row level security;
+
+drop policy if exists "Allow public month-end country reconciliation reads" on public.month_end_country_reconciliations;
+drop policy if exists "Allow public month-end country reconciliation inserts" on public.month_end_country_reconciliations;
+drop policy if exists "Allow public month-end country reconciliation updates" on public.month_end_country_reconciliations;
+drop policy if exists "Allow public month-end country reconciliation deletes" on public.month_end_country_reconciliations;
+drop policy if exists "Allow authenticated month-end country reconciliation access" on public.month_end_country_reconciliations;
+
+create policy "Allow public month-end country reconciliation reads"
+on public.month_end_country_reconciliations
+for select
+to anon
+using (true);
+
+create policy "Allow public month-end country reconciliation inserts"
+on public.month_end_country_reconciliations
+for insert
+to anon
+with check (true);
+
+create policy "Allow public month-end country reconciliation updates"
+on public.month_end_country_reconciliations
+for update
+to anon
+using (true)
+with check (true);
+
+create policy "Allow public month-end country reconciliation deletes"
+on public.month_end_country_reconciliations
+for delete
+to anon
+using (true);
+
+create policy "Allow authenticated month-end country reconciliation access"
+on public.month_end_country_reconciliations
+for all
+to authenticated
+using (true)
+with check (true);
+
 create table if not exists public.quote_items (
   internal_id text primary key,
   name text not null,
