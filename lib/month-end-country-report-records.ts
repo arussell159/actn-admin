@@ -28,6 +28,7 @@ type MonthEndCountryReportRecordRow = {
   bill_of_lading_number: string
   reference: string
   amount: number
+  secondary_amount?: number
   source_row_count: number
   parser_key: string
   status?: string
@@ -72,6 +73,7 @@ function toRecord(
     billOfLadingNumber: row.bill_of_lading_number ?? "",
     reference: row.reference,
     amount: Number(row.amount) || 0,
+    secondaryAmount: Number(row.secondary_amount) || 0,
     sourceRowCount: row.source_row_count,
     parserKey: row.parser_key,
     status: row.status ?? "",
@@ -95,6 +97,7 @@ function toRow(
     bill_of_lading_number: record.billOfLadingNumber ?? "",
     reference: record.reference,
     amount: record.amount,
+    secondary_amount: record.secondaryAmount ?? 0,
     source_row_count: record.sourceRowCount,
     parser_key: record.parserKey,
     status: record.status ?? "",
@@ -103,12 +106,15 @@ function toRow(
   }
 }
 
-function withoutOptionalCountryReportColumns(row: MonthEndCountryReportRecordRow) {
+function withoutOptionalCountryReportColumns(
+  row: MonthEndCountryReportRecordRow
+) {
   const rest = { ...row }
 
   delete rest.status
   delete rest.transaction_date
   delete rest.selling_date
+  delete rest.secondary_amount
 
   return rest
 }
@@ -123,7 +129,8 @@ function isMissingOptionalCountryReportColumnError(error: unknown) {
     (error.code === "42703" || error.code === "PGRST204") &&
     (error.message.includes("transaction_date") ||
       error.message.includes("selling_date") ||
-      error.message.includes("status"))
+      error.message.includes("status") ||
+      error.message.includes("secondary_amount"))
   )
 }
 
@@ -222,6 +229,8 @@ export function makeCountryReportRecords({
           ? normalizeCountryReportReference(record.reference)
           : record.reference,
       amount: (existing?.amount ?? 0) + record.amount,
+      secondaryAmount:
+        (existing?.secondaryAmount ?? 0) + (record.secondaryAmount ?? 0),
       sourceRowCount: (existing?.sourceRowCount ?? 0) + record.sourceRowCount,
       sourceCountryName: mergeReportValues(
         existing?.sourceCountryName ?? "",

@@ -1,4 +1,4 @@
-import { findCsvColumn, parseCsv } from "@/lib/csv"
+import { findCsvColumn, normalizeCsvHeader, parseCsv } from "@/lib/csv"
 import type { ReportFieldMapping } from "@/lib/month-end-template"
 
 export type ParsedCountryReportRecord = {
@@ -7,6 +7,7 @@ export type ParsedCountryReportRecord = {
   billOfLadingNumber: string
   reference: string
   amount: number
+  secondaryAmount?: number
   sourceRowCount: number
   status?: string
   transactionDate?: string
@@ -178,9 +179,7 @@ function inferRepeatingPaymentRows(text: string) {
 
     if (
       !/\s+-\s+/.test(descriptionLine) ||
-      !/^\d{1,2}\/\d{1,2}\/\d{4}(?:\s+\d{1,2}:\d{2}:\d{2})?$/.test(
-        dateLine
-      ) ||
+      !/^\d{1,2}\/\d{1,2}\/\d{4}(?:\s+\d{1,2}:\d{2}:\d{2})?$/.test(dateLine) ||
       !/^\d[\d\s.,]*$/.test(amountLine)
     ) {
       return undefined
@@ -290,9 +289,7 @@ export function parseMappedCountryReportCsv(
       sourceCountryIndex >= 0 ? (row[sourceCountryIndex]?.trim() ?? "") : ""
     const status = statusIndex >= 0 ? (row[statusIndex]?.trim() ?? "") : ""
     const transactionDate =
-      transactionDateIndex >= 0
-        ? (row[transactionDateIndex]?.trim() ?? "")
-        : ""
+      transactionDateIndex >= 0 ? (row[transactionDateIndex]?.trim() ?? "") : ""
     const sellingDate =
       sellingDateIndex >= 0 ? (row[sellingDateIndex]?.trim() ?? "") : ""
 
@@ -346,7 +343,9 @@ export function parseGabonCountryReportCsv(csvText: string) {
     )
 
     return (
-      normalizedHeaders.some((header) => header.includes("purchaseofnoteref")) &&
+      normalizedHeaders.some((header) =>
+        header.includes("purchaseofnoteref")
+      ) &&
       normalizedHeaders.some((header) => header.includes("bietcn")) &&
       normalizedHeaders.some((header) => header.includes("validationdate")) &&
       normalizedHeaders.some((header) => header.includes("invoicen")) &&
@@ -376,9 +375,7 @@ export function parseGabonCountryReportCsv(csvText: string) {
     }
   )
   const lastCargoIndex =
-    amountColumnIndexes.length > 0
-      ? Math.min(...amountColumnIndexes) - 1
-      : -1
+    amountColumnIndexes.length > 0 ? Math.min(...amountColumnIndexes) - 1 : -1
   const cargoColumnIndexes =
     firstCargoIndex >= 0 && lastCargoIndex >= firstCargoIndex
       ? Array.from(
@@ -416,6 +413,63 @@ export function parseGabonCountryReportCsv(csvText: string) {
       extraFields: [],
     }) ?? []
   )
+}
+
+export function parseCameroonCountryReportCsv(csvText: string) {
+  const rows = parseCsv(csvText)
+  const [headers, ...dataRows] = rows
+
+  if (!headers) {
+    return []
+  }
+
+  const normalizedHeaders = headers.map(normalizeCsvHeader)
+  const invoiceIndex = findCsvColumn(headers, ["numero", "minumber", "mi"])
+  const amountIndex = normalizedHeaders.findIndex(
+    (header) =>
+      (header === "val" ||
+        header === "valeur" ||
+        header.startsWith("valeur")) &&
+      !header.includes("date")
+  )
+  const commissionIndex = normalizedHeaders.findIndex(
+    (header) =>
+      header === "com" || header === "comusd" || header.includes("commission")
+  )
+  const transactionDateIndex = findCsvColumn(headers, [
+    "validatedat",
+    "validationdate",
+    "date",
+  ])
+
+  if (invoiceIndex < 0 || amountIndex < 0 || commissionIndex < 0) {
+    return []
+  }
+
+  return dataRows
+    .filter((row) => {
+      const rowText = row.join(" ").toLowerCase()
+
+      return !rowText.includes("total amount") && !rowText.includes("total")
+    })
+    .map((row) => {
+      const invoiceNumber = row[invoiceIndex]?.trim() ?? ""
+
+      return {
+        invoiceNumber,
+        ctnNumber: invoiceNumber,
+        billOfLadingNumber: "",
+        reference: invoiceNumber,
+        amount: parseAmount(row[amountIndex]),
+        secondaryAmount: parseAmount(row[commissionIndex]),
+        sourceRowCount: 1,
+        transactionDate:
+          transactionDateIndex >= 0
+            ? (row[transactionDateIndex]?.trim() ?? "")
+            : "",
+      }
+    })
+    .filter((record) => record.invoiceNumber)
 }
 
 function getDatePeriod(value: string | undefined) {

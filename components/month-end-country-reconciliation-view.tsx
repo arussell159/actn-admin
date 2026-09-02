@@ -87,6 +87,7 @@ import {
 } from "@/lib/month-end-template"
 import {
   extractWorkbookRows,
+  parseCameroonCountryReportCsv,
   parseMappedCountryReportCsv,
   parseGabonCountryReportCsv,
   parseCountryReportUploadFile,
@@ -112,7 +113,7 @@ import {
   rollApprovalKey,
   serializeApprovedInternalIds,
 } from "@/lib/month-end-roll-invoices"
-import { parseCsv } from "@/lib/csv"
+import { normalizeCsvHeader, parseCsv } from "@/lib/csv"
 
 const ANGOLA_OOT_COUNTRY_ID = "angola-oot"
 const ANGOLA_OOT_COUNTRY_NAME = "Angola OOT"
@@ -270,6 +271,14 @@ function reconciliationSnapshotKey(rowId: string) {
   return `${rowId}__reconciliation_snapshot`
 }
 
+function cameroonDmiMappingKey(rowId: string) {
+  return `${rowId}__cameroon_dmi_mapping`
+}
+
+function cameroonCommissionTotalKey(rowId: string) {
+  return `${rowId}__cameroon_commission_total`
+}
+
 type ResolvedCountryReportRow = {
   id: string
   reason: string
@@ -298,6 +307,12 @@ type ReconciliationSnapshot = {
   resolvedCountryReportRows: ResolvedCountryReportRow[]
   missingCountryRecordIds: string[]
   missingMasterRecordIds: string[]
+}
+
+type CameroonDmiMapping = {
+  miNumber: string
+  dmiNumber: string
+  sourceRowIndex: number
 }
 
 const countryReportReconcileReasonOptions = [
@@ -575,6 +590,238 @@ function normalizeMatchKey(value: string | undefined | null) {
     .replace(/[^a-z0-9]+/g, "")
 }
 
+function normalizeCameroonDocumentNumber(value: string | undefined | null) {
+  return (value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "")
+}
+
+function cameroonOriginalMiStatusValue(value: string | undefined | null) {
+  return value?.match(/Cameroon MI:\s*(MI\s*\d+)/i)?.[1] ?? ""
+}
+
+function cameroonOriginalMiRecordValue(record: MonthEndCountryReportRecord) {
+  return (
+    (
+      record as MonthEndCountryReportRecord & {
+        cameroonOriginalMiNumber?: string
+      }
+    ).cameroonOriginalMiNumber ??
+    cameroonOriginalMiStatusValue(record.status) ??
+    ""
+  )
+}
+
+function parseCameroonDmiMappings(value: unknown): CameroonDmiMapping[] {
+  if (typeof value !== "string" || !value) {
+    return []
+  }
+
+  try {
+    const parsed = JSON.parse(value)
+
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+
+    return parsed
+      .map((item) => {
+        if (typeof item !== "object" || item === null) {
+          return undefined
+        }
+
+        const miNumber =
+          "miNumber" in item && typeof item.miNumber === "string"
+            ? normalizeCameroonDocumentNumber(item.miNumber)
+            : ""
+        const dmiNumber =
+          "dmiNumber" in item && typeof item.dmiNumber === "string"
+            ? normalizeCameroonDocumentNumber(item.dmiNumber)
+            : ""
+
+        if (!miNumber || !dmiNumber) {
+          return undefined
+        }
+
+        return {
+          miNumber,
+          dmiNumber,
+          sourceRowIndex:
+            "sourceRowIndex" in item && typeof item.sourceRowIndex === "number"
+              ? item.sourceRowIndex
+              : 0,
+        }
+      })
+      .filter((item): item is CameroonDmiMapping => Boolean(item))
+  } catch {}
+
+  return []
+}
+
+function serializeCameroonDmiMappings(mappings: CameroonDmiMapping[]) {
+  return JSON.stringify(
+    mappings.map((mapping) => ({
+      ...mapping,
+      miNumber: normalizeCameroonDocumentNumber(mapping.miNumber),
+      dmiNumber: normalizeCameroonDocumentNumber(mapping.dmiNumber),
+    }))
+  )
+}
+
+function sumCameroonCommissionTotal(records: ParsedCountryReportRecord[]) {
+  return records.reduce(
+    (total, record) => total + (record.secondaryAmount ?? 0),
+    0
+  )
+}
+
+function parseStoredNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0
+}
+
+function findCameroonDmiMappingColumns(headers: string[]) {
+  const normalizedHeaders = headers.map(normalizeCsvHeader)
+  const dmiIndex = normalizedHeaders.findIndex((header) =>
+    header.includes("dmi")
+  )
+  const miIndex = normalizedHeaders.findIndex(
+    (header) =>
+      !header.includes("dmi") &&
+      (header === "mi" ||
+        header.includes("minumber") ||
+        header.includes("mino") ||
+        header.includes("miinvoice") ||
+        header.includes("documentmi"))
+  )
+
+  return {
+    dmiIndex,
+    miIndex,
+  }
+}
+
+function parseCameroonDmiPaste(text: string): CameroonDmiMapping[] {
+  const rows = parseCsv(text)
+  const mappings: CameroonDmiMapping[] = []
+  const mappingsByMi = new Map<string, CameroonDmiMapping>()
+  const firstRow = rows[0] ?? []
+  const { dmiIndex, miIndex } = findCameroonDmiMappingColumns(firstRow)
+  const hasHeaderMapping = dmiIndex >= 0 && miIndex >= 0
+  let pendingDmiNumber = ""
+
+  for (const [index, row] of rows.entries()) {
+    if (hasHeaderMapping && index === 0) {
+      continue
+    }
+
+    const rowText = row.join(" ")
+    const dmiNumber = hasHeaderMapping
+      ? normalizeCameroonDocumentNumber(row[dmiIndex])
+      : normalizeCameroonDocumentNumber(
+          row.find((cell) => /\bDMI\s*\d+/i.test(cell)) ??
+            rowText.match(/\bDMI\s*\d+/i)?.[0] ??
+            ""
+        )
+    const miNumber = hasHeaderMapping
+      ? normalizeCameroonDocumentNumber(row[miIndex])
+      : normalizeCameroonDocumentNumber(
+          row.find(
+            (cell) => /\bMI\s*\d+/i.test(cell) && !/\bDMI/i.test(cell)
+          ) ??
+            rowText.match(/\bMI\s*\d+/i)?.[0] ??
+            ""
+        )
+
+    if (dmiNumber) {
+      pendingDmiNumber = dmiNumber
+    }
+
+    if (!miNumber || (!dmiNumber && !pendingDmiNumber)) {
+      continue
+    }
+
+    const mapping = {
+      miNumber,
+      dmiNumber: dmiNumber || pendingDmiNumber,
+      sourceRowIndex: index,
+    }
+
+    mappingsByMi.set(miNumber, mapping)
+  }
+
+  for (const mapping of mappingsByMi.values()) {
+    mappings.push(mapping)
+  }
+
+  return mappings
+}
+
+function applyCameroonDmiMappings(
+  records: MonthEndCountryReportRecord[],
+  mappings: CameroonDmiMapping[]
+) {
+  if (!mappings.length) {
+    return records
+  }
+
+  const mappingByMiNumber = new Map(
+    mappings.map((mapping) => [
+      normalizeMatchKey(mapping.miNumber),
+      {
+        dmiNumber: mapping.dmiNumber,
+        miNumber: mapping.miNumber,
+      },
+    ])
+  )
+
+  return records.map((record) => {
+    const candidates = [
+      { field: "ctnNumber" as const, value: record.ctnNumber },
+      { field: "reference" as const, value: record.reference },
+      { field: "invoiceNumber" as const, value: record.invoiceNumber },
+      {
+        field: "billOfLadingNumber" as const,
+        value: record.billOfLadingNumber,
+      },
+    ].flatMap((candidate) =>
+      normalizedReferenceParts(candidate.value).map((key) => ({
+        field: candidate.field,
+        key,
+      }))
+    )
+    const match = candidates.find((candidate) =>
+      mappingByMiNumber.has(candidate.key)
+    )
+
+    if (!match) {
+      return record
+    }
+
+    const mapping = mappingByMiNumber.get(match.key)
+    const dmiNumber = mapping?.dmiNumber ?? ""
+    const cameroonOriginalMiNumber = mapping?.miNumber ?? match.key
+
+    if (match.field === "ctnNumber") {
+      return { ...record, ctnNumber: dmiNumber, cameroonOriginalMiNumber }
+    }
+
+    if (match.field === "invoiceNumber") {
+      return { ...record, invoiceNumber: dmiNumber, cameroonOriginalMiNumber }
+    }
+
+    if (match.field === "billOfLadingNumber") {
+      return {
+        ...record,
+        billOfLadingNumber: dmiNumber,
+        cameroonOriginalMiNumber,
+      }
+    }
+
+    return { ...record, reference: dmiNumber, cameroonOriginalMiNumber }
+  })
+}
+
 type MasterDisplayRow =
   | {
       kind: "record"
@@ -765,6 +1012,8 @@ function matchCandidates(
   countryRecord: MonthEndCountryReportRecord,
   countryId?: string
 ) {
+  const cameroonOriginalMi =
+    countryId === "cameroon" ? cameroonOriginalMiRecordValue(countryRecord) : ""
   const candidates = [
     {
       label: "BL",
@@ -777,12 +1026,20 @@ function matchCandidates(
     {
       label: "CTN",
       masterValue: masterRecord.ctnNumber,
-      countryValues: [countryRecord.ctnNumber, countryRecord.reference],
+      countryValues: [
+        countryRecord.ctnNumber,
+        countryRecord.reference,
+        cameroonOriginalMi,
+      ],
     },
     {
       label: "Invoice",
       masterValue: masterRecord.salesOrderNumber,
-      countryValues: [countryRecord.invoiceNumber, countryRecord.reference],
+      countryValues: [
+        countryRecord.invoiceNumber,
+        countryRecord.reference,
+        cameroonOriginalMi,
+      ],
     },
   ]
 
@@ -1304,6 +1561,7 @@ function ReconciliationWorkbench({
   onRollInvoices,
   onLeaveInvoices,
   onReconcileCountryRows,
+  onPasteDmiReport,
   onProceed,
   onMoveInvoicesToOot,
 }: {
@@ -1335,6 +1593,7 @@ function ReconciliationWorkbench({
     reason: string,
     note: string
   ) => Promise<void>
+  onPasteDmiReport?: () => void
   onProceed: () => Promise<void>
   onMoveInvoicesToOot?: (
     records: MonthEndMasterRecord[]
@@ -2037,18 +2296,32 @@ function ReconciliationWorkbench({
           >
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-lg font-semibold tracking-normal">Country</h2>
-              {!isReadOnly && selectedCountryRecords.length ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-8 rounded-full"
-                  disabled={isReconcilingCountryRows}
-                  onClick={openCountryReconcileDialog}
-                >
-                  <CheckCircle2Icon />
-                  Reconcile ({selectedCountryRecords.length})
-                </Button>
-              ) : null}
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {!isReadOnly && onPasteDmiReport ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 rounded-full"
+                    onClick={onPasteDmiReport}
+                  >
+                    <ClipboardPasteIcon />
+                    Paste DMI Report
+                  </Button>
+                ) : null}
+                {!isReadOnly && selectedCountryRecords.length ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-8 rounded-full"
+                    disabled={isReconcilingCountryRows}
+                    onClick={openCountryReconcileDialog}
+                  >
+                    <CheckCircle2Icon />
+                    Reconcile ({selectedCountryRecords.length})
+                  </Button>
+                ) : null}
+              </div>
             </div>
             <div className="grid min-h-0 gap-2 overflow-y-auto pb-3 md:hidden">
               {countryRows.length ? (
@@ -3849,10 +4122,14 @@ function JournalEntryPreview({
                 <>
                   <div>
                     <div className="text-xs text-muted-foreground">
-                      Source documents
+                      {sourceDocumentCount === undefined
+                        ? "Journal lines"
+                        : "Source documents"}
                     </div>
                     <div className="mt-1 font-semibold tabular-nums">
-                      {sourceDocumentCount ?? 0} / 4
+                      {sourceDocumentCount === undefined
+                        ? (journalRows?.length ?? 0)
+                        : `${sourceDocumentCount} / 4`}
                     </div>
                   </div>
                   <div>
@@ -4122,6 +4399,11 @@ export function MonthEndCountryReconciliationView({
   const [loadError, setLoadError] = React.useState("")
   const [isPasteReportOpen, setIsPasteReportOpen] = React.useState(false)
   const [pastedReportText, setPastedReportText] = React.useState("")
+  const [isCameroonDmiPasteOpen, setIsCameroonDmiPasteOpen] =
+    React.useState(false)
+  const [cameroonDmiPasteText, setCameroonDmiPasteText] = React.useState("")
+  const [isSavingCameroonDmiPaste, setIsSavingCameroonDmiPaste] =
+    React.useState(false)
   const [uploadError, setUploadError] = React.useState("")
   const [isUploadingCountryReport, setIsUploadingCountryReport] =
     React.useState(false)
@@ -4251,7 +4533,18 @@ export function MonthEndCountryReconciliationView({
               "",
           }))
         )
-        setCountryReportRecords(reportRecords)
+        setCountryReportRecords(
+          activeCountryId === "cameroon"
+            ? applyCameroonDmiMappings(
+                reportRecords,
+                parseCameroonDmiMappings(
+                  monthEndRecord?.checked[
+                    cameroonDmiMappingKey(activeCountryId)
+                  ]
+                )
+              )
+            : reportRecords
+        )
       } catch {
         if (isMounted) {
           setLoadError("Could not load this country record.")
@@ -4276,6 +4569,13 @@ export function MonthEndCountryReconciliationView({
       setPastedReportText("")
     }
   }, [canPasteReport])
+
+  React.useEffect(() => {
+    if (activeCountryId !== "cameroon") {
+      setIsCameroonDmiPasteOpen(false)
+      setCameroonDmiPasteText("")
+    }
+  }, [activeCountryId])
 
   const sortedRecords = React.useMemo(
     () =>
@@ -4444,7 +4744,8 @@ export function MonthEndCountryReconciliationView({
 
   async function saveCountryReportWorkflowState(
     fileName: string,
-    antaserDocuments?: AntaserJournalDocument[]
+    antaserDocuments?: AntaserJournalDocument[],
+    cameroonCommissionTotal?: number
   ) {
     if (!record || !activeCountryId || isMonthClosed) {
       return
@@ -4469,6 +4770,21 @@ export function MonthEndCountryReconciliationView({
       }
     }
 
+    if (activeCountryId === "cameroon" && fileName) {
+      if (
+        typeof cameroonCommissionTotal === "number" &&
+        Number.isFinite(cameroonCommissionTotal)
+      ) {
+        checked[cameroonCommissionTotalKey(activeCountryId)] =
+          cameroonCommissionTotal
+      } else {
+        delete checked[cameroonCommissionTotalKey(activeCountryId)]
+      }
+    } else {
+      delete checked[cameroonCommissionTotalKey(activeCountryId)]
+    }
+
+    delete checked[cameroonDmiMappingKey(activeCountryId)]
     delete checked[journalEntrySnapshotKey(activeCountryId)]
     delete checked[resolvedCountryReportRowsKey(activeCountryId)]
     delete checked[reconciliationSnapshotKey(activeCountryId)]
@@ -4916,6 +5232,8 @@ export function MonthEndCountryReconciliationView({
       delete checked[resolvedCountryReportRowsKey(linkedCountryId)]
       delete checked[reconciliationSnapshotKey(linkedCountryId)]
       delete checked[sourceFileNameKey(linkedCountryId, "country")]
+      delete checked[cameroonDmiMappingKey(linkedCountryId)]
+      delete checked[cameroonCommissionTotalKey(linkedCountryId)]
     }
 
     delete checked[rollApprovalKey(activeCountryId)]
@@ -4924,6 +5242,8 @@ export function MonthEndCountryReconciliationView({
     delete checked[resolvedCountryReportRowsKey(activeCountryId)]
     delete checked[reconciliationSnapshotKey(activeCountryId)]
     delete checked[sourceFileNameKey(activeCountryId, "country")]
+    delete checked[cameroonDmiMappingKey(activeCountryId)]
+    delete checked[cameroonCommissionTotalKey(activeCountryId)]
 
     await Promise.all(
       Array.from(new Set([activeCountryId, ...workflowCountryIds])).map(
@@ -5072,10 +5392,12 @@ export function MonthEndCountryReconciliationView({
     parsedRecords,
     sourceLabel,
     antaserDocuments,
+    cameroonCommissionTotal,
   }: {
     parsedRecords: ParsedCountryReportRecord[]
     sourceLabel: string
     antaserDocuments?: AntaserJournalDocument[]
+    cameroonCommissionTotal?: number
   }) {
     if (!record || !country || !activeCountryId || isMonthClosed) {
       setUploadError("Open a valid country record before uploading.")
@@ -5142,7 +5464,11 @@ export function MonthEndCountryReconciliationView({
     )
     const reportRecords = savedRecordGroups.flat()
 
-    await saveCountryReportWorkflowState(sourceLabel, antaserDocuments)
+    await saveCountryReportWorkflowState(
+      sourceLabel,
+      antaserDocuments,
+      cameroonCommissionTotal
+    )
     setCountryReportRecords(
       reportRecords.filter((item) => item.countryId === activeCountryId)
     )
@@ -5213,9 +5539,23 @@ export function MonthEndCountryReconciliationView({
             activeCountryId === "frabemar-gabon"
               ? parseGabonCountryReportCsv(csvText)
               : []
+          const cameroonRecords =
+            activeCountryId === "cameroon"
+              ? parseCameroonCountryReportCsv(csvText)
+              : []
 
           if (gabonRecords.length) {
-            return { records: gabonRecords }
+            return {
+              records: gabonRecords,
+              antaserJournalDocument: undefined,
+            }
+          }
+
+          if (cameroonRecords.length) {
+            return {
+              records: cameroonRecords,
+              antaserJournalDocument: undefined,
+            }
           }
 
           const mappedRecords = shouldUseSavedMapping
@@ -5224,7 +5564,10 @@ export function MonthEndCountryReconciliationView({
 
           if (shouldUseSavedMapping) {
             if (mappedRecords?.length) {
-              return { records: mappedRecords }
+              return {
+                records: mappedRecords,
+                antaserJournalDocument: undefined,
+              }
             }
 
             const aiMappedRecords = savedMapping
@@ -5236,7 +5579,10 @@ export function MonthEndCountryReconciliationView({
               : []
 
             if (aiMappedRecords.length) {
-              return { records: aiMappedRecords }
+              return {
+                records: aiMappedRecords,
+                antaserJournalDocument: undefined,
+              }
             }
 
             throw new Error(
@@ -5290,6 +5636,10 @@ export function MonthEndCountryReconciliationView({
         antaserDocuments: activeCountryId?.startsWith("antaser")
           ? antaserDocuments
           : undefined,
+        cameroonCommissionTotal:
+          activeCountryId === "cameroon"
+            ? sumCameroonCommissionTotal(parsedRecords)
+            : undefined,
       })
     } catch (error) {
       setUploadError(
@@ -5323,6 +5673,10 @@ export function MonthEndCountryReconciliationView({
         activeCountryId === "frabemar-gabon"
           ? parseGabonCountryReportCsv(pastedReportText)
           : []
+      const cameroonRecords =
+        activeCountryId === "cameroon"
+          ? parseCameroonCountryReportCsv(pastedReportText)
+          : []
       const mappedRecords = shouldUseSavedMapping
         ? parseMappedCountryReportCsv(pastedReportText, savedMapping)
         : undefined
@@ -5340,6 +5694,7 @@ export function MonthEndCountryReconciliationView({
 
       if (
         !gabonRecords.length &&
+        !cameroonRecords.length &&
         shouldUseSavedMapping &&
         !mappedRecords?.length &&
         !aiMappedRecords.length
@@ -5352,14 +5707,26 @@ export function MonthEndCountryReconciliationView({
       await saveParsedCountryReportRecords({
         parsedRecords: gabonRecords.length
           ? gabonRecords
-          : mappedRecords?.length
-            ? mappedRecords
-            : aiMappedRecords.length
-              ? aiMappedRecords
-              : parseCountryReportText(pastedReportText, {
-                  period: record.period,
-                }),
+          : cameroonRecords.length
+            ? cameroonRecords
+            : mappedRecords?.length
+              ? mappedRecords
+              : aiMappedRecords.length
+                ? aiMappedRecords
+                : parseCountryReportText(pastedReportText, {
+                    period: record.period,
+                  }),
         sourceLabel: "Pasted report",
+        cameroonCommissionTotal:
+          activeCountryId === "cameroon"
+            ? sumCameroonCommissionTotal(
+                cameroonRecords.length
+                  ? cameroonRecords
+                  : parseCountryReportText(pastedReportText, {
+                      period: record.period,
+                    })
+              )
+            : undefined,
       })
       setPastedReportText("")
       setIsPasteReportOpen(false)
@@ -5369,6 +5736,79 @@ export function MonthEndCountryReconciliationView({
       )
     } finally {
       setIsUploadingCountryReport(false)
+    }
+  }
+
+  async function saveCameroonDmiPaste() {
+    if (!record || activeCountryId !== "cameroon" || isMonthClosed) {
+      setUploadError("Open Cameroon before applying the DMI report.")
+      return
+    }
+
+    const mappings = parseCameroonDmiPaste(cameroonDmiPasteText)
+
+    if (!mappings.length) {
+      setUploadError("No DMI / MI number pairs were found in that paste.")
+      return
+    }
+
+    setIsSavingCameroonDmiPaste(true)
+    setUploadError("")
+
+    try {
+      const latestRecord = (await getMonthEndRecord(record.period)) ?? record
+      const rawCountryReportRecords = await listMonthEndCountryReportRecords({
+        monthEndId: latestRecord.id,
+        countryId: activeCountryId,
+      })
+      const updatedCountryReportRecords = applyCameroonDmiMappings(
+        rawCountryReportRecords,
+        mappings
+      )
+      const matchedCount = updatedCountryReportRecords.filter(
+        (updatedRecord, index) =>
+          updatedRecord.reference !==
+            rawCountryReportRecords[index]?.reference ||
+          updatedRecord.ctnNumber !==
+            rawCountryReportRecords[index]?.ctnNumber ||
+          updatedRecord.invoiceNumber !==
+            rawCountryReportRecords[index]?.invoiceNumber ||
+          updatedRecord.billOfLadingNumber !==
+            rawCountryReportRecords[index]?.billOfLadingNumber
+      ).length
+
+      if (!matchedCount) {
+        throw new Error(
+          "The DMI report imported, but none of its MI numbers matched the uploaded Cameroon country report."
+        )
+      }
+
+      const checked = {
+        ...latestRecord.checked,
+        [cameroonDmiMappingKey(activeCountryId)]:
+          serializeCameroonDmiMappings(mappings),
+      }
+
+      delete checked[journalEntrySnapshotKey(activeCountryId)]
+
+      const updatedRecord = {
+        ...latestRecord,
+        checked,
+        updatedAt: new Date().toISOString(),
+      }
+
+      await saveMonthEndRecord(updatedRecord)
+      setRecord(updatedRecord)
+      setCountryReportRecords(updatedCountryReportRecords)
+      setCameroonDmiPasteText("")
+      setIsCameroonDmiPasteOpen(false)
+      window.dispatchEvent(new Event("month-end:records-updated"))
+    } catch (error) {
+      setUploadError(
+        getUploadErrorMessage(error, "Could not apply the Cameroon DMI report.")
+      )
+    } finally {
+      setIsSavingCameroonDmiPaste(false)
     }
   }
 
@@ -5634,12 +6074,13 @@ export function MonthEndCountryReconciliationView({
   const journalEntries = journalCountries.map((item) => {
     const countryTotal = journalTotalsByCountryId.get(item.id) ?? 0
     const exchangeRateValue = record?.checked[exchangeRateKey(item.id)]
+    const defaultExchangeRate = item.id === "cameroon" ? 1.2 : undefined
     const exchangeRate =
       typeof exchangeRateValue === "number" &&
       Number.isFinite(exchangeRateValue) &&
       exchangeRateValue > 0
         ? exchangeRateValue
-        : undefined
+        : defaultExchangeRate
 
     return {
       countryName: item.name,
@@ -5737,6 +6178,54 @@ export function MonthEndCountryReconciliationView({
   const regularJournalTotal = sumJournalAmounts(regularCountryAmounts)
   const commissionJournalTotal = sumJournalAmounts(commissionCountryAmounts)
   const ootJournalTotal = sumJournalAmounts(ootCountryAmounts)
+  const cameroonCountry = journalCountries.find(
+    (item) => item.id === "cameroon"
+  )
+  const cameroonJournalEntry = journalEntries.find(
+    (entry) => normalizeMatchKey(entry.countryName) === "cameroon"
+  )
+  const cameroonCommissionTotal =
+    activeCountryId === "cameroon"
+      ? countryReportRecords.reduce(
+          (total, reportRecord) => total + (reportRecord.secondaryAmount ?? 0),
+          0
+        ) ||
+        parseStoredNumber(
+          record?.checked[cameroonCommissionTotalKey(activeCountryId)]
+        )
+      : 0
+  const cameroonJournalRows: JournalEntryRow[] =
+    activeCountryId === "cameroon" &&
+    cameroonCountry &&
+    cameroonJournalEntry &&
+    (cameroonJournalEntry.journalTotal > 0 || cameroonCommissionTotal > 0)
+      ? [
+          {
+            account: "Income",
+            debit: roundJournalAmount(cameroonJournalEntry.journalTotal),
+            lineDescription: "Cameroon country report income",
+            className: cameroonCountry.name,
+          },
+          {
+            account: cameroonCountry.name,
+            credit: roundJournalAmount(cameroonJournalEntry.journalTotal),
+            lineDescription: "Cameroon country report payable",
+            className: cameroonCountry.name,
+          },
+          {
+            account: "Income",
+            debit: roundJournalAmount(cameroonCommissionTotal),
+            lineDescription: "Deduct Cameroon commission",
+            className: cameroonCountry.name,
+          },
+          {
+            account: "Chase Main Account",
+            credit: roundJournalAmount(cameroonCommissionTotal),
+            lineDescription: "Cameroon commission paid",
+            className: cameroonCountry.name,
+          },
+        ].filter((row) => (row.debit ?? row.credit ?? 0) > 0)
+      : []
   const antaserJournalRows: JournalEntryRow[] = antaserJournalDocuments.length
     ? [
         {
@@ -5777,9 +6266,12 @@ export function MonthEndCountryReconciliationView({
       )
     : undefined
   const displayedJournalEntries = savedJournalEntry?.entries ?? journalEntries
-  const displayedJournalRows = savedJournalEntry?.rows ?? antaserJournalRows
+  const displayedJournalRows =
+    savedJournalEntry?.rows ??
+    (antaserJournalRows.length ? antaserJournalRows : cameroonJournalRows)
   const displayedSourceDocumentCount =
-    savedJournalEntry?.sourceDocumentCount ?? antaserJournalDocuments.length
+    savedJournalEntry?.sourceDocumentCount ??
+    (antaserJournalRows.length ? antaserJournalDocuments.length : undefined)
 
   return (
     <SidebarProvider
@@ -5983,6 +6475,42 @@ export function MonthEndCountryReconciliationView({
                 </Card>
               ) : null}
 
+              {isCameroonDmiPasteOpen && !isMonthClosed ? (
+                <Card className="max-h-[min(70vh,42rem)] overflow-hidden rounded-lg py-0 shadow-sm">
+                  <CardContent className="flex max-h-[min(70vh,42rem)] min-h-0 flex-col gap-3 p-3">
+                    <Textarea
+                      value={cameroonDmiPasteText}
+                      onChange={(event) =>
+                        setCameroonDmiPasteText(event.target.value)
+                      }
+                      placeholder="Paste Cameroon DMI report data"
+                      className="[field-sizing:fixed] min-h-48 flex-1 resize-none overflow-auto rounded-lg font-mono text-sm"
+                    />
+                    <div className="-mx-3 -mb-3 flex shrink-0 justify-end gap-2 border-t bg-card px-3 py-3">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setIsCameroonDmiPasteOpen(false)
+                          setCameroonDmiPasteText("")
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={saveCameroonDmiPaste}
+                        disabled={
+                          !cameroonDmiPasteText.trim() ||
+                          isSavingCameroonDmiPaste
+                        }
+                      >
+                        <ClipboardPasteIcon />
+                        Apply DMI
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : null}
+
               <HiddenFileInput
                 ref={masterInputRef}
                 accept=".csv,text/csv"
@@ -6061,6 +6589,13 @@ export function MonthEndCountryReconciliationView({
                   onRollInvoices={rollInvoices}
                   onLeaveInvoices={leaveInvoices}
                   onReconcileCountryRows={reconcileCountryRows}
+                  onPasteDmiReport={
+                    activeCountryId === "cameroon" &&
+                    hasCountryReport &&
+                    !isMonthClosed
+                      ? () => setIsCameroonDmiPasteOpen(true)
+                      : undefined
+                  }
                   onProceed={proceedFromReconciliation}
                   onMoveInvoicesToOot={
                     activeCountryId === "angola"
