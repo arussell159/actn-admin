@@ -383,6 +383,26 @@ function isApprovedMasterRecord(
   return masterRecordApprovalIds(record).some((id) => approvedIds.has(id))
 }
 
+function mergeSnapshotLeftInvoiceIds(
+  snapshot: ReconciliationSnapshot,
+  leftInvoiceRecordIds: string[],
+  selectedRecords: MonthEndMasterRecord[]
+): ReconciliationSnapshot {
+  return {
+    ...snapshot,
+    savedAt: new Date().toISOString(),
+    leftInvoiceRecordIds,
+    leftInvoiceInternalIds: Array.from(
+      new Set([
+        ...(snapshot.leftInvoiceInternalIds ?? []),
+        ...selectedRecords
+          .map((record) => record.sourceInternalId.trim())
+          .filter(Boolean),
+      ])
+    ),
+  }
+}
+
 function parseCountryDashboardSection(value: unknown): CountryDashboardSection {
   return value === "country" || value === "left" || value === "rolled"
     ? value
@@ -4508,7 +4528,7 @@ export function MonthEndCountryReconciliationView({
         ? makeReconciliationSnapshot({
             countryId: activeCountryId,
             period: latestRecord.period,
-            reconciliation,
+            reconciliation: displayedReconciliation,
             rolledInternalIds: approvedInternalIds,
             leftInvoiceRecordIds,
             resolvedCountryReportRows,
@@ -4562,14 +4582,20 @@ export function MonthEndCountryReconciliationView({
 
     const snapshot =
       activeCountryId === "frabemar-gabon"
-        ? makeReconciliationSnapshot({
-            countryId: activeCountryId,
-            period: latestRecord.period,
-            reconciliation,
-            rolledInternalIds,
-            leftInvoiceRecordIds: leftRecordIds,
-            resolvedCountryReportRows,
-          })
+        ? storedReconciliationSnapshot
+          ? mergeSnapshotLeftInvoiceIds(
+              storedReconciliationSnapshot,
+              leftRecordIds,
+              selectedRecords
+            )
+          : makeReconciliationSnapshot({
+              countryId: activeCountryId,
+              period: latestRecord.period,
+              reconciliation: displayedReconciliation,
+              rolledInternalIds,
+              leftInvoiceRecordIds: leftRecordIds,
+              resolvedCountryReportRows,
+            })
         : undefined
 
     if (snapshot) {
@@ -4633,7 +4659,7 @@ export function MonthEndCountryReconciliationView({
         ? makeReconciliationSnapshot({
             countryId: activeCountryId,
             period: latestRecord.period,
-            reconciliation,
+            reconciliation: displayedReconciliation,
             rolledInternalIds,
             leftInvoiceRecordIds,
             resolvedCountryReportRows: nextResolvedRows,
@@ -4682,7 +4708,7 @@ export function MonthEndCountryReconciliationView({
       )
       const existingLeftRecordIds = parseApprovedInternalIds(checked[leaveKey])
       const autoRolledInternalIds = Array.from(
-        reconciliation.autoRolledMasterIds
+        displayedReconciliation.autoRolledMasterIds
       )
         .map((recordId) =>
           records.find((masterRecord) => masterRecord.id === recordId)
@@ -4690,7 +4716,7 @@ export function MonthEndCountryReconciliationView({
         .map((masterRecord) => masterRecord?.sourceInternalId.trim() ?? "")
         .filter(Boolean)
       const autoLeftRecordIds = Array.from(
-        reconciliation.autoLeftMasterIds
+        displayedReconciliation.autoLeftMasterIds
       ).flatMap((recordId) => {
         const masterRecord = records.find((record) => record.id === recordId)
 
@@ -4720,7 +4746,7 @@ export function MonthEndCountryReconciliationView({
       snapshot = makeReconciliationSnapshot({
         countryId: activeCountryId,
         period: latestRecord.period,
-        reconciliation,
+        reconciliation: displayedReconciliation,
         rolledInternalIds: nextRolledInternalIds,
         leftInvoiceRecordIds: nextLeftRecordIds,
         resolvedCountryReportRows,
