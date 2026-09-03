@@ -6,7 +6,9 @@ import { MonthEndPeriodView } from "@/components/month-end-period-view"
 import {
   AppRouteSkeleton,
   MonthEndDashboardSkeleton,
+  SkeletonActionButton,
 } from "@/components/page-skeletons"
+import { formatPeriod } from "@/lib/month-end-db"
 import { formatMonthEndPageTitle } from "@/lib/page-title"
 
 type Props = {
@@ -24,11 +26,20 @@ export async function generateMetadata({
   }
 }
 
-export default function Page() {
+export default async function Page({ searchParams }: Props) {
+  const { period } = await searchParams
+  const cleanPeriod = Array.isArray(period) ? period[0] : period
+  const title = cleanPeriod ? formatPeriod(cleanPeriod) : "Month End"
+
   return (
     <Suspense
       fallback={
-        <AppRouteSkeleton>
+        <AppRouteSkeleton
+          title={title}
+          actions={<SkeletonActionButton label="Upload" />}
+          tabs={["Dashboard", "Countries", "Tasks"]}
+          activeTab="Dashboard"
+        >
           <MonthEndDashboardSkeleton />
         </AppRouteSkeleton>
       }

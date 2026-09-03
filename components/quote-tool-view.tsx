@@ -596,15 +596,6 @@ export function QuoteToolView() {
         <main className="flex flex-1 flex-col gap-4 p-4 [--mobile-page-bottom-padding:calc(10rem+env(safe-area-inset-bottom,0px))] lg:p-6">
           <Card className="rounded-lg shadow-sm">
             <CardContent className="relative">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="absolute top-0 right-5 hidden h-7 px-1.5 text-muted-foreground hover:text-foreground md:inline-flex"
-                onClick={resetQuote}
-              >
-                <RotateCcwIcon />
-                Reset
-              </Button>
               <div className="grid gap-3 md:hidden">
                 <Field>
                   <div className="flex items-center justify-between gap-3">
@@ -683,7 +674,7 @@ export function QuoteToolView() {
                   </Field>
                 </div>
               </div>
-              <FieldGroup className="hidden gap-4 pr-20 md:grid md:grid-cols-3">
+              <FieldGroup className="hidden gap-4 md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
                 <Field>
                   <FieldLabel>Country</FieldLabel>
                   <CountrySearchField
@@ -749,6 +740,17 @@ export function QuoteToolView() {
                       </SelectGroup>
                     </SelectContent>
                   </Select>
+                </Field>
+                <Field className="justify-end">
+                  <FieldLabel className="sr-only">Reset Quote</FieldLabel>
+                  <Button
+                    variant="ghost"
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={resetQuote}
+                  >
+                    <RotateCcwIcon />
+                    Reset
+                  </Button>
                 </Field>
               </FieldGroup>
               <div className="mt-6 hidden overflow-x-auto rounded-lg border md:block">

@@ -10,8 +10,8 @@ export default function Page() {
   return (
     <Suspense
       fallback={
-        <AppRouteSkeleton>
-          <PreviousMonthEndsSkeleton />
+        <AppRouteSkeleton title="Previous Months">
+          <PreviousMonthEndsSkeleton includeAction />
         </AppRouteSkeleton>
       }
     >

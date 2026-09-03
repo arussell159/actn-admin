@@ -7,7 +7,7 @@ export default function Page() {
   return (
     <Suspense
       fallback={
-        <AppRouteSkeleton>
+        <AppRouteSkeleton title="Notebook">
           <NotebookSkeleton />
         </AppRouteSkeleton>
       }

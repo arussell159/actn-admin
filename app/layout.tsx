@@ -2,6 +2,7 @@ import "./globals.css"
 import { PwaRegister } from "@/components/pwa-register"
 import { AppCommandMenu } from "@/components/app-command-menu"
 import { AuthSessionGuard } from "@/components/auth-session-guard"
+import { RouteScrollReset } from "@/components/route-scroll-reset"
 import { ThemeProvider } from "@/components/theme-provider"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { appTitle } from "@/lib/page-title"
@@ -10,7 +11,7 @@ import type { Metadata } from "next"
 import type { Viewport } from "next"
 import { Inter } from "next/font/google"
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
+const inter = Inter({subsets:['latin'],variable:'--font-sans'})
 
 export const metadata: Metadata = {
   title: appTitle,
@@ -76,6 +77,7 @@ export default function RootLayout({
           <TooltipProvider>
             <PwaRegister />
             <AuthSessionGuard />
+            <RouteScrollReset />
             <AppCommandMenu />
             {children}
           </TooltipProvider>

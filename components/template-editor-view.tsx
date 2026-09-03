@@ -35,6 +35,7 @@ import {
 } from "lucide-react"
 
 import { AppSidebar } from "@/components/app-sidebar"
+import { HeaderActionMenuTrigger } from "@/components/header-action-menu-trigger"
 import { SiteHeader } from "@/components/site-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -368,7 +369,7 @@ export function TemplateEditorView() {
   const [template, setTemplate] =
     React.useState<MonthEndTemplate>(loadMonthEndTemplate)
   const [activeModuleId, setActiveModuleId] = React.useState<string | null>(
-    null
+    countriesModuleId
   )
   const [showModuleForm, setShowModuleForm] = React.useState(false)
   const [editingModuleId, setEditingModuleId] = React.useState<string | null>(
@@ -388,7 +389,7 @@ export function TemplateEditorView() {
     null
   )
   const [activeCountrySettingsSection, setActiveCountrySettingsSection] =
-    React.useState<CountrySettingsSection>("report-mapping")
+    React.useState<CountrySettingsSection>("country-information")
   const [mappingHeaders, setMappingHeaders] =
     React.useState<ReportMappingSamples>({})
   const [showCountryExitPrompt, setShowCountryExitPrompt] =
@@ -458,7 +459,7 @@ export function TemplateEditorView() {
   }, [])
 
   React.useEffect(() => {
-    setActiveCountrySettingsSection("report-mapping")
+    setActiveCountrySettingsSection("country-information")
   }, [activeCountryId])
 
   React.useEffect(() => {
@@ -509,7 +510,7 @@ export function TemplateEditorView() {
     })
 
     if (activeModuleId === moduleId) {
-      setActiveModuleId(null)
+      setActiveModuleId(countriesModuleId)
       setItemForm(null)
     }
   }
@@ -579,6 +580,14 @@ export function TemplateEditorView() {
     }
 
     setItemForm({ mode: "add-task", draft: { label: "" } })
+  }
+
+  function selectActiveModule(moduleId: string) {
+    setActiveModuleId(moduleId)
+    setItemForm(null)
+    setActiveCountryId(null)
+    setEditingModuleId(null)
+    setShowModuleForm(false)
   }
 
   function startEditCountry(row: TemplateCountryRow, rowIndex: number) {
@@ -662,36 +671,55 @@ export function TemplateEditorView() {
   const activeCountrySettingsItems = getCountrySettingsItems(
     activeCountryDetailsForm
   )
-  const showActiveSettingsHeader = Boolean(activeModuleId)
-  const settingsHeaderTitle = showActiveSettingsHeader
-    ? (activeCountry?.name ?? activeModule?.name ?? "Settings")
-    : "Settings"
-  const settingsHeaderLeading = showActiveSettingsHeader ? (
+  const settingsHeaderTitle = activeCountry?.name ?? "Settings"
+  const settingsHeaderLeading = activeCountry ? (
     <Button
       variant="outline"
-      className="h-8 rounded-md"
-      aria-label={activeCountry ? "Back to countries" : "Back to settings"}
-      onClick={() => {
-        if (activeCountry) {
-          requestCloseActiveCountry()
-          return
-        }
-
-        setActiveModuleId(null)
-        setItemForm(null)
-        setActiveCountryId(null)
-      }}
+      aria-label="Back to countries"
+      onClick={requestCloseActiveCountry}
     >
       <ArrowLeftIcon />
       Back
     </Button>
   ) : undefined
   const settingsHeaderActions =
-    showActiveSettingsHeader && !activeCountry ? (
-      <Button className="h-8 rounded-md" onClick={startAddItem}>
-        <PlusIcon />
-        Add New
-      </Button>
+    !activeCountry ? (
+      <div className="flex items-center gap-2">
+        <Button onClick={startAddItem}>
+          <PlusIcon />
+          Add New
+        </Button>
+        {activeModule ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <HeaderActionMenuTrigger
+                  label={`Actions for ${activeModule.name}`}
+                />
+              }
+            />
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setShowModuleForm(true)}>
+                <PlusIcon />
+                Add Setting
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => startEditModule(activeModule.id)}>
+                <PencilIcon />
+                Edit Setting
+              </DropdownMenuItem>
+              {protectedModuleIds.has(activeModule.id) ? null : (
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={() => deleteModule(activeModule.id)}
+                >
+                  <Trash2Icon />
+                  Delete Setting
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
+      </div>
     ) : undefined
   const settingsHeaderTabs =
     activeModuleId === countriesModuleId && activeCountry ? (
@@ -699,6 +727,12 @@ export function TemplateEditorView() {
         items={activeCountrySettingsItems}
         activeSection={activeCountrySettingsSection}
         onActiveSectionChange={setActiveCountrySettingsSection}
+      />
+    ) : !activeCountry ? (
+      <ModuleSettingsNavigation
+        items={modules}
+        activeModuleId={activeModuleId}
+        onActiveModuleChange={selectActiveModule}
       />
     ) : undefined
 
@@ -1263,9 +1297,7 @@ export function TemplateEditorView() {
                           key={module.id}
                           className="group cursor-pointer"
                           onClick={() => {
-                            setActiveModuleId(module.id)
-                            setItemForm(null)
-                            setActiveCountryId(null)
+                            selectActiveModule(module.id)
                           }}
                         >
                           <TableCell className="font-medium">
@@ -1325,6 +1357,64 @@ export function TemplateEditorView() {
             ) : (
               <section className="grid gap-4">
                 <div className="grid gap-4">
+                  {showModuleForm ? (
+                    <Card role="dialog" className="rounded-lg shadow-none">
+                      <CardHeader>
+                        <CardTitle>Add New Setting</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <FieldSet>
+                          <FieldLegend>Setting Details</FieldLegend>
+                          <FieldGroup className="grid gap-4 md:grid-cols-2">
+                            <Field>
+                              <FieldLabel htmlFor="module-name-active">
+                                Setting Name
+                              </FieldLabel>
+                              <Input
+                                id="module-name-active"
+                                value={moduleDraft.name}
+                                onChange={(event) =>
+                                  setModuleDraft((current) => ({
+                                    ...current,
+                                    name: event.target.value,
+                                  }))
+                                }
+                                placeholder="New setting name"
+                              />
+                            </Field>
+                            <LevelField
+                              id="module-level-active"
+                              value={moduleDraft.level}
+                              onChange={(level) =>
+                                setModuleDraft((current) => ({
+                                  ...current,
+                                  level,
+                                }))
+                              }
+                            />
+                          </FieldGroup>
+                        </FieldSet>
+                        <div className="mt-5 flex justify-end gap-2">
+                          <Button variant="outline" onClick={cancelModuleForm}>
+                            <XIcon />
+                            Cancel
+                          </Button>
+                          <Button onClick={saveNewModule}>
+                            <SaveIcon />
+                            Save
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ) : null}
+                  {editingModuleId ? (
+                    <ModuleDetailsPanel
+                      draft={moduleDetailsDraft}
+                      onChange={setModuleDetailsDraft}
+                      onCancel={cancelModuleDetailsForm}
+                      onSave={saveModuleDetails}
+                    />
+                  ) : null}
                   {itemForm ? (
                     itemForm.mode === "edit-country" ? null : (
                       <ItemFormPanel
@@ -1755,6 +1845,40 @@ function CountrySettingsNavigation({
   )
 }
 
+function ModuleSettingsNavigation({
+  items,
+  activeModuleId,
+  onActiveModuleChange,
+}: {
+  items: Array<{
+    id: string
+    name: string
+  }>
+  activeModuleId: string | null
+  onActiveModuleChange: (moduleId: string) => void
+}) {
+  return (
+    <NavigationMenu className="max-w-none justify-start">
+      <NavigationMenuList className="min-w-0 flex-wrap justify-start gap-6">
+        {items.map((item) => (
+          <NavigationMenuItem key={item.id}>
+            <button
+              type="button"
+              className={cn(
+                "-mb-px inline-flex h-9 items-center border-b border-transparent bg-transparent px-0 py-1 text-sm font-medium text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30",
+                activeModuleId === item.id && "border-foreground text-foreground"
+              )}
+              onClick={() => onActiveModuleChange(item.id)}
+            >
+              {item.name}
+            </button>
+          </NavigationMenuItem>
+        ))}
+      </NavigationMenuList>
+    </NavigationMenu>
+  )
+}
+
 const CountryMappingPanel = React.forwardRef<
   CountryMappingPanelHandle,
   {
@@ -1826,6 +1950,7 @@ const CountryMappingPanel = React.forwardRef<
     activeMappingTab === "master-report" || !country.requiresPasteReport
       ? "upload"
       : "paste"
+  const countryAiRuleGroups = getCountryAiRuleGroups(country)
   const countryAiRules = getCountryAiRules(country)
   const hasUnsavedAiNotes = aiNotesDraft !== (country.aiNotes ?? "")
   React.useEffect(() => {
@@ -1916,15 +2041,16 @@ const CountryMappingPanel = React.forwardRef<
         </div>
       ) : null}
       {detailsForm && activeSettingsSection === "country-information" ? (
-        <section className="grid gap-3">
+        <section className="grid max-w-[400px] gap-7">
           <CountryFields
             form={detailsForm}
             parentRows={parentRows}
             template={template}
             onChange={onChangeDetailsForm}
             showLegend={false}
+            layout="settings"
           />
-          <div className="flex justify-end gap-2">
+          <div>
             <Button onClick={onSaveDetailsForm}>
               <SaveIcon />
               Save
@@ -2087,11 +2213,25 @@ const CountryMappingPanel = React.forwardRef<
               </Button>
             ) : null}
           </div>
-          <div className="grid gap-2 rounded-lg border bg-muted/20 p-3 text-sm">
-            {countryAiRules.map((rule) => (
-              <div key={rule} className="leading-6">
-                {rule}
-              </div>
+          <div className="grid gap-5 rounded-lg border bg-muted/20 p-4 text-sm">
+            {countryAiRuleGroups.map((group) => (
+              <section key={group.title} className="grid gap-2">
+                <div>
+                  <h3 className="font-medium">{group.title}</h3>
+                  {group.description ? (
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      {group.description}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="grid gap-1.5">
+                  {group.rules.map((rule) => (
+                    <div key={rule} className="leading-6">
+                      {rule}
+                    </div>
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
           {isEditingAiNotes ? (
@@ -2134,36 +2274,70 @@ const CountryMappingPanel = React.forwardRef<
   )
 })
 
-function getCountryAiRules(country: TemplateCountryRow) {
-  const rules = [
-    "AI upload reading is the default mapper for new or edited report mappings.",
-    "AI must normalize PDFs, Excel files, CSV files, screenshots, and pasted text into a clean table before assigning fields.",
-    "AI must treat every visible uploaded or pasted row as report data unless the row is clearly a visual spacer or extraction artifact.",
-    "AI must not invent a header row when the source report does not clearly have one.",
-    "Saved column assignments and prior corrected examples for this country take priority over generic assumptions.",
-    "When a user changes a column assignment and saves the mapping, that corrected layout is saved as training for future uploads.",
-    "Normal reconciliation can match by Bill of Lading, CTN / ECTN, or Invoice / Sales Order number.",
-    "Manual country reconciliation requires a reason and note, then removes those country rows from the unresolved report.",
-    "Manual Roll Invoice saves selected NetSuite rows by Internal ID and removes them from the unresolved NetSuite report.",
-    "Manual Leave Invoice saves selected NetSuite rows as left in the current month and removes them from the unresolved NetSuite report.",
-    "If every remaining NetSuite row is selected for Roll Invoice or Leave Invoice and there are no unresolved country rows, the workflow proceeds to the next step.",
+type CountryAiRuleGroup = {
+  title: string
+  description?: string
+  rules: string[]
+}
+
+function getCountryAiRuleGroups(country: TemplateCountryRow) {
+  const groups: CountryAiRuleGroup[] = [
+    {
+      title: "Upload Reading",
+      description: "How files, screenshots, PDFs, and pasted report text are interpreted.",
+      rules: [
+        "AI upload reading is the default mapper for new or edited report mappings.",
+        "AI must normalize PDFs, Excel files, CSV files, screenshots, and pasted text into a clean table before assigning fields.",
+        "AI must treat every visible uploaded or pasted row as report data unless the row is clearly a visual spacer or extraction artifact.",
+        "AI must not invent a header row when the source report does not clearly have one.",
+      ],
+    },
+    {
+      title: "Saved Mapping Behavior",
+      description: "How country-specific corrections influence future uploads.",
+      rules: [
+        "Saved column assignments and prior corrected examples for this country take priority over generic assumptions.",
+        "When a user changes a column assignment and saves the mapping, that corrected layout is saved as training for future uploads.",
+      ],
+    },
+    {
+      title: "Reconciliation Actions",
+      description: "How matches and manual decisions affect unresolved records.",
+      rules: [
+        "Normal reconciliation can match by Bill of Lading, CTN / ECTN, or Invoice / Sales Order number.",
+        "Manual country reconciliation requires a reason and note, then removes those country rows from the unresolved report.",
+        "Manual Roll Invoice saves selected NetSuite rows by Internal ID and removes them from the unresolved NetSuite report.",
+        "Manual Leave Invoice saves selected NetSuite rows as left in the current month and removes them from the unresolved NetSuite report.",
+        "If every remaining NetSuite row is selected for Roll Invoice or Leave Invoice and there are no unresolved country rows, the workflow proceeds to the next step.",
+      ],
+    },
   ]
 
   if (country.id === "frabemar-gabon") {
     return [
-      ...rules,
-      "Gabon matching uses Bill of Lading number or Invoice number only; CTN number must not be used for matching.",
-      "Gabon rows with a Validation Date auto reconcile when their Bill of Lading or Invoice number matches NetSuite.",
-      "If a Gabon row has a Validation Date and matches two NetSuite rows, both NetSuite rows auto reconcile.",
-      "If a Gabon row has no Validation Date, has a Selling Date in the current month, and matches exactly two NetSuite rows, the Gabon Form record stays in the current month and the Gabon Tariff record rolls.",
-      "Those Gabon no-validation/current-selling-date pairs are removed from the main reconciliation report after the automatic Form/Tariff decision.",
-      "Gabon NetSuite records that are not Gabon Out of Territory must have exactly two records grouped by Created From and Bill of Lading Number.",
-      "Non-Out-of-Territory Gabon records without exactly two grouped records are flagged red at the top of the NetSuite table.",
-      "Gabon country report import omits rows where the cargo/unit columns are empty and the FORM BIETC, FEES, and TOTAL COLLECTED money columns are zero or blank.",
+      ...groups,
+      {
+        title: "Gabon Rules",
+        description: "Country-specific matching, Form/Tariff handling, and import cleanup.",
+        rules: [
+          "Gabon matching uses Bill of Lading number or Invoice number only; CTN number must not be used for matching.",
+          "Gabon rows with a Validation Date auto reconcile when their Bill of Lading or Invoice number matches NetSuite.",
+          "If a Gabon row has a Validation Date and matches two NetSuite rows, both NetSuite rows auto reconcile.",
+          "If a Gabon row has no Validation Date, has a Selling Date in the current month, and matches exactly two NetSuite rows, the Gabon Form record stays in the current month and the Gabon Tariff record rolls.",
+          "Those Gabon no-validation/current-selling-date pairs are removed from the main reconciliation report after the automatic Form/Tariff decision.",
+          "Gabon NetSuite records that are not Gabon Out of Territory must have exactly two records grouped by Created From and Bill of Lading Number.",
+          "Non-Out-of-Territory Gabon records without exactly two grouped records are flagged red at the top of the NetSuite table.",
+          "Gabon country report import omits rows where the cargo/unit columns are empty and the FORM BIETC, FEES, and TOTAL COLLECTED money columns are zero or blank.",
+        ],
+      },
     ]
   }
 
-  return rules
+  return groups
+}
+
+function getCountryAiRules(country: TemplateCountryRow) {
+  return getCountryAiRuleGroups(country).flatMap((group) => group.rules)
 }
 
 function normalizeMappingHeader(value: string) {
@@ -3518,12 +3692,14 @@ function CountryFields({
   template,
   onChange,
   showLegend = true,
+  layout = "grid",
 }: {
   form: Extract<ItemForm, { mode: "add-country" | "edit-country" }>
   parentRows: TemplateCountryRow[]
   template: MonthEndTemplate
   onChange: (form: ItemForm) => void
   showLegend?: boolean
+  layout?: "grid" | "settings"
 }) {
   const editedRowIndex =
     form.mode === "edit-country"
@@ -3553,7 +3729,12 @@ function CountryFields({
   return (
     <FieldSet>
       {showLegend ? <FieldLegend>Country Details</FieldLegend> : null}
-      <FieldGroup className="grid gap-4 md:grid-cols-2">
+      <FieldGroup
+        className={cn(
+          "grid gap-4",
+          layout === "settings" ? "gap-7" : "md:grid-cols-2"
+        )}
+      >
         <Field>
           <FieldLabel htmlFor="country-row-name">Name</FieldLabel>
           <Input
@@ -3702,7 +3883,7 @@ function CombinedCountrySearchField({
           <Button
             id="country-row-combined"
             variant="outline"
-            className="h-10 w-full cursor-pointer justify-between border-transparent bg-input/50 hover:bg-input/50 aria-expanded:bg-input/50 md:h-8 dark:bg-input/30 dark:hover:bg-input/40 dark:aria-expanded:bg-input/40"
+            className="h-10 w-full cursor-pointer justify-between border-input bg-background hover:bg-muted md:h-8 dark:bg-input/30 dark:hover:bg-input/50"
             disabled={disabled}
           />
         }
@@ -3782,7 +3963,7 @@ function ParentSearchField({
           <Button
             id="country-row-parent"
             variant="outline"
-            className="w-full cursor-pointer justify-between border-transparent bg-input/50 hover:bg-input/50 aria-expanded:bg-input/50 dark:bg-input/30 dark:hover:bg-input/40 dark:aria-expanded:bg-input/40"
+            className="w-full cursor-pointer justify-between border-input bg-background hover:bg-muted dark:bg-input/30 dark:hover:bg-input/50"
           />
         }
       >

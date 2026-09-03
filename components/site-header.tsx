@@ -76,34 +76,30 @@ export function SiteHeader({
         />
         <div
           className={cn(
-            "relative z-10 hidden w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 md:grid lg:px-6",
-            bottomContent ? "md:pt-3 md:pb-2" : "md:min-h-(--header-height)"
+            "relative z-10 hidden h-(--header-height) w-full items-center gap-3 px-4 md:grid lg:px-6",
+            leadingContent
+              ? "grid-cols-[auto_minmax(0,1fr)_auto]"
+              : actions
+                ? "grid-cols-[minmax(0,1fr)_auto]"
+                : "grid-cols-1"
           )}
         >
-          <div
-            className={
-              leadingContent
-                ? "flex min-w-8 items-center gap-2"
-                : "w-0 overflow-hidden"
-            }
-          >
-            {leadingContent ? (
-              <>
-                {leadingContent}
-                <Separator
-                  orientation="vertical"
-                  className="mx-1 h-4 data-vertical:self-auto"
-                />
-              </>
-            ) : null}
-          </div>
+          {leadingContent ? (
+            <div className="flex min-w-8 items-center gap-2">
+              {leadingContent}
+              <Separator
+                orientation="vertical"
+                className="mx-1 h-4 data-vertical:self-auto"
+              />
+            </div>
+          ) : null}
           <h1 className="min-w-0 truncate text-base font-medium">{heading}</h1>
           {actions ? (
             <div className="flex shrink-0 items-center gap-2">{actions}</div>
           ) : null}
         </div>
         {bottomContent ? (
-          <div className="relative z-10 hidden border-b px-4 md:block lg:px-6">
+          <div className="relative z-10 hidden h-9 border-b px-4 md:block lg:px-6">
             {bottomContent}
           </div>
         ) : null}

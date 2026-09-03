@@ -51,10 +51,16 @@ export function NavDocuments({
       <SidebarMenu>
         {items.map((item) => {
           const [itemPath, itemQuery = ""] = item.url.split("?")
+          const isCurrentMonthRoute =
+            item.name === "Current Month" &&
+            itemPath === "/month-end" &&
+            (activeRoute === "/month-end" ||
+              activeRoute.startsWith("/month-end/"))
           const isActive =
             item.url !== "#" &&
-            activeRoute === itemPath &&
-            (itemQuery ? activeQuery === itemQuery : !activeQuery)
+            (isCurrentMonthRoute ||
+              (activeRoute === itemPath &&
+                (itemQuery ? activeQuery === itemQuery : !activeQuery)))
 
           return (
             <SidebarMenuItem key={item.name}>

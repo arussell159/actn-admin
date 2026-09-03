@@ -67,7 +67,7 @@ const allModuleItems = [
     label: "Current Month",
     href: "/month-end",
     icon: CalendarClockIcon,
-    match: ["/month-end"],
+    match: ["/month-end", "/month-end/country"],
   },
   {
     label: "Previous Months",
