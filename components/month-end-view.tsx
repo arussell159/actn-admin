@@ -162,10 +162,19 @@ const monthEndCountryRowIdByCode: Record<string, string | undefined> = {
 const countryTableFilterOptions: Array<{
   id: CountryTableFilterId
   label: string
+  mobileLabel?: string
 }> = [
   { id: "all", label: "All" },
-  { id: "not-reconciled", label: "Not Recon" },
-  { id: "missing-invoice", label: "No Invoice" },
+  {
+    id: "not-reconciled",
+    label: "Not Reconciled",
+    mobileLabel: "Not Recon",
+  },
+  {
+    id: "missing-invoice",
+    label: "Missing Invoice",
+    mobileLabel: "No Invoice",
+  },
 ]
 
 function taskKey(scope: string, taskId: string) {

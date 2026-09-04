@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils"
 export type CountryTableFilterOption = {
   id: string
   label: string
+  mobileLabel?: string
   count?: number
 }
 
@@ -90,7 +91,14 @@ export function CountryTableFilters({
                 aria-pressed={isSelected}
                 onClick={() => onSelectedFilterChange(option.id)}
               >
-                {option.label}
+                {option.mobileLabel ? (
+                  <>
+                    <span className="md:hidden">{option.mobileLabel}</span>
+                    <span className="hidden md:inline">{option.label}</span>
+                  </>
+                ) : (
+                  option.label
+                )}
                 {option.count === undefined ? null : ` ${option.count}`}
               </button>
             )
