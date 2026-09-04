@@ -29,7 +29,7 @@ export async function generateMetadata({
 export default async function Page({ searchParams }: Props) {
   const { period } = await searchParams
   const cleanPeriod = Array.isArray(period) ? period[0] : period
-  const title = cleanPeriod ? formatPeriod(cleanPeriod) : "Month End"
+  const title = cleanPeriod ? formatPeriod(cleanPeriod) : undefined
 
   return (
     <Suspense

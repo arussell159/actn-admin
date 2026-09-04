@@ -74,7 +74,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   >([])
   const [hasOpenMonthEnd, setHasOpenMonthEnd] = React.useState(true)
   const [activeQuery, setActiveQuery] = React.useState("")
-  const activeRoute = pathname === "/" ? "/month-end" : pathname
+  const activeRoute = pathname === "/" ? "/dashboard" : pathname
   const monthEndItems = [
     hasOpenMonthEnd
       ? {

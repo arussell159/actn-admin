@@ -25,7 +25,7 @@ export function NavDocuments({
 }) {
   const pathname = usePathname()
   const [activeQuery, setActiveQuery] = React.useState("")
-  const activeRoute = pathname === "/" ? "/month-end" : pathname
+  const activeRoute = pathname === "/" ? "/dashboard" : pathname
 
   React.useEffect(() => {
     function syncActiveQuery() {

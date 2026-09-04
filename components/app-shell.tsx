@@ -24,6 +24,7 @@ function normalizeRoute(route: string): AppRoute {
   const cleanRoute = route.replace(/^#/, "").split(/[?#]/)[0] || "/"
 
   switch (cleanRoute) {
+    case "/":
     case "/month-end":
     case "/dashboard":
     case "/month-end/new":
@@ -71,8 +72,9 @@ export function AppShell() {
       return <PreviousMonthEndsView />
     case "/quote-tool":
       return <QuoteToolView />
-    case "/month-end":
     case "/":
+      return <DashboardView />
+    case "/month-end":
     default:
       return <MonthEndPage />
   }

@@ -41,6 +41,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   NavigationMenu,
   NavigationMenuItem,
@@ -1181,7 +1182,9 @@ export function MonthEndView({ period }: { period?: string } = {}) {
         <AppSidebar variant="inset" />
         <SidebarInset>
           <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
-            <SiteHeader title="Dashboard" />
+            <SiteHeader
+              titleContent={<Skeleton className="h-5 w-32 rounded-md" />}
+            />
             <div className="@container/month-end flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
               <section className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <span className="hidden md:block" aria-hidden="true" />

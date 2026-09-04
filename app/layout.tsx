@@ -10,8 +10,13 @@ import { cn } from "@/lib/utils"
 import type { Metadata } from "next"
 import type { Viewport } from "next"
 import { Inter } from "next/font/google"
+import * as React from "react"
 
-const inter = Inter({subsets:['latin'],variable:'--font-sans'})
+const inter = Inter({
+  subsets: ["latin"],
+  display: "optional",
+  variable: "--font-inter",
+})
 
 export const metadata: Metadata = {
   title: appTitle,
@@ -77,7 +82,9 @@ export default function RootLayout({
           <TooltipProvider>
             <PwaRegister />
             <AuthSessionGuard />
-            <RouteScrollReset />
+            <React.Suspense fallback={null}>
+              <RouteScrollReset />
+            </React.Suspense>
             <AppCommandMenu />
             {children}
           </TooltipProvider>

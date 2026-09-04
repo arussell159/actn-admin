@@ -430,7 +430,7 @@ export function DashboardView() {
     React.useState<ZohoTicketResponse | null>(null)
   const [zohoMetrics, setZohoMetrics] =
     React.useState<ZohoDashboardMetricResponse | null>(null)
-  const [isSyncingZoho, setIsSyncingZoho] = React.useState(false)
+  const [isSyncingZoho, setIsSyncingZoho] = React.useState(true)
   const [timeRange, setTimeRange] = React.useState(() =>
     typeof window !== "undefined" &&
     window.matchMedia("(max-width: 767px)").matches
@@ -524,9 +524,9 @@ export function DashboardView() {
 
     return !status.includes("closed")
   }).length
-  const openTicketsTitle = `Open Tickets (${
-    zohoData?.ok ? openTicketTotal.toLocaleString() : "-"
-  })`
+  const openTicketsCountLabel = zohoData?.ok
+    ? openTicketTotal.toLocaleString()
+    : null
   const agentTicketCounts = React.useMemo(() => {
     const counts = new Map<string, number>()
 
@@ -682,17 +682,22 @@ export function DashboardView() {
                     <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium marker:hidden">
                       <span>Agents</span>
                       <span className="text-xs text-muted-foreground tabular-nums">
-                        {agentTicketCounts
-                          .reduce((total, agent) => total + agent.count, 0)
-                          .toLocaleString()}{" "}
-                        assigned
+                        {isInitialZohoLoad ? (
+                          <Skeleton className="inline-block h-4 w-20 align-middle" />
+                        ) : (
+                          <>
+                            {agentTicketCounts
+                              .reduce((total, agent) => total + agent.count, 0)
+                              .toLocaleString()}{" "}
+                            assigned
+                          </>
+                        )}
                       </span>
                     </summary>
                     <div className="mt-2 grid gap-1.5">
-                      {agentTicketCounts.length ? (
-                        isInitialZohoLoad ? (
-                          <AgentListSkeleton />
-                        ) : (
+                      {isInitialZohoLoad ? (
+                        <AgentListSkeleton />
+                      ) : agentTicketCounts.length ? (
                         agentTicketCounts.map((agent) => (
                           <div
                             key={agent.name}
@@ -706,7 +711,6 @@ export function DashboardView() {
                             </span>
                           </div>
                         ))
-                        )
                       ) : (
                         <span className="text-xs text-muted-foreground">
                           No new assignments today
@@ -781,7 +785,17 @@ export function DashboardView() {
                           />
                         </div>
                         <div className="grid min-h-0 content-start gap-1.5 overflow-y-auto pr-1">
-                          {countryTicketLeaders.length ? (
+                          {isInitialZohoLoad ? (
+                            [0, 1, 2, 3, 4, 5].map((row) => (
+                              <div
+                                key={row}
+                                className="flex items-center justify-between gap-3 rounded-md px-3 py-1.5"
+                              >
+                                <Skeleton className="h-4 w-32" />
+                                <Skeleton className="h-4 w-6" />
+                              </div>
+                            ))
+                          ) : countryTicketLeaders.length ? (
                             countryTicketLeaders.map((country) => (
                               <button
                                 key={country.countryId}
@@ -994,8 +1008,13 @@ export function DashboardView() {
 
                 <section className="px-4 lg:px-6">
                   <div className="grid gap-3 md:hidden">
-                    <h2 className="px-1 text-base font-medium">
-                      {openTicketsTitle}
+                    <h2 className="flex items-center gap-1 px-1 text-base font-medium">
+                      <span>Open Tickets</span>
+                      {isInitialZohoLoad ? (
+                        <Skeleton className="h-5 w-8" />
+                      ) : (
+                        <span>({openTicketsCountLabel ?? "-"})</span>
+                      )}
                     </h2>
                     {isInitialZohoLoad ? (
                       <MobileTicketSkeleton />
@@ -1062,7 +1081,14 @@ export function DashboardView() {
                   </div>
                   <Card className="hidden md:flex">
                     <CardHeader>
-                      <CardTitle>{openTicketsTitle}</CardTitle>
+                      <CardTitle className="flex items-center gap-1">
+                        <span>Open Tickets</span>
+                        {isInitialZohoLoad ? (
+                          <Skeleton className="h-6 w-8" />
+                        ) : (
+                          <span>({openTicketsCountLabel ?? "-"})</span>
+                        )}
+                      </CardTitle>
                     </CardHeader>
                     <CardContent className="overflow-hidden px-0">
                       <Table className="hidden md:table">

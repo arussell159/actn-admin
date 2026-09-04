@@ -18,12 +18,12 @@ export function AppRouteSkeleton({
   activeTab,
 }: {
   children: ReactNode
-  title?: string
+  title?: ReactNode
   actions?: ReactNode
   tabs?: string[]
   activeTab?: string
 }) {
-  const heading = title ?? "Documents"
+  const heading = title ?? <Skeleton className="h-5 w-32 rounded-md" />
 
   return (
     <div
