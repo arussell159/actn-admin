@@ -35,6 +35,7 @@ export function SiteHeaderBackButton({
       variant="outline"
       size="icon-lg"
       className={siteHeaderGlassButtonClassName}
+      data-site-header-back=""
       aria-label={label}
       render={href ? <AppLink href={href} /> : undefined}
       onClick={onClick}

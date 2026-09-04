@@ -12,6 +12,18 @@ export function MobileAppGuard() {
     const coarsePointer = window.matchMedia("(pointer: coarse)")
     let touchStartX = 0
     let touchStartY = 0
+    let edgeSwipeDistance = 0
+    let edgeSwipeTarget: HTMLElement | null = null
+
+    const visibleBackButton = () =>
+      Array.from(
+        document.querySelectorAll<HTMLElement>("[data-site-header-back]")
+      ).find(
+        (element) =>
+          element.getClientRects().length > 0 &&
+          element.getAttribute("aria-disabled") !== "true" &&
+          !(element instanceof HTMLButtonElement && element.disabled)
+      ) ?? null
 
     const lockPortrait = () => {
       if (!coarsePointer.matches) {
@@ -32,12 +44,16 @@ export function MobileAppGuard() {
       }
 
       if (event.touches.length > 1) {
+        edgeSwipeTarget = null
+        edgeSwipeDistance = 0
         event.preventDefault()
         return
       }
 
       touchStartX = event.touches[0]?.clientX ?? 0
       touchStartY = event.touches[0]?.clientY ?? 0
+      edgeSwipeDistance = 0
+      edgeSwipeTarget = touchStartX <= 28 ? visibleBackButton() : null
     }
     const handleTouchMove = (event: TouchEvent) => {
       if (!coarsePointer.matches) {
@@ -45,17 +61,52 @@ export function MobileAppGuard() {
       }
 
       if (event.touches.length > 1) {
+        edgeSwipeTarget = null
+        edgeSwipeDistance = 0
         event.preventDefault()
         return
       }
 
       const touch = event.touches[0]
-      const deltaX = Math.abs((touch?.clientX ?? 0) - touchStartX)
+      const signedDeltaX = (touch?.clientX ?? 0) - touchStartX
+      const deltaX = Math.abs(signedDeltaX)
       const deltaY = Math.abs((touch?.clientY ?? 0) - touchStartY)
+
+      if (edgeSwipeTarget && deltaY > deltaX && deltaY > 12) {
+        edgeSwipeTarget = null
+        edgeSwipeDistance = 0
+      }
 
       if (deltaX > 8 && deltaX > deltaY) {
         event.preventDefault()
+
+        if (edgeSwipeTarget && signedDeltaX > 0) {
+          edgeSwipeDistance = signedDeltaX
+        }
       }
+    }
+    const handleTouchEnd = (event: TouchEvent) => {
+      if (!edgeSwipeTarget) {
+        return
+      }
+
+      const activationDistance = Math.min(140, window.innerWidth * 0.35)
+      const target = edgeSwipeTarget
+
+      edgeSwipeTarget = null
+
+      if (edgeSwipeDistance < activationDistance) {
+        edgeSwipeDistance = 0
+        return
+      }
+
+      edgeSwipeDistance = 0
+      event.preventDefault()
+      target.click()
+    }
+    const handleTouchCancel = () => {
+      edgeSwipeTarget = null
+      edgeSwipeDistance = 0
     }
 
     lockPortrait()
@@ -74,6 +125,12 @@ export function MobileAppGuard() {
     document.addEventListener("touchmove", handleTouchMove, {
       passive: false,
     })
+    document.addEventListener("touchend", handleTouchEnd, {
+      passive: false,
+    })
+    document.addEventListener("touchcancel", handleTouchCancel, {
+      passive: false,
+    })
     screen.orientation?.addEventListener("change", lockPortrait)
 
     return () => {
@@ -82,6 +139,8 @@ export function MobileAppGuard() {
       document.removeEventListener("gestureend", preventGesture)
       document.removeEventListener("touchstart", handleTouchStart)
       document.removeEventListener("touchmove", handleTouchMove)
+      document.removeEventListener("touchend", handleTouchEnd)
+      document.removeEventListener("touchcancel", handleTouchCancel)
       screen.orientation?.removeEventListener("change", lockPortrait)
     }
   }, [])

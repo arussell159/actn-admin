@@ -40,6 +40,7 @@ export const AppLink = React.forwardRef<HTMLAnchorElement, AppLinkProps>(
         onClick={(event) => {
           const isPlainPrimaryClick =
             event.button === 0 &&
+            event.detail > 0 &&
             !event.metaKey &&
             !event.ctrlKey &&
             !event.shiftKey &&
