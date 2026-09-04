@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import type { CookieOptions } from "@supabase/ssr"
 
 import { desktopAuthSessionMaxAgeSeconds } from "@/lib/auth-session-timeout"
+import { fetchWithTimeout } from "@/lib/network"
 import { assertSupabaseConfig } from "@/lib/supabase-env"
 
 export const loginPath = "/login"
@@ -82,6 +83,9 @@ export async function updateSession(request: NextRequest) {
             )
           })
         },
+      },
+      global: {
+        fetch: (input, init) => fetchWithTimeout(input, init, 15_000),
       },
     }
   )

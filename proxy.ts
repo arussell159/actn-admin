@@ -15,7 +15,26 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next()
   }
 
-  const { response, user } = await updateSession(request)
+  let sessionResult: Awaited<ReturnType<typeof updateSession>>
+
+  try {
+    sessionResult = await updateSession(request)
+  } catch (error) {
+    console.warn("[ACTN auth] Server session validation failed", {
+      message: error instanceof Error ? error.message : String(error),
+      pathname,
+    })
+
+    const loginUrl = new URL(loginPath, request.url)
+    loginUrl.searchParams.set("error", "session_unavailable")
+    loginUrl.searchParams.set(
+      "next",
+      `${request.nextUrl.pathname}${request.nextUrl.search}`
+    )
+    return NextResponse.redirect(loginUrl)
+  }
+
+  const { response, user } = sessionResult
 
   if (pathname === loginPath && user) {
     return NextResponse.redirect(new URL("/month-end", request.url))

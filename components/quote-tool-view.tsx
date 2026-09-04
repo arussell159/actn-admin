@@ -2,6 +2,10 @@
 
 import * as React from "react"
 import {
+  readBrowserStorage,
+  writeBrowserStorage,
+} from "@/lib/browser-storage"
+import {
   CheckIcon,
   ChevronDownIcon,
   ChevronsUpDownIcon,
@@ -466,10 +470,12 @@ export function QuoteToolView() {
             return
           }
 
-          if (window.localStorage.getItem(catalogVersionKey) !== "synced") {
+          if (
+            readBrowserStorage("localStorage", catalogVersionKey) !== "synced"
+          ) {
             syncQuoteItemCatalog(quoteItemCatalog).then(() => {
-              window.localStorage.setItem(catalogVersionKey, "synced")
-            })
+              writeBrowserStorage("localStorage", catalogVersionKey, "synced")
+            }).catch(() => undefined)
           }
         })
         .catch(() => {})

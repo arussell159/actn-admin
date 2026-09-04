@@ -2,6 +2,10 @@ import { parseCsv, findCsvColumn, normalizeCsvHeader } from "@/lib/csv"
 import { createPublicClient } from "@/lib/public-client"
 import { assertSupabaseConfig } from "@/lib/supabase-env"
 import {
+  readJsonBrowserStorage,
+  writeBrowserStorage,
+} from "@/lib/browser-storage"
+import {
   loadMonthEndTemplate,
   type ReportFieldMapping,
   type TemplateCountryRow,
@@ -204,14 +208,44 @@ function getLocalRecords() {
     return []
   }
 
-  try {
-    const stored = window.localStorage.getItem(localStorageKey)
-    const parsed = stored ? JSON.parse(stored) : []
+  return readJsonBrowserStorage({
+    kind: "localStorage",
+    key: localStorageKey,
+    fallback: [],
+    validate: isMonthEndMasterRecordArray,
+  })
+}
 
-    return Array.isArray(parsed) ? (parsed as MonthEndMasterRecord[]) : []
-  } catch {
-    return []
-  }
+function isMonthEndMasterRecordArray(
+  value: unknown
+): value is MonthEndMasterRecord[] {
+  return (
+    Array.isArray(value) &&
+    value.every((record) => {
+      if (typeof record !== "object" || record === null) {
+        return false
+      }
+
+      const candidate = record as Partial<MonthEndMasterRecord>
+      return (
+        typeof candidate.id === "string" &&
+        typeof candidate.monthEndId === "string" &&
+        typeof candidate.period === "string" &&
+        typeof candidate.countryId === "string" &&
+        typeof candidate.countryName === "string" &&
+        typeof candidate.salesOrderNumber === "string" &&
+        typeof candidate.billOfLadingNumber === "string" &&
+        typeof candidate.ctnNumber === "string" &&
+        typeof candidate.status === "string" &&
+        typeof candidate.amount === "number" &&
+        Number.isFinite(candidate.amount) &&
+        typeof candidate.sourceClass === "string" &&
+        typeof candidate.sourceInternalId === "string" &&
+        typeof candidate.sourceRowIndex === "number" &&
+        Number.isFinite(candidate.sourceRowIndex)
+      )
+    })
+  )
 }
 
 function saveLocalRecords(records: MonthEndMasterRecord[]) {
@@ -219,7 +253,7 @@ function saveLocalRecords(records: MonthEndMasterRecord[]) {
     return
   }
 
-  window.localStorage.setItem(localStorageKey, JSON.stringify(records))
+  writeBrowserStorage("localStorage", localStorageKey, JSON.stringify(records))
 }
 
 function upsertLocalMasterRecords(

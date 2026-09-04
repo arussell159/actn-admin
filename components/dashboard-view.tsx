@@ -1,19 +1,8 @@
 "use client"
 
 import * as React from "react"
-import {
-  DatabaseIcon,
-  MailIcon,
-  MapIcon,
-} from "lucide-react"
-import {
-  Bar,
-  ComposedChart,
-  CartesianGrid,
-  Line,
-  XAxis,
-  YAxis,
-} from "recharts"
+import { DatabaseIcon, MailIcon, MapIcon } from "lucide-react"
+import { Bar, ComposedChart, CartesianGrid, Line, XAxis, YAxis } from "recharts"
 
 import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
@@ -49,12 +38,10 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
-import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@/components/ui/toggle-group"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { simpleMapAfricaPaths } from "@/lib/simplemap-africa-paths"
 import { cn } from "@/lib/utils"
+import { fetchJsonWithTimeout } from "@/lib/network"
 
 type ZohoTicket = {
   id: string
@@ -201,24 +188,11 @@ const ticketCountryMatchers = Object.entries(dashboardCountryLabelsByRowId).map(
     rowId,
     label,
     pattern: new RegExp(
-      label
-        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-        .replace(/\s+/g, "\\s+"),
+      label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+"),
       "i"
     ),
   })
 )
-
-function isToday(value: string) {
-  if (!value) {
-    return false
-  }
-
-  const date = new Date(value)
-  const today = new Date()
-
-  return date.toDateString() === today.toDateString()
-}
 
 function zohoTicketUrl(ticket: ZohoTicket) {
   return `https://desk.zoho.com/agent/africactnllc/info/tickets/details/${encodeURIComponent(
@@ -239,7 +213,8 @@ function countryRowIdForTicket(ticket: ZohoTicket) {
 
   if (ticket.countryName) {
     const directMatch = ticketCountryMatchers.find(
-      (matcher) => matcher.label.toLowerCase() === ticket.countryName?.toLowerCase()
+      (matcher) =>
+        matcher.label.toLowerCase() === ticket.countryName?.toLowerCase()
     )
 
     if (directMatch) {
@@ -247,11 +222,7 @@ function countryRowIdForTicket(ticket: ZohoTicket) {
     }
   }
 
-  const searchableText = [
-    ticket.countryName,
-    ticket.teamName,
-    ticket.subject,
-  ]
+  const searchableText = [ticket.countryName, ticket.teamName, ticket.subject]
     .filter(Boolean)
     .join(" ")
 
@@ -302,7 +273,7 @@ function CountryTicketHeatMap({
     >
       {simpleMapAfricaPaths.map((country) => {
         const countryId = dashboardCountryRowIdByCode[country.code]
-        const count = countryId ? countryCounts.get(countryId) ?? 0 : 0
+        const count = countryId ? (countryCounts.get(countryId) ?? 0) : 0
         const isSelected = countryId && countryId === selectedCountryId
 
         return (
@@ -311,8 +282,7 @@ function CountryTicketHeatMap({
             d={country.path}
             className={cn(
               countryHeatClass(count, maxCount),
-              countryId &&
-                "cursor-pointer transition-opacity hover:opacity-80",
+              countryId && "cursor-pointer transition-opacity hover:opacity-80",
               isSelected && "stroke-primary"
             )}
             strokeWidth={isSelected ? "3" : "1.5"}
@@ -439,15 +409,38 @@ export function DashboardView() {
   )
   const [isCountryMapOpen, setIsCountryMapOpen] = React.useState(false)
   const [selectedCountryId, setSelectedCountryId] = React.useState("")
+  const syncRequestRef = React.useRef<{
+    controller: AbortController
+    id: number
+  }>(undefined)
+  const lastSuccessfulSyncRef = React.useRef(0)
 
-  async function syncZohoDesk() {
+  const syncZohoDesk = React.useCallback(async () => {
+    syncRequestRef.current?.controller.abort()
+    const controller = new AbortController()
+    const requestId = (syncRequestRef.current?.id ?? 0) + 1
+    syncRequestRef.current = { controller, id: requestId }
     setIsSyncingZoho(true)
 
     try {
-      const response = await fetch("/api/zoho-desk/dashboard?limit=400", {
-        cache: "no-store",
-      })
-      const dashboard = (await response.json()) as ZohoDashboardBundleResponse
+      const dashboard = await fetchJsonWithTimeout<ZohoDashboardBundleResponse>(
+        "/api/zoho-desk/dashboard?limit=400",
+        { cache: "no-store", signal: controller.signal },
+        20_000
+      )
+
+      if (
+        !Array.isArray(dashboard.tickets) ||
+        !Array.isArray(dashboard.todayTickets) ||
+        !dashboard.metrics ||
+        !Array.isArray(dashboard.metrics.chartData)
+      ) {
+        throw new Error("Zoho Desk returned an invalid dashboard response.")
+      }
+
+      if (syncRequestRef.current?.id !== requestId) {
+        return
+      }
 
       setZohoData({
         ok: dashboard.ok,
@@ -460,7 +453,15 @@ export function DashboardView() {
         message: dashboard.message,
       })
       setZohoMetrics(dashboard.metrics)
+      lastSuccessfulSyncRef.current = Date.now()
     } catch (error) {
+      if (
+        controller.signal.aborted ||
+        syncRequestRef.current?.id !== requestId
+      ) {
+        return
+      }
+
       setZohoData({
         ok: false,
         tickets: [],
@@ -485,13 +486,34 @@ export function DashboardView() {
           error instanceof Error ? error.message : "Could not reach Zoho Desk.",
       })
     } finally {
-      setIsSyncingZoho(false)
+      if (syncRequestRef.current?.id === requestId) {
+        setIsSyncingZoho(false)
+      }
     }
-  }
+  }, [])
 
   React.useEffect(() => {
-    syncZohoDesk()
-  }, [])
+    void syncZohoDesk()
+
+    const refreshAfterResume = () => {
+      if (
+        document.visibilityState === "visible" &&
+        navigator.onLine &&
+        Date.now() - lastSuccessfulSyncRef.current > 5 * 60_000
+      ) {
+        void syncZohoDesk()
+      }
+    }
+
+    window.addEventListener("online", refreshAfterResume)
+    document.addEventListener("visibilitychange", refreshAfterResume)
+
+    return () => {
+      syncRequestRef.current?.controller.abort()
+      window.removeEventListener("online", refreshAfterResume)
+      document.removeEventListener("visibilitychange", refreshAfterResume)
+    }
+  }, [syncZohoDesk])
 
   React.useEffect(() => {
     if (isMobile) {
@@ -499,9 +521,15 @@ export function DashboardView() {
     }
   }, [isMobile])
 
-  const tickets = zohoData?.tickets ?? []
-  const todayCreatedTickets = zohoTodayData?.tickets ?? []
-  const hourlyTicketData = zohoMetrics?.chartData ?? []
+  const tickets = React.useMemo(() => zohoData?.tickets ?? [], [zohoData])
+  const todayCreatedTickets = React.useMemo(
+    () => zohoTodayData?.tickets ?? [],
+    [zohoTodayData]
+  )
+  const hourlyTicketData = React.useMemo(
+    () => zohoMetrics?.chartData ?? [],
+    [zohoMetrics]
+  )
   const isInitialZohoLoad = isSyncingZoho && !zohoData && !zohoMetrics
   const selectedTimeRange = timeRange
   const filteredHourlyTicketData = React.useMemo(() => {
@@ -560,33 +588,30 @@ export function DashboardView() {
 
     return counts
   }, [todayCountryTickets])
-  const countryTicketLeaders = React.useMemo(
-    () => {
-      const labels = new Map<string, string>()
+  const countryTicketLeaders = React.useMemo(() => {
+    const labels = new Map<string, string>()
 
-      todayCountryTickets.forEach(({ countryId, ticket }) => {
-        if (!labels.has(countryId)) {
-          labels.set(
-            countryId,
-            ticket.teamName ||
-              ticket.countryName ||
-              dashboardCountryLabelsByRowId[countryId] ||
-              countryId
-          )
-        }
-      })
+    todayCountryTickets.forEach(({ countryId, ticket }) => {
+      if (!labels.has(countryId)) {
+        labels.set(
+          countryId,
+          ticket.teamName ||
+            ticket.countryName ||
+            dashboardCountryLabelsByRowId[countryId] ||
+            countryId
+        )
+      }
+    })
 
-      return Array.from(countryTicketCounts, ([countryId, count]) => ({
-        countryId,
-        count,
-        label: labels.get(countryId) ?? countryId,
-      })).sort(
-        (left, right) =>
-          right.count - left.count || left.label.localeCompare(right.label)
-      )
-    },
-    [countryTicketCounts, todayCountryTickets]
-  )
+    return Array.from(countryTicketCounts, ([countryId, count]) => ({
+      countryId,
+      count,
+      label: labels.get(countryId) ?? countryId,
+    })).sort(
+      (left, right) =>
+        right.count - left.count || left.label.localeCompare(right.label)
+    )
+  }, [countryTicketCounts, todayCountryTickets])
   const countryTicketTotal = React.useMemo(
     () =>
       Array.from(countryTicketCounts.values()).reduce(
@@ -859,9 +884,15 @@ export function DashboardView() {
                           variant="outline"
                           className="hidden *:data-[slot=toggle-group-item]:px-4! @[767px]/card:flex"
                         >
-                          <ToggleGroupItem value="24h">Last 24 hours</ToggleGroupItem>
-                          <ToggleGroupItem value="12h">Last 12 hours</ToggleGroupItem>
-                          <ToggleGroupItem value="1h">Last 1 hour</ToggleGroupItem>
+                          <ToggleGroupItem value="24h">
+                            Last 24 hours
+                          </ToggleGroupItem>
+                          <ToggleGroupItem value="12h">
+                            Last 12 hours
+                          </ToggleGroupItem>
+                          <ToggleGroupItem value="1h">
+                            Last 1 hour
+                          </ToggleGroupItem>
                         </ToggleGroup>
                         <Select
                           value={selectedTimeRange}
@@ -897,82 +928,84 @@ export function DashboardView() {
                         <TicketVolumeSkeleton />
                       ) : (
                         <ChartContainer
-                        config={chartConfig}
-                        className="aspect-auto h-[250px] w-full [&_.recharts-bar-rectangle]:cursor-pointer"
-                        initialDimension={{ width: 900, height: 250 }}
-                      >
-                        <ComposedChart
-                          data={filteredHourlyTicketData}
-                          margin={{ left: 4, right: 12 }}
-                          accessibilityLayer
+                          config={chartConfig}
+                          className="aspect-auto h-[250px] w-full [&_.recharts-bar-rectangle]:cursor-pointer"
+                          initialDimension={{ width: 900, height: 250 }}
                         >
-                          <CartesianGrid vertical={false} />
-                          <XAxis
-                            dataKey="hour"
-                            tickLine={false}
-                            axisLine={false}
-                            tickMargin={8}
-                            minTickGap={32}
-                          />
-                          <YAxis
-                            tickLine={false}
-                            axisLine={false}
-                            tickMargin={8}
-                            width={36}
-                          />
-                          <ChartTooltip
-                            cursor={false}
-                            content={
-                              <ChartTooltipContent
-                                formatter={(value, name, item) => (
-                                  <>
-                                    <div
-                                      className="size-2.5 shrink-0 rounded-[2px]"
-                                      style={{
-                                        backgroundColor:
-                                          item.color ?? "currentColor",
-                                      }}
-                                    />
-                                    <span className="text-muted-foreground">
-                                      {chartConfig[
-                                        name as keyof typeof chartConfig
-                                      ]?.label ?? name}
-                                    </span>
-                                    <span className="ml-auto font-mono font-medium text-foreground tabular-nums">
-                                      {Math.abs(Number(value)).toLocaleString()}
-                                    </span>
-                                  </>
-                                )}
-                                indicator="dot"
-                              />
-                            }
-                          />
-                          <Bar
-                            dataKey="closedTickets"
-                            fill={chartConfig.closedTickets.color}
-                            fillOpacity={0.8}
-                            activeBar={{
-                              fill: "#2fc85a",
-                              fillOpacity: 0.18,
-                              stroke: "#16a34a",
-                              strokeOpacity: 1,
-                              strokeWidth: 2,
-                              filter:
-                                "drop-shadow(0 0 6px rgba(34, 163, 71, 0.45))",
-                            }}
-                            radius={[4, 4, 0, 0]}
-                            maxBarSize={32}
-                          />
-                          <Line
-                            dataKey="newTickets"
-                            type="natural"
-                            stroke={chartConfig.newTickets.color}
-                            strokeWidth={3}
-                            dot={false}
-                            activeDot={{ r: 5 }}
-                          />
-                        </ComposedChart>
-                      </ChartContainer>
+                          <ComposedChart
+                            data={filteredHourlyTicketData}
+                            margin={{ left: 4, right: 12 }}
+                            accessibilityLayer
+                          >
+                            <CartesianGrid vertical={false} />
+                            <XAxis
+                              dataKey="hour"
+                              tickLine={false}
+                              axisLine={false}
+                              tickMargin={8}
+                              minTickGap={32}
+                            />
+                            <YAxis
+                              tickLine={false}
+                              axisLine={false}
+                              tickMargin={8}
+                              width={36}
+                            />
+                            <ChartTooltip
+                              cursor={false}
+                              content={
+                                <ChartTooltipContent
+                                  formatter={(value, name, item) => (
+                                    <>
+                                      <div
+                                        className="size-2.5 shrink-0 rounded-[2px]"
+                                        style={{
+                                          backgroundColor:
+                                            item.color ?? "currentColor",
+                                        }}
+                                      />
+                                      <span className="text-muted-foreground">
+                                        {chartConfig[
+                                          name as keyof typeof chartConfig
+                                        ]?.label ?? name}
+                                      </span>
+                                      <span className="ml-auto font-mono font-medium text-foreground tabular-nums">
+                                        {Math.abs(
+                                          Number(value)
+                                        ).toLocaleString()}
+                                      </span>
+                                    </>
+                                  )}
+                                  indicator="dot"
+                                />
+                              }
+                            />
+                            <Bar
+                              dataKey="closedTickets"
+                              fill={chartConfig.closedTickets.color}
+                              fillOpacity={0.8}
+                              activeBar={{
+                                fill: "#2fc85a",
+                                fillOpacity: 0.18,
+                                stroke: "#16a34a",
+                                strokeOpacity: 1,
+                                strokeWidth: 2,
+                                filter:
+                                  "drop-shadow(0 0 6px rgba(34, 163, 71, 0.45))",
+                              }}
+                              radius={[4, 4, 0, 0]}
+                              maxBarSize={32}
+                            />
+                            <Line
+                              dataKey="newTickets"
+                              type="natural"
+                              stroke={chartConfig.newTickets.color}
+                              strokeWidth={3}
+                              dot={false}
+                              activeDot={{ r: 5 }}
+                            />
+                          </ComposedChart>
+                        </ChartContainer>
                       )}
                     </CardContent>
                   </Card>
@@ -1042,7 +1075,7 @@ export function DashboardView() {
                               </div>
                               <div className="grid gap-2 text-left">
                                 <span
-                                  className="line-clamp-2 text-[15px] font-semibold leading-5"
+                                  className="line-clamp-2 text-[15px] leading-5 font-semibold"
                                   title={ticket.subject}
                                 >
                                   {ticket.subject || "-"}
@@ -1116,45 +1149,45 @@ export function DashboardView() {
                                 <TableRow
                                   key={ticket.id || ticket.ticketNumber}
                                 >
-                                    <TableCell className="pl-6 font-medium">
-                                      <a
-                                        href={zohoTicketUrl(ticket)}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="text-left underline-offset-4 hover:underline"
-                                        onClick={(event) => {
-                                          event.stopPropagation()
-                                        }}
-                                      >
-                                        {ticket.ticketNumber || "-"}
-                                      </a>
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                      {ticket.responseDueTime
-                                        ? new Date(
-                                            ticket.responseDueTime
-                                          ).toLocaleString()
-                                        : "-"}
-                                    </TableCell>
-                                    <TableCell className="min-w-0">
-                                      <span
-                                        className="block max-w-[680px] truncate text-left"
-                                        title={ticket.subject}
-                                      >
-                                        {ticket.subject || "-"}
-                                      </span>
-                                    </TableCell>
-                                    <TableCell className="font-medium tabular-nums text-muted-foreground">
-                                      {formatThreadCount(ticket)}
-                                    </TableCell>
-                                    <TableCell className="min-w-0 pr-6">
-                                      <span
-                                        className="block truncate"
-                                        title={ticket.assigneeName}
-                                      >
-                                        {ticket.assigneeName || "-"}
-                                      </span>
-                                    </TableCell>
+                                  <TableCell className="pl-6 font-medium">
+                                    <a
+                                      href={zohoTicketUrl(ticket)}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-left underline-offset-4 hover:underline"
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                      }}
+                                    >
+                                      {ticket.ticketNumber || "-"}
+                                    </a>
+                                  </TableCell>
+                                  <TableCell className="text-muted-foreground">
+                                    {ticket.responseDueTime
+                                      ? new Date(
+                                          ticket.responseDueTime
+                                        ).toLocaleString()
+                                      : "-"}
+                                  </TableCell>
+                                  <TableCell className="min-w-0">
+                                    <span
+                                      className="block max-w-[680px] truncate text-left"
+                                      title={ticket.subject}
+                                    >
+                                      {ticket.subject || "-"}
+                                    </span>
+                                  </TableCell>
+                                  <TableCell className="font-medium text-muted-foreground tabular-nums">
+                                    {formatThreadCount(ticket)}
+                                  </TableCell>
+                                  <TableCell className="min-w-0 pr-6">
+                                    <span
+                                      className="block truncate"
+                                      title={ticket.assigneeName}
+                                    >
+                                      {ticket.assigneeName || "-"}
+                                    </span>
+                                  </TableCell>
                                 </TableRow>
                               )
                             })

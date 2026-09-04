@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { assertSupabaseConfig } from "@/lib/supabase-env"
+import { fetchWithTimeout } from "@/lib/network"
 
 /**
  * If using Fluid compute: Don't put this client in a global variable. Always create a new client within each
@@ -29,6 +30,9 @@ export async function createClient() {
             // user sessions.
           }
         },
+      },
+      global: {
+        fetch: (input, init) => fetchWithTimeout(input, init, 30_000),
       },
     }
   )

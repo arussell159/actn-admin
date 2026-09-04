@@ -32,7 +32,6 @@ export function LoginPage() {
           fill
           sizes="50vw"
           className="object-cover"
-          priority
         />
       </section>
     </main>

@@ -4,6 +4,7 @@ import type {
   ReportMappingAiTrainingExample,
   ReportMappingField,
 } from "@/lib/month-end-template"
+import { fetchWithTimeout } from "@/lib/network"
 
 type MappingTarget = {
   id: ReportMappingField
@@ -186,9 +187,7 @@ function inferRepeatingPaymentTable(lines: string[]) {
 
     if (
       !/\s+-\s+/.test(descriptionLine) ||
-      !/^\d{1,2}\/\d{1,2}\/\d{4}(?:\s+\d{1,2}:\d{2}:\d{2})?$/.test(
-        dateLine
-      ) ||
+      !/^\d{1,2}\/\d{1,2}\/\d{4}(?:\s+\d{1,2}:\d{2}:\d{2})?$/.test(dateLine) ||
       !/^\d[\d\s.,]*$/.test(amountLine)
     ) {
       return undefined
@@ -257,7 +256,8 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({
       ok: false,
-      message: "AI Suggest could not read the request. You can still map manually.",
+      message:
+        "AI Suggest could not read the request. You can still map manually.",
       suggestions: {},
     })
   }
@@ -265,7 +265,9 @@ export async function POST(request: Request) {
   const apiKey = process.env.OPENAI_API_KEY
   const fallbackSuggestions = localSuggestionFallback(body)
   const fallbackCount = countSuggestions(fallbackSuggestions)
-  const inferredTable = inferRepeatingPaymentTable(body.preview?.textLines ?? [])
+  const inferredTable = inferRepeatingPaymentTable(
+    body.preview?.textLines ?? []
+  )
 
   if (!apiKey) {
     return NextResponse.json({
@@ -335,30 +337,34 @@ export async function POST(request: Request) {
       })
     }
 
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: process.env.OPENAI_REPORT_MAPPING_MODEL ?? "gpt-4.1-mini",
-        input: [
-          {
-            role: "user",
-            content: inputContent,
-          },
-        ],
-        text: {
-          format: {
-            type: "json_schema",
-            name: "report_mapping_suggestions",
-            strict: true,
-            schema: reportMappingSchema,
-          },
+    const response = await fetchWithTimeout(
+      "https://api.openai.com/v1/responses",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
         },
-      }),
-    })
+        body: JSON.stringify({
+          model: process.env.OPENAI_REPORT_MAPPING_MODEL ?? "gpt-4.1-mini",
+          input: [
+            {
+              role: "user",
+              content: inputContent,
+            },
+          ],
+          text: {
+            format: {
+              type: "json_schema",
+              name: "report_mapping_suggestions",
+              strict: true,
+              schema: reportMappingSchema,
+            },
+          },
+        }),
+      },
+      45_000
+    )
 
     if (!response.ok) {
       const detail = await response.text()
@@ -372,12 +378,11 @@ export async function POST(request: Request) {
 
     const payload = parseOpenAiJson(await response.json())
     const normalizedTable = normalizeAiTable(payload.table)
-    const tableSampleFields =
-      normalizedTable.columns.map((column) => ({
-        sourceColumn: column,
-        label: column,
-        previewValues: [],
-      }))
+    const tableSampleFields = normalizedTable.columns.map((column) => ({
+      sourceColumn: column,
+      label: column,
+      previewValues: [],
+    }))
     const tableFallbackSuggestions = localSuggestionFallback({
       ...body,
       sampleFields: tableSampleFields,

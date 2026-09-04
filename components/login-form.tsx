@@ -20,6 +20,7 @@ import {
 import { createClient } from "@/lib/client"
 import { setMobileDashboardActiveNavState } from "@/lib/mobile-nav-active-state"
 import { cn } from "@/lib/utils"
+import { readBrowserStorage, writeBrowserStorage } from "@/lib/browser-storage"
 
 function getLoginErrorMessage(error: { message?: string; code?: string }) {
   const message = error.message || "Login failed."
@@ -65,6 +66,10 @@ export function LoginForm({
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const [hasSavedPasskey, setHasSavedPasskey] = React.useState(false)
   const [error, setError] = React.useState("")
+  const sessionError =
+    searchParams.get("error") === "session_unavailable"
+      ? "Your session could not be checked. Verify your connection and try again."
+      : ""
   const nextPath = searchParams.get("next") || "/dashboard"
   const safeNextPath =
     nextPath.startsWith("/") && !nextPath.startsWith("//")
@@ -95,7 +100,7 @@ export function LoginForm({
       return
     }
 
-    window.localStorage.setItem(authPasskeyEnabledKey, "true")
+    writeBrowserStorage("localStorage", authPasskeyEnabledKey, "true")
     setHasSavedPasskey(true)
   }
 
@@ -115,7 +120,7 @@ export function LoginForm({
         return
       }
 
-      window.localStorage.setItem(authPasskeyEnabledKey, "true")
+      writeBrowserStorage("localStorage", authPasskeyEnabledKey, "true")
       finishLogin()
     } catch {
       return
@@ -126,7 +131,7 @@ export function LoginForm({
     const timeoutId = window.setTimeout(() => {
       const supportsPasskey = browserSupportsPasskey()
       const savedPasskey =
-        window.localStorage.getItem(authPasskeyEnabledKey) === "true"
+        readBrowserStorage("localStorage", authPasskeyEnabledKey) === "true"
 
       setHasSavedPasskey(savedPasskey)
 
@@ -155,10 +160,11 @@ export function LoginForm({
       }
 
       const supabase = createClient()
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      })
+      const { data, error: signInError } =
+        await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        })
 
       if (signInError) {
         setError(getLoginErrorMessage(signInError))
@@ -222,7 +228,9 @@ export function LoginForm({
             required
           />
         </Field>
-        {error ? <FieldError>{error}</FieldError> : null}
+        {error || sessionError ? (
+          <FieldError>{error || sessionError}</FieldError>
+        ) : null}
         <Field>
           <Button
             type="submit"

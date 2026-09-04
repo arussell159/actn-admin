@@ -1,4 +1,8 @@
 import { createPublicClient } from "@/lib/public-client"
+import {
+  readJsonBrowserStorage,
+  writeBrowserStorage,
+} from "@/lib/browser-storage"
 
 export type InformationNodeType = "folder" | "note"
 
@@ -84,19 +88,53 @@ export function defaultInformationNotes(): InformationNode[] {
   ]
 }
 
+function isInformationNode(value: unknown): value is InformationNode {
+  if (typeof value !== "object" || value === null) {
+    return false
+  }
+
+  const node = value as Partial<InformationNode>
+
+  return (
+    typeof node.id === "string" &&
+    (node.type === "folder" || node.type === "note") &&
+    typeof node.title === "string" &&
+    typeof node.createdAt === "string" &&
+    typeof node.updatedAt === "string" &&
+    (node.parentId === undefined || typeof node.parentId === "string") &&
+    (node.content === undefined || typeof node.content === "string")
+  )
+}
+
+function isInformationNodeArray(value: unknown): value is InformationNode[] {
+  return Array.isArray(value) && value.every(isInformationNode)
+}
+
+function isTrashedInformationNodeArray(
+  value: unknown
+): value is TrashedInformationNode[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (node) =>
+        isInformationNode(node) &&
+        "deletedAt" in node &&
+        typeof node.deletedAt === "string"
+    )
+  )
+}
+
 export function loadInformationNotes() {
   if (typeof window === "undefined") {
     return []
   }
 
-  try {
-    const stored = window.localStorage.getItem(storageKey)
-    const parsed = stored ? (JSON.parse(stored) as InformationNode[]) : null
-
-    return Array.isArray(parsed) ? parsed : defaultInformationNotes()
-  } catch {
-    return defaultInformationNotes()
-  }
+  return readJsonBrowserStorage({
+    kind: "localStorage",
+    key: storageKey,
+    fallback: defaultInformationNotes(),
+    validate: isInformationNodeArray,
+  })
 }
 
 export function saveInformationNotes(nodes: InformationNode[]) {
@@ -104,7 +142,7 @@ export function saveInformationNotes(nodes: InformationNode[]) {
     return
   }
 
-  window.localStorage.setItem(storageKey, JSON.stringify(nodes))
+  writeBrowserStorage("localStorage", storageKey, JSON.stringify(nodes))
   saveDatabaseInformationNotes(nodes).finally(() => {
     window.dispatchEvent(new Event(informationUpdatedEvent))
   })
@@ -115,16 +153,12 @@ export function loadTrashedInformationNotes() {
     return []
   }
 
-  try {
-    const stored = window.localStorage.getItem(trashStorageKey)
-    const parsed = stored
-      ? (JSON.parse(stored) as TrashedInformationNode[])
-      : null
-
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
+  return readJsonBrowserStorage({
+    kind: "localStorage",
+    key: trashStorageKey,
+    fallback: [],
+    validate: isTrashedInformationNodeArray,
+  })
 }
 
 export function saveTrashedInformationNotes(nodes: TrashedInformationNode[]) {
@@ -132,7 +166,7 @@ export function saveTrashedInformationNotes(nodes: TrashedInformationNode[]) {
     return
   }
 
-  window.localStorage.setItem(trashStorageKey, JSON.stringify(nodes))
+  writeBrowserStorage("localStorage", trashStorageKey, JSON.stringify(nodes))
 }
 
 export async function getInformationNotes() {
@@ -168,7 +202,7 @@ export async function getInformationNotes() {
 
 function cacheInformationNotes(nodes: InformationNode[]) {
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(storageKey, JSON.stringify(nodes))
+    writeBrowserStorage("localStorage", storageKey, JSON.stringify(nodes))
   }
 }
 

@@ -62,6 +62,12 @@ export function PreviousMonthEndsView() {
             monthEndRecords.filter((record) => record.status === "Closed")
           )
         }
+      } catch {
+        if (isMounted) {
+          setDeleteError(
+            "Could not load previous month ends. Check your connection and try again."
+          )
+        }
       } finally {
         if (isMounted) {
           setIsLoading(false)
@@ -69,7 +75,7 @@ export function PreviousMonthEndsView() {
       }
     }
 
-    loadRecords()
+    void loadRecords()
     window.addEventListener("month-end:records-updated", loadRecords)
 
     return () => {

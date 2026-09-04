@@ -159,6 +159,13 @@ const monthEndCountryRowIdByCode: Record<string, string | undefined> = {
   SS: "antaser-afrique",
 }
 
+const monthEndCountryCodesByGroupedRowId: Record<string, readonly string[]> = {
+  antaser: ["NE", "CF", "GW"],
+  "antaser-oot": ["NE", "CF", "GW"],
+  "antaser-afrique": ["TG", "BI", "GQ", "SS"],
+  "antaser-afrique-oot": ["TG", "BI", "GQ", "SS"],
+}
+
 const countryTableFilterOptions: Array<{
   id: CountryTableFilterId
   label: string
@@ -385,14 +392,17 @@ function MonthEndCountryHeatMap({
     x: number
     y: number
   } | null>(null)
-  const highlightedCountryCode =
-    hoveredCountry?.code ??
-    Object.entries(monthEndCountryRowIdByCode).find(
-      ([, countryId]) => countryId === highlightedCountryId
-    )?.[0]
-  const highlightedCountryPath = simpleMapAfricaPaths.find(
-    (country) => country.code === highlightedCountryCode
-  )?.path
+  const highlightedCountryCodes = hoveredCountry
+    ? [hoveredCountry.code]
+    : highlightedCountryId
+      ? (monthEndCountryCodesByGroupedRowId[highlightedCountryId] ??
+        Object.entries(monthEndCountryRowIdByCode)
+          .filter(([, countryId]) => countryId === highlightedCountryId)
+          .map(([code]) => code))
+      : []
+  const highlightedCountryPaths = simpleMapAfricaPaths.filter((country) =>
+    highlightedCountryCodes.includes(country.code)
+  )
 
   return (
     <div className={cn("relative", className)}>
@@ -474,30 +484,34 @@ function MonthEndCountryHeatMap({
             />
           )
         })}
-        {highlightedCountryPath ? (
+        {highlightedCountryPaths.length ? (
           <g className="pointer-events-none">
-            <path
-              d={highlightedCountryPath}
-              fill="none"
-              stroke="#60a5fa"
-              strokeWidth="9"
-              strokeLinejoin="round"
-              vectorEffect="non-scaling-stroke"
-              opacity="0.95"
-              style={{ filter: "blur(4px)" }}
-            />
-            <path
-              d={highlightedCountryPath}
-              fill="none"
-              stroke="white"
-              strokeWidth="2.5"
-              strokeLinejoin="round"
-              vectorEffect="non-scaling-stroke"
-              style={{
-                filter:
-                  "drop-shadow(0 0 3px white) drop-shadow(0 0 7px #3b82f6)",
-              }}
-            />
+            {highlightedCountryPaths.map((country) => (
+              <React.Fragment key={country.code}>
+                <path
+                  d={country.path}
+                  fill="none"
+                  stroke="#60a5fa"
+                  strokeWidth="9"
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                  opacity="0.95"
+                  style={{ filter: "blur(4px)" }}
+                />
+                <path
+                  d={country.path}
+                  fill="none"
+                  stroke="white"
+                  strokeWidth="2.5"
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                  style={{
+                    filter:
+                      "drop-shadow(0 0 3px white) drop-shadow(0 0 7px #3b82f6)",
+                  }}
+                />
+              </React.Fragment>
+            ))}
           </g>
         ) : null}
       </svg>
@@ -757,6 +771,10 @@ export function MonthEndView({ period }: { period?: string } = {}) {
   const [showReopenMonthConfirm, setShowReopenMonthConfirm] =
     React.useState(false)
   const [hasLoaded, setHasLoaded] = React.useState(Boolean(initialReturnRecord))
+  const [loadError, setLoadError] = React.useState("")
+  const [loadRetryNonce, setLoadRetryNonce] = React.useState(0)
+  const [recordSaveError, setRecordSaveError] = React.useState("")
+  const [saveRetryNonce, setSaveRetryNonce] = React.useState(0)
   const masterUploadInputRef = React.useRef<HTMLInputElement>(null)
   const pendingReturnScrollYRef = React.useRef<number | null>(
     initialReturnPoint?.scrollY ?? null
@@ -822,6 +840,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
       }
 
       try {
+        setLoadError("")
         const activeRecord = period
           ? await ensureMonthEndRecord(period)
           : undefined
@@ -849,12 +868,19 @@ export function MonthEndView({ period }: { period?: string } = {}) {
           setChecked(openRecord?.checked ?? {})
           setDashboardHandoffDraft("")
         }
-      } catch {
+      } catch (error) {
         if (isMounted) {
-          recordRef.current = null
-          setRecord(null)
-          setChecked({})
-          setDashboardHandoffDraft("")
+          if (!initialReturnRecord) {
+            recordRef.current = null
+            setRecord(null)
+            setChecked({})
+            setDashboardHandoffDraft("")
+          }
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : "Could not load the month-end record."
+          )
         }
       } finally {
         if (isMounted) {
@@ -868,7 +894,35 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     return () => {
       isMounted = false
     }
-  }, [initialReturnPoint, initialReturnRecord, period])
+  }, [initialReturnPoint, initialReturnRecord, loadRetryNonce, period])
+
+  React.useEffect(() => {
+    const retryAfterResume = () => {
+      if (
+        loadError &&
+        navigator.onLine &&
+        document.visibilityState === "visible"
+      ) {
+        setLoadRetryNonce((current) => current + 1)
+      }
+
+      if (
+        recordSaveError &&
+        navigator.onLine &&
+        document.visibilityState === "visible"
+      ) {
+        setSaveRetryNonce((current) => current + 1)
+      }
+    }
+
+    window.addEventListener("online", retryAfterResume)
+    document.addEventListener("visibilitychange", retryAfterResume)
+
+    return () => {
+      window.removeEventListener("online", retryAfterResume)
+      document.removeEventListener("visibilitychange", retryAfterResume)
+    }
+  }, [loadError, recordSaveError])
 
   React.useEffect(() => {
     if (
@@ -896,12 +950,17 @@ export function MonthEndView({ period }: { period?: string } = {}) {
         await saveMonthEndRecord(updatedRecord)
         recordRef.current = updatedRecord
         setRecord(updatedRecord)
+        setRecordSaveError("")
         window.dispatchEvent(new Event("month-end:records-updated"))
-      } catch {}
+      } catch {
+        setRecordSaveError(
+          "Your latest changes are still on this screen but have not synced. Reconnect and retry."
+        )
+      }
     }, 250)
 
     return () => window.clearTimeout(timeoutId)
-  }, [checked, hasLoaded])
+  }, [checked, hasLoaded, saveRetryNonce])
 
   const hasRecord = Boolean(record)
   const recordStatus = record?.status
@@ -912,10 +971,10 @@ export function MonthEndView({ period }: { period?: string } = {}) {
       return
     }
 
-    if (!period && hasLoaded && !hasRecord) {
+    if (!period && hasLoaded && !hasRecord && !loadError) {
       router.replace("/month-end/new")
     }
-  }, [hasLoaded, hasRecord, period, recordStatus, router])
+  }, [hasLoaded, hasRecord, loadError, period, recordStatus, router])
 
   const activeRecordPeriod = record?.period
 
@@ -1790,6 +1849,44 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     </div>
   )
 
+  if (loadError && !record) {
+    return (
+      <SidebarProvider
+        style={
+          {
+            "--sidebar-width": "calc(var(--spacing) * 72)",
+            "--header-height": "calc(var(--spacing) * 12)",
+          } as React.CSSProperties
+        }
+      >
+        <AppSidebar variant="inset" />
+        <SidebarInset>
+          <main className="flex min-h-svh flex-col bg-background">
+            <SiteHeader title="Month End" />
+            <div className="grid max-w-xl gap-4 p-4 lg:p-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Could not load month end</CardTitle>
+                  <CardDescription>
+                    Check your connection and try again. The app will also retry
+                    when your device reconnects.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button
+                    onClick={() => setLoadRetryNonce((current) => current + 1)}
+                  >
+                    Try again
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          </main>
+        </SidebarInset>
+      </SidebarProvider>
+    )
+  }
+
   if (!period && hasLoaded && !record) {
     return (
       <SidebarProvider
@@ -1898,6 +1995,22 @@ export function MonthEndView({ period }: { period?: string } = {}) {
               <p className="text-sm text-muted-foreground">
                 {masterUploadMessage}
               </p>
+            ) : null}
+
+            {recordSaveError ? (
+              <div
+                role="alert"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm"
+              >
+                <span>{recordSaveError}</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSaveRetryNonce((current) => current + 1)}
+                >
+                  Retry sync
+                </Button>
+              </div>
             ) : null}
 
             <Tabs

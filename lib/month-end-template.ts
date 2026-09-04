@@ -1,4 +1,9 @@
 import { createPublicClient } from "@/lib/public-client"
+import {
+  readBrowserStorage,
+  removeBrowserStorage,
+  writeBrowserStorage,
+} from "@/lib/browser-storage"
 
 export type CloseTaskId = "invoice" | "reconcile" | "journal"
 
@@ -356,7 +361,7 @@ export function loadMonthEndTemplate() {
     return normalizeTemplate(defaultTemplate)
   }
 
-  const saved = window.localStorage.getItem(storageKey)
+  const saved = readBrowserStorage("localStorage", storageKey)
 
   if (!saved) {
     return normalizeTemplate(defaultTemplate)
@@ -367,6 +372,7 @@ export function loadMonthEndTemplate() {
 
     return normalizeTemplate(parsed)
   } catch {
+    removeBrowserStorage("localStorage", storageKey)
     return normalizeTemplate(defaultTemplate)
   }
 }
@@ -380,7 +386,10 @@ export async function getMonthEndTemplate() {
       .from(tableName)
       .select("template, updated_at")
       .eq("id", templateId)
-      .maybeSingle<{ template: MonthEndTemplate | null; updated_at: string | null }>()
+      .maybeSingle<{
+        template: MonthEndTemplate | null
+        updated_at: string | null
+      }>()
 
     if (error) {
       return localTemplate
@@ -416,12 +425,8 @@ export async function getMonthEndTemplate() {
 function templateLastUpdatedAt(template: MonthEndTemplate) {
   return Math.max(
     timestampValue(template.countriesModule?.updatedAt),
-    ...template.countries.map((country) =>
-      timestampValue(country.updatedAt)
-    ),
-    ...template.taskGroups.map((group) =>
-      timestampValue(group.updatedAt)
-    )
+    ...template.countries.map((country) => timestampValue(country.updatedAt)),
+    ...template.taskGroups.map((group) => timestampValue(group.updatedAt))
   )
 }
 
@@ -478,13 +483,14 @@ function normalizeTemplate(template: MonthEndTemplate): MonthEndTemplate {
                 row.countryReportMapping &&
                 !isDefaultCountryReportMapping(row.countryReportMapping)
                   ? row.countryReportMapping
-                  : defaultRow?.countryReportMapping ??
-                    row.countryReportMapping,
+                  : (defaultRow?.countryReportMapping ??
+                    row.countryReportMapping),
               masterReportMapping:
                 row.masterReportMapping &&
                 !isDefaultMasterReportMapping(row.masterReportMapping)
                   ? row.masterReportMapping
-                  : defaultRow?.masterReportMapping ?? row.masterReportMapping,
+                  : (defaultRow?.masterReportMapping ??
+                    row.masterReportMapping),
               combinedWithCountryIds:
                 row.combinedWithCountryIds ??
                 defaultRow?.combinedWithCountryIds ??
@@ -611,13 +617,13 @@ export function saveMonthEndTemplate(template: MonthEndTemplate) {
 }
 
 export function resetMonthEndTemplate() {
-  window.localStorage.removeItem(storageKey)
+  removeBrowserStorage("localStorage", storageKey)
   window.dispatchEvent(new Event("month-end:template-updated"))
 }
 
 function saveLocalTemplate(template: MonthEndTemplate) {
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(storageKey, JSON.stringify(template))
+    writeBrowserStorage("localStorage", storageKey, JSON.stringify(template))
   }
 }
 

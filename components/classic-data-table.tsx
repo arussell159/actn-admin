@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { readBrowserStorage, writeBrowserStorage } from "@/lib/browser-storage"
 import { AppLink } from "@/components/app-link"
 import {
   ChevronDownIcon,
@@ -65,9 +66,7 @@ type SavedView = {
   clientFilter: string
 }
 
-const defaultViews = [
-  { name: "All Records", count: "All" },
-]
+const defaultViews = [{ name: "All Records", count: "All" }]
 
 const statusPillClasses: Record<string, string> = {
   Initiated:
@@ -131,10 +130,7 @@ function InvoiceBadge({
         className="flex h-auto w-full justify-start rounded-md p-0 outline-none focus-visible:ring-1 focus-visible:ring-ring/40"
         aria-label={`Invoice payment status for ${row.invoiceNumber}`}
       >
-        <Badge
-          variant="outline"
-          className={`${invoiceClass} cursor-pointer`}
-        >
+        <Badge variant="outline" className={`${invoiceClass} cursor-pointer`}>
           <ReceiptTextIcon />
           <span className="min-w-0 truncate">{row.invoiceNumber}</span>
         </Badge>
@@ -190,7 +186,13 @@ function RowActions({
         <EllipsisIcon className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
-        <DropdownMenuItem render={<AppLink href={`/classic/${encodeURIComponent(row.billOfLading)}`} />}>
+        <DropdownMenuItem
+          render={
+            <AppLink
+              href={`/classic/${encodeURIComponent(row.billOfLading)}`}
+            />
+          }
+        >
           <PencilIcon />
           Edit
         </DropdownMenuItem>
@@ -199,7 +201,10 @@ function RowActions({
           Download
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem variant="destructive" onClick={() => onDelete(row.id)}>
+        <DropdownMenuItem
+          variant="destructive"
+          onClick={() => onDelete(row.id)}
+        >
           <Trash2Icon />
           Delete
         </DropdownMenuItem>
@@ -231,11 +236,15 @@ export function ClassicDataTable({
   const [savedViews, setSavedViews] = React.useState<SavedView[]>(() => {
     if (typeof window === "undefined") return []
 
-    const rawSavedViews = window.localStorage.getItem("classic-table-views")
+    const rawSavedViews = readBrowserStorage(
+      "localStorage",
+      "classic-table-views"
+    )
     if (!rawSavedViews) return []
 
     try {
-      return JSON.parse(rawSavedViews) as SavedView[]
+      const parsed: unknown = JSON.parse(rawSavedViews)
+      return Array.isArray(parsed) ? (parsed as SavedView[]) : []
     } catch {
       return []
     }
@@ -258,7 +267,8 @@ export function ClassicDataTable({
   }, [])
 
   React.useEffect(() => {
-    window.localStorage.setItem(
+    writeBrowserStorage(
+      "localStorage",
       "classic-table-views",
       JSON.stringify(savedViews)
     )
@@ -319,23 +329,24 @@ export function ClassicDataTable({
   const hasActiveViewOrFilters =
     currentViewName !== "All Records" || Boolean(hasActiveFilters)
   const filteredData = React.useMemo(() => {
-    return rows.filter((row) =>
-      (statusFilters.length === 0 || statusFilters.includes(row.status)) &&
-      (countryFilters.length === 0 || countryFilters.includes(row.country)) &&
-      (clientFilter === "all" || row.client === clientFilter) &&
-      (!normalizedQuery ||
-        [
-          row.billOfLading,
-          row.lastUpdated,
-          row.status,
-          row.country,
-          row.client,
-          row.invoiceNumber,
-          row.agent,
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(normalizedQuery))
+    return rows.filter(
+      (row) =>
+        (statusFilters.length === 0 || statusFilters.includes(row.status)) &&
+        (countryFilters.length === 0 || countryFilters.includes(row.country)) &&
+        (clientFilter === "all" || row.client === clientFilter) &&
+        (!normalizedQuery ||
+          [
+            row.billOfLading,
+            row.lastUpdated,
+            row.status,
+            row.country,
+            row.client,
+            row.invoiceNumber,
+            row.agent,
+          ]
+            .join(" ")
+            .toLowerCase()
+            .includes(normalizedQuery))
     )
   }, [clientFilter, countryFilters, normalizedQuery, rows, statusFilters])
 
@@ -428,34 +439,119 @@ export function ClassicDataTable({
       }
     >
       {showToolbar ? (
-      <div className="hidden shrink-0 items-center justify-between gap-2 overflow-x-auto pb-1 md:flex">
-        <div className="flex shrink-0 items-center gap-2">
-          {isSavingView ? (
-            <>
-              <Input
-                value={viewName}
-                onChange={(event) => setViewName(event.target.value)}
-                placeholder="View name"
-                className="h-8 w-44 shrink-0 text-sm"
-              />
-              <Button size="sm" onClick={saveCurrentView}>
-                Save
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setIsSavingView(false)
-                  setViewName("")
-                }}
-              >
-                Cancel
-              </Button>
-            </>
-          ) : hasActiveFilters ? (
-            <>
+        <div className="hidden shrink-0 items-center justify-between gap-2 overflow-x-auto pb-1 md:flex">
+          <div className="flex shrink-0 items-center gap-2">
+            {isSavingView ? (
+              <>
+                <Input
+                  value={viewName}
+                  onChange={(event) => setViewName(event.target.value)}
+                  placeholder="View name"
+                  className="h-8 w-44 shrink-0 text-sm"
+                />
+                <Button size="sm" onClick={saveCurrentView}>
+                  Save
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setIsSavingView(false)
+                    setViewName("")
+                  }}
+                >
+                  Cancel
+                </Button>
+              </>
+            ) : hasActiveFilters ? (
+              <>
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={<Button variant="outline" size="sm" />}
+                  >
+                    <span className="max-w-44 truncate">
+                      {currentViewName} ({filteredData.length})
+                    </span>
+                    <ChevronDownIcon data-icon="inline-end" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-72 p-0">
+                    <div className="p-3">
+                      <Input
+                        value={viewSearch}
+                        onChange={(event) => setViewSearch(event.target.value)}
+                        onKeyDown={(event) => event.stopPropagation()}
+                        placeholder="Search View"
+                      />
+                    </div>
+                    <DropdownMenuGroup>
+                      {filteredDefaultViews.map((view) => (
+                        <DropdownMenuItem
+                          key={view.name}
+                          onClick={() => applyDefaultView(view.name)}
+                          className={
+                            currentViewName === view.name
+                              ? "bg-muted"
+                              : undefined
+                          }
+                        >
+                          <span className="min-w-0 flex-1 truncate">
+                            {view.name}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {view.count === "All" ? rows.length : view.count}
+                          </span>
+                        </DropdownMenuItem>
+                      ))}
+                      {filteredSavedViews.map((view) => (
+                        <DropdownMenuItem
+                          key={view.name}
+                          onClick={() => applySavedView(view)}
+                          className={
+                            currentViewName === view.name
+                              ? "group bg-muted pr-2"
+                              : "group pr-2"
+                          }
+                        >
+                          <span className="min-w-0 flex-1 truncate">
+                            {view.name}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {rows.length}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            className="ml-1 opacity-0 group-hover:opacity-100 group-focus:opacity-100"
+                            aria-label={`Delete ${view.name}`}
+                            onClick={(event) => {
+                              event.preventDefault()
+                              event.stopPropagation()
+                              deleteSavedView(view.name)
+                            }}
+                          >
+                            <Trash2Icon />
+                          </Button>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuGroup>
+                    <DropdownMenuSeparator />
+                    <div className="bg-muted/60 p-1.5">
+                      <DropdownMenuItem onClick={() => setIsSavingView(true)}>
+                        <PlusIcon />
+                        Add Custom View
+                      </DropdownMenuItem>
+                    </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Button size="sm" onClick={() => setIsSavingView(true)}>
+                  Save View
+                </Button>
+              </>
+            ) : (
               <DropdownMenu>
-                <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
+                <DropdownMenuTrigger
+                  render={<Button variant="outline" size="sm" />}
+                >
                   <span className="max-w-44 truncate">
                     {currentViewName} ({filteredData.length})
                   </span>
@@ -479,7 +575,9 @@ export function ClassicDataTable({
                           currentViewName === view.name ? "bg-muted" : undefined
                         }
                       >
-                        <span className="min-w-0 flex-1 truncate">{view.name}</span>
+                        <span className="min-w-0 flex-1 truncate">
+                          {view.name}
+                        </span>
                         <span className="text-xs text-muted-foreground">
                           {view.count === "All" ? rows.length : view.count}
                         </span>
@@ -495,7 +593,9 @@ export function ClassicDataTable({
                             : "group pr-2"
                         }
                       >
-                        <span className="min-w-0 flex-1 truncate">{view.name}</span>
+                        <span className="min-w-0 flex-1 truncate">
+                          {view.name}
+                        </span>
                         <span className="text-xs text-muted-foreground">
                           {rows.length}
                         </span>
@@ -524,201 +624,150 @@ export function ClassicDataTable({
                   </div>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <Button size="sm" onClick={() => setIsSavingView(true)}>
-                Save View
+            )}
+          </div>
+          <div className="flex shrink-0 items-center justify-end gap-2">
+            {hasActiveViewOrFilters ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="min-w-24"
+                onClick={clearFilters}
+              >
+                Clear Filters
               </Button>
-            </>
-          ) : (
+            ) : null}
             <DropdownMenu>
-              <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
-                <span className="max-w-44 truncate">
-                  {currentViewName} ({filteredData.length})
+              <DropdownMenuTrigger
+                render={
+                  <Button variant="outline" size="sm" className="min-w-32" />
+                }
+              >
+                <span className="truncate">
+                  {statusFilters.length
+                    ? `${statusFilters.length} statuses`
+                    : "All statuses"}
                 </span>
                 <ChevronDownIcon data-icon="inline-end" />
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-72 p-0">
-                <div className="p-3">
-                  <Input
-                    value={viewSearch}
-                    onChange={(event) => setViewSearch(event.target.value)}
-                    onKeyDown={(event) => event.stopPropagation()}
-                    placeholder="Search View"
-                  />
-                </div>
+              <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuGroup>
-                  {filteredDefaultViews.map((view) => (
-                    <DropdownMenuItem
-                      key={view.name}
-                      onClick={() => applyDefaultView(view.name)}
-                      className={
-                        currentViewName === view.name ? "bg-muted" : undefined
+                  <DropdownMenuLabel>Status</DropdownMenuLabel>
+                  <DropdownMenuCheckboxItem
+                    checked={statusFilters.length === 0}
+                    onCheckedChange={() => setStatusFilters([])}
+                  >
+                    All statuses
+                  </DropdownMenuCheckboxItem>
+                  <DropdownMenuSeparator />
+                  {statusOptions.map((status) => (
+                    <DropdownMenuCheckboxItem
+                      key={status}
+                      checked={statusFilters.includes(status)}
+                      onCheckedChange={() =>
+                        toggleFilterValue(
+                          statusFilters,
+                          status,
+                          setStatusFilters
+                        )
                       }
                     >
-                      <span className="min-w-0 flex-1 truncate">{view.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {view.count === "All" ? rows.length : view.count}
-                      </span>
-                    </DropdownMenuItem>
-                  ))}
-                  {filteredSavedViews.map((view) => (
-                    <DropdownMenuItem
-                      key={view.name}
-                      onClick={() => applySavedView(view)}
-                      className={
-                        currentViewName === view.name
-                          ? "group bg-muted pr-2"
-                          : "group pr-2"
-                      }
-                    >
-                      <span className="min-w-0 flex-1 truncate">{view.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {rows.length}
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        className="ml-1 opacity-0 group-hover:opacity-100 group-focus:opacity-100"
-                        aria-label={`Delete ${view.name}`}
-                        onClick={(event) => {
-                          event.preventDefault()
-                          event.stopPropagation()
-                          deleteSavedView(view.name)
-                        }}
-                      >
-                        <Trash2Icon />
-                      </Button>
-                    </DropdownMenuItem>
+                      {status}
+                    </DropdownMenuCheckboxItem>
                   ))}
                 </DropdownMenuGroup>
-                <DropdownMenuSeparator />
-                <div className="bg-muted/60 p-1.5">
-                  <DropdownMenuItem onClick={() => setIsSavingView(true)}>
-                    <PlusIcon />
-                    Add Custom View
-                  </DropdownMenuItem>
-                </div>
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
-        </div>
-        <div className="flex shrink-0 items-center justify-end gap-2">
-          {hasActiveViewOrFilters ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className="min-w-24"
-              onClick={clearFilters}
-            >
-              Clear Filters
-            </Button>
-          ) : null}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={<Button variant="outline" size="sm" className="min-w-32" />}
-            >
-              <span className="truncate">
-                {statusFilters.length
-                  ? `${statusFilters.length} statuses`
-                  : "All statuses"}
-              </span>
-              <ChevronDownIcon data-icon="inline-end" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>Status</DropdownMenuLabel>
-                <DropdownMenuCheckboxItem
-                  checked={statusFilters.length === 0}
-                  onCheckedChange={() => setStatusFilters([])}
-                >
-                  All statuses
-                </DropdownMenuCheckboxItem>
-                <DropdownMenuSeparator />
-                {statusOptions.map((status) => (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button variant="outline" size="sm" className="min-w-32" />
+                }
+              >
+                <span className="truncate">
+                  {countryFilters.length
+                    ? `${countryFilters.length} countries`
+                    : "All countries"}
+                </span>
+                <ChevronDownIcon data-icon="inline-end" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Country</DropdownMenuLabel>
                   <DropdownMenuCheckboxItem
-                    key={status}
-                    checked={statusFilters.includes(status)}
-                    onCheckedChange={() =>
-                      toggleFilterValue(statusFilters, status, setStatusFilters)
-                    }
+                    checked={countryFilters.length === 0}
+                    onCheckedChange={() => setCountryFilters([])}
                   >
-                    {status}
+                    All countries
                   </DropdownMenuCheckboxItem>
-                ))}
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={<Button variant="outline" size="sm" className="min-w-32" />}
-            >
-              <span className="truncate">
-                {countryFilters.length
-                  ? `${countryFilters.length} countries`
-                  : "All countries"}
-              </span>
-              <ChevronDownIcon data-icon="inline-end" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-64">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>Country</DropdownMenuLabel>
-                <DropdownMenuCheckboxItem
-                  checked={countryFilters.length === 0}
-                  onCheckedChange={() => setCountryFilters([])}
-                >
-                  All countries
-                </DropdownMenuCheckboxItem>
+                  <DropdownMenuSeparator />
+                  {countryOptions.map((country) => (
+                    <DropdownMenuCheckboxItem
+                      key={country}
+                      checked={countryFilters.includes(country)}
+                      onCheckedChange={() =>
+                        toggleFilterValue(
+                          countryFilters,
+                          country,
+                          setCountryFilters
+                        )
+                      }
+                    >
+                      {country}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button variant="outline" size="sm" className="min-w-32" />
+                }
+              >
+                <span className="max-w-28 truncate">
+                  {clientFilter === "all" ? "All clients" : clientFilter}
+                </span>
+                <ChevronDownIcon data-icon="inline-end" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72">
+                <div className="p-1.5">
+                  <Input
+                    value={clientSearch}
+                    onChange={(event) => setClientSearch(event.target.value)}
+                    onKeyDown={(event) => event.stopPropagation()}
+                    placeholder="Search clients"
+                  />
+                </div>
                 <DropdownMenuSeparator />
-                {countryOptions.map((country) => (
-                  <DropdownMenuCheckboxItem
-                    key={country}
-                    checked={countryFilters.includes(country)}
-                    onCheckedChange={() =>
-                      toggleFilterValue(
-                        countryFilters,
-                        country,
-                        setCountryFilters
-                      )
-                    }
-                  >
-                    {country}
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={<Button variant="outline" size="sm" className="min-w-32" />}
-            >
-              <span className="max-w-28 truncate">
-                {clientFilter === "all" ? "All clients" : clientFilter}
-              </span>
-              <ChevronDownIcon data-icon="inline-end" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-72">
-              <div className="p-1.5">
-                <Input
-                  value={clientSearch}
-                  onChange={(event) => setClientSearch(event.target.value)}
-                  onKeyDown={(event) => event.stopPropagation()}
-                  placeholder="Search clients"
-                />
-              </div>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setClientFilter("all")}>
-                All clients
-              </DropdownMenuItem>
-              {filteredClientOptions.map((client) => (
-                <DropdownMenuItem
-                  key={client}
-                  onClick={() => setClientFilter(client)}
-                >
-                  <span className="truncate">{client}</span>
+                <DropdownMenuItem onClick={() => setClientFilter("all")}>
+                  All clients
                 </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <div className="relative h-8 w-80 shrink-0">
+                {filteredClientOptions.map((client) => (
+                  <DropdownMenuItem
+                    key={client}
+                    onClick={() => setClientFilter(client)}
+                  >
+                    <span className="truncate">{client}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <div className="relative h-8 w-80 shrink-0">
+              <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search shipments"
+                className="h-8 pl-9 text-sm focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/40"
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {showToolbar ? (
+        <div className="flex shrink-0 flex-col gap-2 md:hidden">
+          <div className="relative h-8 w-full">
             <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
@@ -727,128 +776,123 @@ export function ClassicDataTable({
               className="h-8 pl-9 text-sm focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/40"
             />
           </div>
-        </div>
-      </div>
-      ) : null}
-      {showToolbar ? (
-      <div className="flex shrink-0 flex-col gap-2 md:hidden">
-        <div className="relative h-8 w-full">
-          <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search shipments"
-            className="h-8 pl-9 text-sm focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/40"
-          />
-        </div>
-        <div className="flex shrink-0 items-center gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
-          {!isSavingView ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
-              <span className="max-w-44 truncate">
-                {currentViewName} ({filteredData.length})
-              </span>
-              <ChevronDownIcon data-icon="inline-end" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-72 p-0">
-              <div className="p-3">
+          <div className="flex shrink-0 items-center gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
+            {!isSavingView ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={<Button variant="outline" size="sm" />}
+                >
+                  <span className="max-w-44 truncate">
+                    {currentViewName} ({filteredData.length})
+                  </span>
+                  <ChevronDownIcon data-icon="inline-end" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-72 p-0">
+                  <div className="p-3">
+                    <Input
+                      value={viewSearch}
+                      onChange={(event) => setViewSearch(event.target.value)}
+                      onKeyDown={(event) => event.stopPropagation()}
+                      placeholder="Search View"
+                    />
+                  </div>
+                  <DropdownMenuGroup>
+                    {filteredDefaultViews.map((view) => (
+                      <DropdownMenuItem
+                        key={view.name}
+                        onClick={() => applyDefaultView(view.name)}
+                        className={
+                          currentViewName === view.name ? "bg-muted" : undefined
+                        }
+                      >
+                        <span className="min-w-0 flex-1 truncate">
+                          {view.name}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {view.count === "All" ? rows.length : view.count}
+                        </span>
+                      </DropdownMenuItem>
+                    ))}
+                    {filteredSavedViews.map((view) => (
+                      <DropdownMenuItem
+                        key={view.name}
+                        onClick={() => applySavedView(view)}
+                        className={
+                          currentViewName === view.name
+                            ? "group bg-muted pr-2"
+                            : "group pr-2"
+                        }
+                      >
+                        <span className="min-w-0 flex-1 truncate">
+                          {view.name}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {rows.length}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          className="ml-1 opacity-0 group-hover:opacity-100 group-focus:opacity-100"
+                          aria-label={`Delete ${view.name}`}
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            deleteSavedView(view.name)
+                          }}
+                        >
+                          <Trash2Icon />
+                        </Button>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuGroup>
+                  <DropdownMenuSeparator />
+                  <div className="bg-muted/60 p-1.5">
+                    <DropdownMenuItem onClick={() => setIsSavingView(true)}>
+                      <PlusIcon />
+                      Add Custom View
+                    </DropdownMenuItem>
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
+            {isSavingView ? (
+              <>
                 <Input
-                  value={viewSearch}
-                  onChange={(event) => setViewSearch(event.target.value)}
-                  onKeyDown={(event) => event.stopPropagation()}
-                  placeholder="Search View"
+                  value={viewName}
+                  onChange={(event) => setViewName(event.target.value)}
+                  placeholder="View name"
+                  className="h-8 w-44 shrink-0 text-sm"
                 />
-              </div>
-              <DropdownMenuGroup>
-                {filteredDefaultViews.map((view) => (
-                  <DropdownMenuItem
-                    key={view.name}
-                    onClick={() => applyDefaultView(view.name)}
-                    className={
-                      currentViewName === view.name ? "bg-muted" : undefined
-                    }
-                  >
-                    <span className="min-w-0 flex-1 truncate">{view.name}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {view.count === "All" ? rows.length : view.count}
-                    </span>
-                  </DropdownMenuItem>
-                ))}
-                {filteredSavedViews.map((view) => (
-                  <DropdownMenuItem
-                    key={view.name}
-                    onClick={() => applySavedView(view)}
-                    className={
-                      currentViewName === view.name
-                        ? "group bg-muted pr-2"
-                        : "group pr-2"
-                    }
-                  >
-                    <span className="min-w-0 flex-1 truncate">{view.name}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {rows.length}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      className="ml-1 opacity-0 group-hover:opacity-100 group-focus:opacity-100"
-                      aria-label={`Delete ${view.name}`}
-                      onClick={(event) => {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        deleteSavedView(view.name)
-                      }}
-                    >
-                      <Trash2Icon />
-                    </Button>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuGroup>
-              <DropdownMenuSeparator />
-              <div className="bg-muted/60 p-1.5">
-                <DropdownMenuItem onClick={() => setIsSavingView(true)}>
-                  <PlusIcon />
-                  Add Custom View
-                </DropdownMenuItem>
-              </div>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          ) : null}
-          {isSavingView ? (
-            <>
-              <Input
-                value={viewName}
-                onChange={(event) => setViewName(event.target.value)}
-                placeholder="View name"
-                className="h-8 w-44 shrink-0 text-sm"
-              />
-              <Button size="sm" onClick={saveCurrentView}>
-                Save
+                <Button size="sm" onClick={saveCurrentView}>
+                  Save
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setIsSavingView(false)
+                    setViewName("")
+                  }}
+                >
+                  Cancel
+                </Button>
+              </>
+            ) : hasActiveFilters ? (
+              <Button size="sm" onClick={() => setIsSavingView(true)}>
+                Save View
               </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setIsSavingView(false)
-                  setViewName("")
-                }}
-              >
-                Cancel
-              </Button>
-            </>
-          ) : hasActiveFilters ? (
-            <Button size="sm" onClick={() => setIsSavingView(true)}>
-              Save View
-            </Button>
-          ) : null}
+            ) : null}
+          </div>
         </div>
-      </div>
       ) : null}
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">
         <div className="min-h-0 flex-1 overflow-x-auto">
           <div className="flex h-full min-w-[980px] flex-col">
-            <Table containerClassName="shrink-0 overflow-visible" className="table-fixed">
+            <Table
+              containerClassName="shrink-0 overflow-visible"
+              className="table-fixed"
+            >
               <colgroup>
                 <col className={showClientColumn ? "w-[16%]" : "w-[19%]"} />
                 <col className={showClientColumn ? "w-[12%]" : "w-[13%]"} />
@@ -879,7 +923,10 @@ export function ClassicDataTable({
               </TableHeader>
             </Table>
             <div className="min-h-0 flex-1 overflow-y-auto">
-              <Table containerClassName="overflow-visible" className="table-fixed">
+              <Table
+                containerClassName="overflow-visible"
+                className="table-fixed"
+              >
                 <colgroup>
                   <col className={showClientColumn ? "w-[16%]" : "w-[19%]"} />
                   <col className={showClientColumn ? "w-[12%]" : "w-[13%]"} />
@@ -899,7 +946,7 @@ export function ClassicDataTable({
                         <TableCell className="h-12 truncate py-2 font-medium">
                           <AppLink
                             href={`/classic/${encodeURIComponent(row.billOfLading)}`}
-                            className="block truncate text-primary underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40"
+                            className="block truncate text-primary underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:ring-1 focus-visible:ring-ring/40 focus-visible:outline-none"
                           >
                             {row.billOfLading}
                           </AppLink>
@@ -911,11 +958,17 @@ export function ClassicDataTable({
                           <StatusBadge status={row.status} />
                         </TableCell>
                         <TableCell className="h-12 py-2">
-                          <CountryCell country={row.country} className="max-w-full" />
+                          <CountryCell
+                            country={row.country}
+                            className="max-w-full"
+                          />
                         </TableCell>
                         {showClientColumn ? (
                           <TableCell className="h-12 py-2">
-                            <ClientCell client={row.client} className="max-w-full" />
+                            <ClientCell
+                              client={row.client}
+                              className="max-w-full"
+                            />
                           </TableCell>
                         ) : null}
                         <TableCell className="h-12 min-w-0 py-2">
@@ -929,7 +982,7 @@ export function ClassicDataTable({
                             {row.agent !== "Assign agent" ? (
                               <AppLink
                                 href={getAgentProfileUrl(row.agent)}
-                                className="block truncate text-primary underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40"
+                                className="block truncate text-primary underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:ring-1 focus-visible:ring-ring/40 focus-visible:outline-none"
                               >
                                 {row.agent}
                               </AppLink>
@@ -974,7 +1027,9 @@ export function ClassicDataTable({
                     <TableRow>
                       <TableCell
                         colSpan={
-                          6 + (showClientColumn ? 1 : 0) + (showAgentColumn ? 1 : 0)
+                          6 +
+                          (showClientColumn ? 1 : 0) +
+                          (showAgentColumn ? 1 : 0)
                         }
                         className="h-24 text-center"
                       >

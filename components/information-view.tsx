@@ -63,6 +63,11 @@ import {
   type TrashedInformationNode,
 } from "@/lib/information-notes"
 import { cn } from "@/lib/utils"
+import {
+  readBrowserStorage,
+  readJsonBrowserStorage,
+  writeBrowserStorage,
+} from "@/lib/browser-storage"
 
 const mobileRootNotesId = "__root_notes__"
 const trashViewId = "__trash__"
@@ -297,26 +302,17 @@ function isDesktopViewport() {
 }
 
 function loadDesktopNotebookState(): DesktopNotebookState | null {
-  if (typeof window === "undefined") {
-    return null
-  }
-
-  try {
-    const stored = window.localStorage.getItem(desktopNotebookStateStorageKey)
-    const parsed = stored ? (JSON.parse(stored) as DesktopNotebookState) : null
-
-    if (!parsed || !Array.isArray(parsed.collapsedFolderIds)) {
-      return null
-    }
-
-    return {
-      activeId: parsed.activeId,
-      collapsedFolderIds: parsed.collapsedFolderIds,
-      selectionByNoteId: parsed.selectionByNoteId ?? {},
-    }
-  } catch {
-    return null
-  }
+  return readJsonBrowserStorage({
+    kind: "localStorage",
+    key: desktopNotebookStateStorageKey,
+    fallback: null,
+    validate: (value): value is DesktopNotebookState =>
+      Boolean(value) &&
+      typeof value === "object" &&
+      Array.isArray((value as DesktopNotebookState).collapsedFolderIds) &&
+      typeof (value as DesktopNotebookState).selectionByNoteId === "object" &&
+      (value as DesktopNotebookState).selectionByNoteId !== null,
+  })
 }
 
 function saveDesktopNotebookState(state: DesktopNotebookState) {
@@ -324,7 +320,8 @@ function saveDesktopNotebookState(state: DesktopNotebookState) {
     return
   }
 
-  window.localStorage.setItem(
+  writeBrowserStorage(
+    "localStorage",
     desktopNotebookStateStorageKey,
     JSON.stringify(state)
   )
@@ -1535,7 +1532,7 @@ export function InformationView() {
         window.matchMedia("(max-width: 767px)").matches
       const rememberedNoteId =
         !requestedNode && !requestedView && isMobile
-          ? window.localStorage.getItem(lastMobileNoteStorageKey)
+          ? readBrowserStorage("localStorage", lastMobileNoteStorageKey)
           : undefined
       const rememberedNote = rememberedNoteId
         ? loaded.find(
@@ -1686,7 +1683,7 @@ export function InformationView() {
       return
     }
 
-    window.localStorage.setItem(lastMobileNoteStorageKey, activeNode.id)
+    writeBrowserStorage("localStorage", lastMobileNoteStorageKey, activeNode.id)
   }, [activeNode])
   const visibleNodes = React.useMemo(() => {
     const query = noteSearch.trim().toLowerCase()

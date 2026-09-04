@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#ffffff" />
+    <title>ACTN Admin — Offline</title>
+    <style>
+      :root { color-scheme: light; font-family: system-ui, sans-serif; }
+      body { margin: 0; background: #f7fafb; color: #111827; }
+      main { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }
+      section { max-width: 420px; border: 1px solid #dbe2e8; border-radius: 16px; background: white; padding: 24px; box-shadow: 0 8px 30px rgb(15 23 42 / 8%); }
+      h1 { margin: 0 0 8px; font-size: 1.25rem; }
+      p { margin: 0 0 16px; color: #52606d; line-height: 1.5; }
+      button { border: 0; border-radius: 8px; background: #111827; color: white; padding: 10px 16px; font: inherit; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section>
+        <h1>You’re offline</h1>
+        <p>Reconnect to Wi-Fi or cellular data, then try loading ACTN Admin again.</p>
+        <button type="button" onclick="location.reload()">Try again</button>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,6 +1,11 @@
 "use client"
 
 import type { MonthEndRecord } from "@/lib/month-end-db"
+import {
+  readBrowserStorage,
+  removeBrowserStorage,
+  writeBrowserStorage,
+} from "@/lib/browser-storage"
 
 export type MonthEndReturnPoint = {
   period: string
@@ -30,7 +35,8 @@ export function saveMonthEndReturnPoint(returnPoint: MonthEndReturnPoint) {
     return
   }
 
-  window.sessionStorage.setItem(
+  writeBrowserStorage(
+    "sessionStorage",
     monthEndReturnPointKey,
     JSON.stringify(returnPoint)
   )
@@ -44,7 +50,10 @@ export function readMonthEndReturnPoint(
   }
 
   try {
-    const rawValue = window.sessionStorage.getItem(monthEndReturnPointKey)
+    const rawValue = readBrowserStorage(
+      "sessionStorage",
+      monthEndReturnPointKey
+    )
     const parsed: unknown = rawValue ? JSON.parse(rawValue) : undefined
 
     if (
@@ -80,7 +89,7 @@ export function readMonthEndReturnPoint(
       }
     }
   } catch {
-    window.sessionStorage.removeItem(monthEndReturnPointKey)
+    removeBrowserStorage("sessionStorage", monthEndReturnPointKey)
   }
 
   return undefined
@@ -91,7 +100,7 @@ export function markMonthEndReturnIntent(period?: string) {
     return
   }
 
-  window.sessionStorage.setItem(monthEndReturnIntentKey, period ?? "")
+  writeBrowserStorage("sessionStorage", monthEndReturnIntentKey, period ?? "")
 }
 
 export function consumeMonthEndReturnIntent(period?: string) {
@@ -99,13 +108,16 @@ export function consumeMonthEndReturnIntent(period?: string) {
     return false
   }
 
-  const intentPeriod = window.sessionStorage.getItem(monthEndReturnIntentKey)
+  const intentPeriod = readBrowserStorage(
+    "sessionStorage",
+    monthEndReturnIntentKey
+  )
 
   if (intentPeriod === null) {
     return false
   }
 
-  window.sessionStorage.removeItem(monthEndReturnIntentKey)
+  removeBrowserStorage("sessionStorage", monthEndReturnIntentKey)
 
   return !intentPeriod || !period || intentPeriod === period
 }
@@ -115,7 +127,13 @@ export function hasMonthEndReturnIntent(period?: string) {
     return false
   }
 
-  const intentPeriod = window.sessionStorage.getItem(monthEndReturnIntentKey)
+  const intentPeriod = readBrowserStorage(
+    "sessionStorage",
+    monthEndReturnIntentKey
+  )
 
-  return intentPeriod !== null && (!intentPeriod || !period || intentPeriod === period)
+  return (
+    intentPeriod !== null &&
+    (!intentPeriod || !period || intentPeriod === period)
+  )
 }

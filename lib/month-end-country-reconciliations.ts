@@ -1,5 +1,9 @@
 import { createPublicClient } from "@/lib/public-client"
 import { assertSupabaseConfig } from "@/lib/supabase-env"
+import {
+  readJsonBrowserStorage,
+  writeBrowserStorage,
+} from "@/lib/browser-storage"
 import { getCanonicalCountryId } from "@/lib/month-end-master-records"
 
 export type MonthEndCountryReconciliationRecord<TSnapshot = unknown> = {
@@ -97,16 +101,34 @@ function getLocalRecords() {
     return []
   }
 
-  try {
-    const stored = window.localStorage.getItem(localStorageKey)
-    const parsed = stored ? JSON.parse(stored) : []
+  return readJsonBrowserStorage({
+    kind: "localStorage",
+    key: localStorageKey,
+    fallback: [],
+    validate: isCountryReconciliationRecordArray,
+  })
+}
 
-    return Array.isArray(parsed)
-      ? (parsed as MonthEndCountryReconciliationRecord[])
-      : []
-  } catch {
-    return []
-  }
+function isCountryReconciliationRecordArray(
+  value: unknown
+): value is MonthEndCountryReconciliationRecord[] {
+  return (
+    Array.isArray(value) &&
+    value.every((record) => {
+      if (typeof record !== "object" || record === null) {
+        return false
+      }
+
+      const candidate = record as Partial<MonthEndCountryReconciliationRecord>
+      return (
+        typeof candidate.id === "string" &&
+        typeof candidate.monthEndId === "string" &&
+        typeof candidate.period === "string" &&
+        typeof candidate.countryId === "string" &&
+        "snapshot" in candidate
+      )
+    })
+  )
 }
 
 function saveLocalRecords(records: MonthEndCountryReconciliationRecord[]) {
@@ -114,7 +136,7 @@ function saveLocalRecords(records: MonthEndCountryReconciliationRecord[]) {
     return
   }
 
-  window.localStorage.setItem(localStorageKey, JSON.stringify(records))
+  writeBrowserStorage("localStorage", localStorageKey, JSON.stringify(records))
 }
 
 function saveLocalRecord(record: MonthEndCountryReconciliationRecord) {

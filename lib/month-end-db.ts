@@ -1,5 +1,9 @@
 import { createPublicClient } from "@/lib/public-client"
 import { assertSupabaseConfig } from "@/lib/supabase-env"
+import {
+  readJsonBrowserStorage,
+  writeBrowserStorage,
+} from "@/lib/browser-storage"
 
 export type MonthEndStatus = "Open" | "Closed"
 export type MonthEndValue = boolean | number | string
@@ -108,14 +112,40 @@ function getLocalRecords() {
     return []
   }
 
-  try {
-    const stored = window.localStorage.getItem(localStorageKey)
-    const parsed = stored ? JSON.parse(stored) : []
+  return readJsonBrowserStorage({
+    kind: "localStorage",
+    key: localStorageKey,
+    fallback: [],
+    validate: isMonthEndRecordArray,
+  })
+}
 
-    return Array.isArray(parsed) ? (parsed as MonthEndRecord[]) : []
-  } catch {
-    return []
-  }
+function isMonthEndRecordArray(value: unknown): value is MonthEndRecord[] {
+  return (
+    Array.isArray(value) &&
+    value.every((record) => {
+      if (typeof record !== "object" || record === null) {
+        return false
+      }
+
+      const candidate = record as Partial<MonthEndRecord>
+      return (
+        typeof candidate.id === "string" &&
+        typeof candidate.period === "string" &&
+        (candidate.status === "Open" || candidate.status === "Closed") &&
+        typeof candidate.createdAt === "string" &&
+        typeof candidate.updatedAt === "string" &&
+        typeof candidate.checked === "object" &&
+        candidate.checked !== null &&
+        Object.values(candidate.checked).every(
+          (item) =>
+            typeof item === "boolean" ||
+            typeof item === "number" ||
+            typeof item === "string"
+        )
+      )
+    })
+  )
 }
 
 function saveLocalRecords(records: MonthEndRecord[]) {
@@ -123,7 +153,7 @@ function saveLocalRecords(records: MonthEndRecord[]) {
     return
   }
 
-  window.localStorage.setItem(localStorageKey, JSON.stringify(records))
+  writeBrowserStorage("localStorage", localStorageKey, JSON.stringify(records))
 }
 
 function saveLocalRecord(record: MonthEndRecord) {

@@ -1,6 +1,10 @@
 import { createPublicClient } from "@/lib/public-client"
 import { assertSupabaseConfig } from "@/lib/supabase-env"
 import {
+  readJsonBrowserStorage,
+  writeBrowserStorage,
+} from "@/lib/browser-storage"
+import {
   mergeReportValues,
   normalizeCountryReportReference,
   type ParsedCountryReportRecord,
@@ -139,16 +143,43 @@ function getLocalRecords() {
     return []
   }
 
-  try {
-    const stored = window.localStorage.getItem(localStorageKey)
-    const parsed = stored ? JSON.parse(stored) : []
+  return readJsonBrowserStorage({
+    kind: "localStorage",
+    key: localStorageKey,
+    fallback: [],
+    validate: isCountryReportRecordArray,
+  })
+}
 
-    return Array.isArray(parsed)
-      ? (parsed as MonthEndCountryReportRecord[])
-      : []
-  } catch {
-    return []
-  }
+function isCountryReportRecordArray(
+  value: unknown
+): value is MonthEndCountryReportRecord[] {
+  return (
+    Array.isArray(value) &&
+    value.every((record) => {
+      if (typeof record !== "object" || record === null) {
+        return false
+      }
+
+      const candidate = record as Partial<MonthEndCountryReportRecord>
+      return (
+        typeof candidate.id === "string" &&
+        typeof candidate.monthEndId === "string" &&
+        typeof candidate.period === "string" &&
+        typeof candidate.countryId === "string" &&
+        typeof candidate.countryName === "string" &&
+        typeof candidate.invoiceNumber === "string" &&
+        typeof candidate.ctnNumber === "string" &&
+        typeof candidate.billOfLadingNumber === "string" &&
+        typeof candidate.reference === "string" &&
+        typeof candidate.amount === "number" &&
+        Number.isFinite(candidate.amount) &&
+        typeof candidate.sourceRowCount === "number" &&
+        Number.isFinite(candidate.sourceRowCount) &&
+        typeof candidate.parserKey === "string"
+      )
+    })
+  )
 }
 
 function saveLocalRecords(records: MonthEndCountryReportRecord[]) {
@@ -156,7 +187,7 @@ function saveLocalRecords(records: MonthEndCountryReportRecord[]) {
     return
   }
 
-  window.localStorage.setItem(localStorageKey, JSON.stringify(records))
+  writeBrowserStorage("localStorage", localStorageKey, JSON.stringify(records))
 }
 
 function replaceLocalCountryReportRecords(

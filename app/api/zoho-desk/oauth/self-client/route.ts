@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 
 import { updateLocalEnvValue } from "@/lib/local-env-file"
 import { getZohoDeskCredentials } from "@/lib/zoho-desk-env"
+import { fetchWithTimeout } from "@/lib/network"
 
 type ZohoTokenResponse = {
   refresh_token?: string
@@ -88,7 +89,9 @@ export async function POST(request: Request) {
   const credentials = getZohoDeskCredentials()
 
   if (!credentials.clientId || !credentials.clientSecret) {
-    return page("Missing ZOHO_DESK_CLIENT_ID or ZOHO_DESK_CLIENT_SECRET in .env.local.")
+    return page(
+      "Missing ZOHO_DESK_CLIENT_ID or ZOHO_DESK_CLIENT_SECRET in .env.local."
+    )
   }
 
   const tokenUrl = new URL("/oauth/v2/token", credentials.accountsUrl)
@@ -99,7 +102,7 @@ export async function POST(request: Request) {
     grant_type: "authorization_code",
   })
 
-  const tokenResponse = await fetch(tokenUrl, {
+  const tokenResponse = await fetchWithTimeout(tokenUrl, {
     method: "POST",
     body,
     cache: "no-store",

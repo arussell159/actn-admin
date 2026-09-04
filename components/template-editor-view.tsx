@@ -109,6 +109,7 @@ import {
   type ParsedCountryReportRecord,
 } from "@/lib/country-report-import"
 import { parseCsv } from "@/lib/csv"
+import { fetchWithTimeout } from "@/lib/network"
 
 const countriesModuleId = "countries"
 const tasksModuleId = "tasks"
@@ -2018,17 +2019,21 @@ const CountryMappingPanel = React.forwardRef<
     setIsSavingAiNotes(true)
 
     try {
-      const response = await fetch("/api/country-ai-notes/refine", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          countryId: country.id,
-          countryName: country.name,
-          rules: countryAiRules,
-          currentNotes: country.aiNotes ?? "",
-          editText: trimmedDraft,
-        }),
-      })
+      const response = await fetchWithTimeout(
+        "/api/country-ai-notes/refine",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            countryId: country.id,
+            countryName: country.name,
+            rules: countryAiRules,
+            currentNotes: country.aiNotes ?? "",
+            editText: trimmedDraft,
+          }),
+        },
+        45_000
+      )
       const payload = (await response.json()) as {
         notes?: string
       }
@@ -3313,23 +3318,27 @@ const ReportMappingCard = React.forwardRef<
     startAiProgress()
 
     try {
-      const response = await fetch("/api/report-mapping/ai-suggest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: abortController.signal,
-        body: JSON.stringify({
-          mappingKind,
-          fields: fields.map((field) => ({
-            id: field.id,
-            label: field.label,
-            aliases: field.aliases,
-          })),
-          sampleFields: activeSampleFields,
-          savedAssignments: draft.fields,
-          trainingExamples: draft.aiTrainingExamples ?? [],
-          preview: activePreview,
-        }),
-      })
+      const response = await fetchWithTimeout(
+        "/api/report-mapping/ai-suggest",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: abortController.signal,
+          body: JSON.stringify({
+            mappingKind,
+            fields: fields.map((field) => ({
+              id: field.id,
+              label: field.label,
+              aliases: field.aliases,
+            })),
+            sampleFields: activeSampleFields,
+            savedAssignments: draft.fields,
+            trainingExamples: draft.aiTrainingExamples ?? [],
+            preview: activePreview,
+          }),
+        },
+        45_000
+      )
       setAiProgress((current) => Math.max(current, 94))
       const payload = (await response.json()) as {
         ok?: boolean
@@ -3726,7 +3735,9 @@ function TaskFormTableRow({
           <Input
             autoFocus
             value={form.draft.label}
-            aria-label={form.mode === "add-task" ? "New task name" : "Task name"}
+            aria-label={
+              form.mode === "add-task" ? "New task name" : "Task name"
+            }
             placeholder="Task name"
             onChange={(event) =>
               onChange({
@@ -3839,8 +3850,7 @@ function TaskGroupsPanel({
             group={group}
             taskForm={
               activeTaskGroupId === group.id &&
-              (itemForm?.mode === "add-task" ||
-                itemForm?.mode === "edit-task")
+              (itemForm?.mode === "add-task" || itemForm?.mode === "edit-task")
                 ? itemForm
                 : null
             }

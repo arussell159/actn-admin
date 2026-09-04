@@ -4,10 +4,8 @@ import {
   getZohoDeskCredentials,
   missingZohoDeskCredentialNames,
 } from "@/lib/zoho-desk-env"
-import {
-  readZohoDeskCache,
-  writeZohoDeskCache,
-} from "@/lib/zoho-desk-cache"
+import { readZohoDeskCache, writeZohoDeskCache } from "@/lib/zoho-desk-cache"
+import { fetchWithTimeout } from "@/lib/network"
 
 export type ZohoDeskTicket = {
   id: string
@@ -40,8 +38,7 @@ type ZohoTokenResponse = {
 }
 
 type ZohoDeskAccessTokenResult =
-  | { ok: true; accessToken: string }
-  | { ok: false; message: string }
+  { ok: true; accessToken: string } | { ok: false; message: string }
 
 type ZohoTicketResponse = {
   data?: {
@@ -84,8 +81,8 @@ type ZohoTicketDetailResponse = {
   status?: string
   statusType?: string
   channel?: string
-    departmentId?: string
-    department?: { id?: string; name?: string }
+  departmentId?: string
+  department?: { id?: string; name?: string }
   teamId?: string
   team?: { id?: string; name?: string }
   responseDueDate?: string
@@ -158,10 +155,7 @@ type ZohoDepartmentsResponse = {
 }
 
 type ZohoDashboardMetricKey =
-  | "createdTickets"
-  | "solvedTickets"
-  | "onholdTickets"
-  | "responseCount"
+  "createdTickets" | "solvedTickets" | "onholdTickets" | "responseCount"
 type ZohoHourlyTicketData = {
   hour: string
   newTickets: number
@@ -216,7 +210,11 @@ function getCachedResponse<T>(key: string) {
   return cached.data as T
 }
 
-function setCachedResponse(key: string, data: unknown, maxAgeMs = CACHE_TTL_MS) {
+function setCachedResponse(
+  key: string,
+  data: unknown,
+  maxAgeMs = CACHE_TTL_MS
+) {
   responseCache.set(key, {
     data,
     expiresAt: Date.now() + maxAgeMs,
@@ -367,7 +365,8 @@ function dateKeyInTimeZone(
 function isToday(value: string | undefined, timeZone = reportTimeZone()) {
   return (
     Boolean(value) &&
-    dateKeyInTimeZone(value, timeZone) === dateKeyInTimeZone(new Date(), timeZone)
+    dateKeyInTimeZone(value, timeZone) ===
+      dateKeyInTimeZone(new Date(), timeZone)
   )
 }
 
@@ -391,7 +390,9 @@ function numericTicketCount(value: string | number | undefined) {
   return Number.isFinite(count) ? count : 0
 }
 
-function normalizeTicket(ticket: NonNullable<ZohoTicketResponse["data"]>[number]) {
+function normalizeTicket(
+  ticket: NonNullable<ZohoTicketResponse["data"]>[number]
+) {
   const replyTime = customerReplyTime(ticket)
 
   return {
@@ -507,7 +508,10 @@ async function fetchZohoTicketPage({
   ticketsUrl.searchParams.set("limit", String(limit))
   ticketsUrl.searchParams.set("departmentId", departmentId)
   ticketsUrl.searchParams.set("sortBy", sortBy)
-  ticketsUrl.searchParams.set("include", "contacts,assignee,departments,team,isRead")
+  ticketsUrl.searchParams.set(
+    "include",
+    "contacts,assignee,departments,team,isRead"
+  )
   if (viewId) {
     ticketsUrl.searchParams.set("viewId", viewId)
   }
@@ -515,7 +519,7 @@ async function fetchZohoTicketPage({
     ticketsUrl.searchParams.set("receivedInDays", receivedInDays)
   }
 
-  const ticketsResponse = await fetch(ticketsUrl, {
+  const ticketsResponse = await fetchWithTimeout(ticketsUrl, {
     headers: {
       Authorization: `Zoho-oauthtoken ${accessToken}`,
       orgId: credentials.orgId,
@@ -562,8 +566,15 @@ async function fetchZohoTickets({
   const requestedLimit = Math.min(Math.max(limit, 1), 400)
   const tickets: NonNullable<ZohoTicketResponse["data"]> = []
 
-  for (let from = 1; tickets.length < requestedLimit; from += ZOHO_TICKET_PAGE_LIMIT) {
-    const pageLimit = Math.min(ZOHO_TICKET_PAGE_LIMIT, requestedLimit - tickets.length)
+  for (
+    let from = 1;
+    tickets.length < requestedLimit;
+    from += ZOHO_TICKET_PAGE_LIMIT
+  ) {
+    const pageLimit = Math.min(
+      ZOHO_TICKET_PAGE_LIMIT,
+      requestedLimit - tickets.length
+    )
     const page = await fetchZohoTicketPage({
       accessToken,
       departmentId,
@@ -583,7 +594,9 @@ async function fetchZohoTickets({
     if (
       stopWhenPageIsOutsideToday &&
       page.tickets.length > 0 &&
-      page.tickets.every((ticket) => !isToday(ticket[stopWhenPageIsOutsideToday]))
+      page.tickets.every(
+        (ticket) => !isToday(ticket[stopWhenPageIsOutsideToday])
+      )
     ) {
       break
     }
@@ -625,7 +638,7 @@ async function getZohoDeskAccessToken(): Promise<ZohoDeskAccessTokenResult> {
   tokenUrl.searchParams.set("client_secret", credentials.clientSecret)
   tokenUrl.searchParams.set("grant_type", "refresh_token")
 
-  const tokenResponse = await fetch(tokenUrl, {
+  const tokenResponse = await fetchWithTimeout(tokenUrl, {
     method: "POST",
     cache: "no-store",
   })
@@ -865,7 +878,7 @@ async function getZohoDeskInfoDepartment(accessToken: string) {
   departmentsUrl.searchParams.set("isEnabled", "true")
   departmentsUrl.searchParams.set("limit", "100")
 
-  const departmentsResponse = await fetch(departmentsUrl, {
+  const departmentsResponse = await fetchWithTimeout(departmentsUrl, {
     headers: {
       Authorization: `Zoho-oauthtoken ${accessToken}`,
       orgId: credentials.orgId,
@@ -947,11 +960,14 @@ export async function getZohoDeskTicketReader(ticketId: string) {
     }
   }
 
-  const ticketUrl = new URL(`/api/v1/tickets/${ticketId}`, credentials.apiBaseUrl)
+  const ticketUrl = new URL(
+    `/api/v1/tickets/${ticketId}`,
+    credentials.apiBaseUrl
+  )
 
   ticketUrl.searchParams.set("include", "contacts,assignee,departments")
 
-  const ticketResponse = await fetch(ticketUrl, {
+  const ticketResponse = await fetchWithTimeout(ticketUrl, {
     headers: {
       Authorization: `Zoho-oauthtoken ${accessTokenResult.accessToken}`,
       orgId: credentials.orgId,
@@ -979,7 +995,8 @@ export async function getZohoDeskTicketReader(ticketId: string) {
       ok: false,
       ticket: null,
       threads: [] as ZohoDeskThread[],
-      message: "This dashboard reader is only available for Info department tickets.",
+      message:
+        "This dashboard reader is only available for Info department tickets.",
     }
   }
 
@@ -991,7 +1008,7 @@ export async function getZohoDeskTicketReader(ticketId: string) {
   threadsUrl.searchParams.set("from", "1")
   threadsUrl.searchParams.set("limit", "10")
 
-  const threadsResponse = await fetch(threadsUrl, {
+  const threadsResponse = await fetchWithTimeout(threadsUrl, {
     headers: {
       Authorization: `Zoho-oauthtoken ${accessTokenResult.accessToken}`,
       orgId: credentials.orgId,
@@ -1014,7 +1031,9 @@ export async function getZohoDeskTicketReader(ticketId: string) {
   const threadSummaries = (threadsData.data ?? [])
     .filter((thread) => thread.status !== "DRAFT")
     .sort((left, right) => {
-      const leftTime = left.createdTime ? new Date(left.createdTime).getTime() : 0
+      const leftTime = left.createdTime
+        ? new Date(left.createdTime).getTime()
+        : 0
       const rightTime = right.createdTime
         ? new Date(right.createdTime).getTime()
         : 0
@@ -1035,7 +1054,7 @@ export async function getZohoDeskTicketReader(ticketId: string) {
 
       threadUrl.searchParams.set("include", "plainText")
 
-      const threadResponse = await fetch(threadUrl, {
+      const threadResponse = await fetchWithTimeout(threadUrl, {
         headers: {
           Authorization: `Zoho-oauthtoken ${accessTokenResult.accessToken}`,
           orgId: credentials.orgId,
@@ -1108,7 +1127,7 @@ export async function listZohoDeskTicketViews() {
 
   viewsUrl.searchParams.set("module", "tickets")
 
-  const viewsResponse = await fetch(viewsUrl, {
+  const viewsResponse = await fetchWithTimeout(viewsUrl, {
     headers: {
       Authorization: `Zoho-oauthtoken ${accessTokenResult.accessToken}`,
       orgId: credentials.orgId,
@@ -1141,13 +1160,16 @@ async function getZohoDashboardMetric(
   departmentId: string
 ) {
   const credentials = getZohoDeskCredentials()
-  const metricUrl = new URL(`/api/v1/dashboards/${endpoint}`, credentials.apiBaseUrl)
+  const metricUrl = new URL(
+    `/api/v1/dashboards/${endpoint}`,
+    credentials.apiBaseUrl
+  )
 
   metricUrl.searchParams.set("duration", "TODAY")
   metricUrl.searchParams.set("groupBy", "hour")
   metricUrl.searchParams.set("departmentId", departmentId)
 
-  const response = await fetch(metricUrl, {
+  const response = await fetchWithTimeout(metricUrl, {
     headers: {
       Authorization: `Zoho-oauthtoken ${accessToken}`,
       orgId: credentials.orgId,
@@ -1176,9 +1198,8 @@ async function getZohoDeskTodayReplyCounts(
 ) {
   const excludedTeamId = excludedTicketTeamId()
   const cacheKey = `reply-counts-today:v2:${departmentId}:not-team-${excludedTeamId}`
-  const cached = getCachedResponse<ReturnType<typeof emptyHourlyReplyCounts>>(
-    cacheKey
-  )
+  const cached =
+    getCachedResponse<ReturnType<typeof emptyHourlyReplyCounts>>(cacheKey)
 
   if (cached) {
     return {
@@ -1381,7 +1402,8 @@ export async function getZohoDeskDashboardBundle(limit = 400) {
     return cached
   }
 
-  const stale = await getStaleStoredResponse<ZohoDashboardBundleResult>(cacheKey)
+  const stale =
+    await getStaleStoredResponse<ZohoDashboardBundleResult>(cacheKey)
   const cooldown = await getZohoRateLimitCooldown()
 
   if (cooldown && stale) {
@@ -1516,9 +1538,8 @@ async function refreshZohoDeskDashboardBundle(
     ""
 
   if (failedMessage) {
-    const stale = await getStaleStoredResponse<ZohoDashboardBundleResult>(
-      cacheKey
-    )
+    const stale =
+      await getStaleStoredResponse<ZohoDashboardBundleResult>(cacheKey)
 
     if (isZohoRateLimitMessage(failedMessage)) {
       await markZohoRateLimited(failedMessage)
@@ -1588,11 +1609,7 @@ async function refreshZohoDeskDashboardBundle(
     )
   }
   const tickets = openTicketData.tickets
-    .filter(
-      (ticket) =>
-        filterTicket(ticket) &&
-        ticket.status === "Open"
-    )
+    .filter((ticket) => filterTicket(ticket) && ticket.status === "Open")
     .map(normalizeTicket)
   const todayTickets = todayTicketData.tickets
     .filter((ticket) => filterTicket(ticket) && isToday(ticket.createdTime))

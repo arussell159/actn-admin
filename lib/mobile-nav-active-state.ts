@@ -1,5 +1,10 @@
 "use client"
 
+import {
+  removeBrowserStorage,
+  writeBrowserStorage,
+} from "@/lib/browser-storage"
+
 export const mobileNavActiveIndicatorStorageKey =
   "actn-mobile-nav-active-index-v1"
 export const mobileNavActiveIndicatorPendingStorageKey =
@@ -11,9 +16,13 @@ export function setMobileDashboardActiveNavState() {
     return
   }
 
-  window.sessionStorage.setItem(
+  writeBrowserStorage(
+    "sessionStorage",
     mobileNavActiveIndicatorStorageKey,
     String(mobileDashboardDockIndex)
   )
-  window.sessionStorage.removeItem(mobileNavActiveIndicatorPendingStorageKey)
+  removeBrowserStorage(
+    "sessionStorage",
+    mobileNavActiveIndicatorPendingStorageKey
+  )
 }

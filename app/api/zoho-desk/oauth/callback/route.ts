@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 
 import { updateLocalEnvValue } from "@/lib/local-env-file"
 import { getZohoDeskCredentials } from "@/lib/zoho-desk-env"
+import { fetchWithTimeout } from "@/lib/network"
 
 type ZohoTokenResponse = {
   refresh_token?: string
@@ -56,7 +57,7 @@ export async function GET(request: Request) {
   tokenUrl.searchParams.set("grant_type", "authorization_code")
   tokenUrl.searchParams.set("redirect_uri", credentials.redirectUri)
 
-  const tokenResponse = await fetch(tokenUrl, {
+  const tokenResponse = await fetchWithTimeout(tokenUrl, {
     method: "POST",
     cache: "no-store",
   })

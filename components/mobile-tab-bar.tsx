@@ -51,6 +51,11 @@ import {
   mobileNavActiveIndicatorPendingStorageKey,
   mobileNavActiveIndicatorStorageKey,
 } from "@/lib/mobile-nav-active-state"
+import {
+  readBrowserStorage,
+  removeBrowserStorage,
+  writeBrowserStorage,
+} from "@/lib/browser-storage"
 import { cn } from "@/lib/utils"
 
 const maxDockItems = 4
@@ -216,11 +221,12 @@ export function MobileTabBar() {
       }
 
       const shouldAnimateFromStoredIndex =
-        window.sessionStorage.getItem(
+        readBrowserStorage(
+          "sessionStorage",
           mobileNavActiveIndicatorPendingStorageKey
         ) === "true"
       const storedIndex = Number(
-        window.sessionStorage.getItem(mobileNavActiveIndicatorStorageKey)
+        readBrowserStorage("sessionStorage", mobileNavActiveIndicatorStorageKey)
       )
 
       return shouldAnimateFromStoredIndex &&
@@ -267,11 +273,13 @@ export function MobileTabBar() {
   React.useEffect(() => {
     const animationFrameId = window.requestAnimationFrame(() => {
       setDisplayedActiveIndicatorIndex(activeIndicatorIndex)
-      window.sessionStorage.setItem(
+      writeBrowserStorage(
+        "sessionStorage",
         mobileNavActiveIndicatorStorageKey,
         String(activeIndicatorIndex)
       )
-      window.sessionStorage.removeItem(
+      removeBrowserStorage(
+        "sessionStorage",
         mobileNavActiveIndicatorPendingStorageKey
       )
     })
@@ -321,11 +329,13 @@ export function MobileTabBar() {
   }
 
   function prepareActiveIndicatorTransition() {
-    window.sessionStorage.setItem(
+    writeBrowserStorage(
+      "sessionStorage",
       mobileNavActiveIndicatorStorageKey,
       String(displayedActiveIndicatorIndex)
     )
-    window.sessionStorage.setItem(
+    writeBrowserStorage(
+      "sessionStorage",
       mobileNavActiveIndicatorPendingStorageKey,
       "true"
     )

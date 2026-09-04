@@ -1,8 +1,7 @@
 export const authSessionStartedAtKey = "actn-admin-auth-started-at"
 export const authPasskeyEnabledKey = "actn-admin-passkey-enabled"
 export const desktopAuthSessionMaxAgeMs = 7 * 24 * 60 * 60 * 1000
-export const desktopAuthSessionMaxAgeSeconds =
-  desktopAuthSessionMaxAgeMs / 1000
+export const desktopAuthSessionMaxAgeSeconds = desktopAuthSessionMaxAgeMs / 1000
 
 export function isPhoneAuthSession() {
   return (
@@ -11,23 +10,29 @@ export function isPhoneAuthSession() {
   )
 }
 
-function getAuthSessionStorage() {
-  return isPhoneAuthSession() ? window.sessionStorage : window.localStorage
+function getAuthSessionStorageKind(): BrowserStorageKind {
+  return isPhoneAuthSession() ? "sessionStorage" : "localStorage"
 }
 
 export function markAuthSessionStarted() {
-  window.localStorage.removeItem(authSessionStartedAtKey)
-  window.sessionStorage.removeItem(authSessionStartedAtKey)
-  getAuthSessionStorage().setItem(authSessionStartedAtKey, String(Date.now()))
+  removeBrowserStorage("localStorage", authSessionStartedAtKey)
+  removeBrowserStorage("sessionStorage", authSessionStartedAtKey)
+  writeBrowserStorage(
+    getAuthSessionStorageKind(),
+    authSessionStartedAtKey,
+    String(Date.now())
+  )
 }
 
 export function clearAuthSessionStart() {
-  window.localStorage.removeItem(authSessionStartedAtKey)
-  window.sessionStorage.removeItem(authSessionStartedAtKey)
+  removeBrowserStorage("localStorage", authSessionStartedAtKey)
+  removeBrowserStorage("sessionStorage", authSessionStartedAtKey)
 }
 
 export function hasAuthSessionStarted() {
-  return Boolean(getAuthSessionStorage().getItem(authSessionStartedAtKey))
+  return Boolean(
+    readBrowserStorage(getAuthSessionStorageKind(), authSessionStartedAtKey)
+  )
 }
 
 export function hasAuthSessionExpired() {
@@ -35,10 +40,18 @@ export function hasAuthSessionExpired() {
     return !hasAuthSessionStarted()
   }
 
-  const startedAt = Number(window.localStorage.getItem(authSessionStartedAtKey))
+  const startedAt = Number(
+    readBrowserStorage("localStorage", authSessionStartedAtKey)
+  )
 
   return (
     !Number.isFinite(startedAt) ||
     Date.now() - startedAt > desktopAuthSessionMaxAgeMs
   )
 }
+import {
+  readBrowserStorage,
+  removeBrowserStorage,
+  writeBrowserStorage,
+  type BrowserStorageKind,
+} from "@/lib/browser-storage"

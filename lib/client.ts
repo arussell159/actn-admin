@@ -1,4 +1,4 @@
-import { createBrowserClient } from '@supabase/ssr'
+import { createBrowserClient } from "@supabase/ssr"
 import type { CookieOptions } from "@supabase/ssr"
 
 import {
@@ -6,6 +6,9 @@ import {
   isPhoneAuthSession,
 } from "@/lib/auth-session-timeout"
 import { assertSupabaseConfig } from "@/lib/supabase-env"
+import { fetchWithTimeout } from "@/lib/network"
+
+let browserClient: ReturnType<typeof createBrowserClient> | undefined
 
 function readBrowserCookies() {
   return document.cookie
@@ -70,27 +73,32 @@ function authCookieOptions(options: CookieOptions) {
 }
 
 export function createClient() {
+  if (browserClient) {
+    return browserClient
+  }
+
   const { supabaseUrl, supabaseKey } = assertSupabaseConfig()
 
-  return createBrowserClient(
-    supabaseUrl,
-    supabaseKey,
-    {
-      cookies: {
-        getAll() {
-          return readBrowserCookies()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            writeBrowserCookie(name, value, authCookieOptions(options))
-          })
-        },
+  browserClient = createBrowserClient(supabaseUrl, supabaseKey, {
+    cookies: {
+      getAll() {
+        return readBrowserCookies()
       },
-      auth: {
-        experimental: {
-          passkey: true,
-        },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value, options }) => {
+          writeBrowserCookie(name, value, authCookieOptions(options))
+        })
       },
-    }
-  )
+    },
+    auth: {
+      experimental: {
+        passkey: true,
+      },
+    },
+    global: {
+      fetch: (input, init) => fetchWithTimeout(input, init, 30_000),
+    },
+  })
+
+  return browserClient
 }

@@ -1,4 +1,8 @@
 import { createPublicClient } from "@/lib/public-client"
+import {
+  readUnknownJsonBrowserStorage,
+  writeBrowserStorage,
+} from "@/lib/browser-storage"
 
 const tableName = "app_settings"
 const settingId = "mobile_nav_layout"
@@ -12,7 +16,11 @@ type AppSettingRow = {
   updated_at: string
 }
 
-function cleanDockHrefs(hrefs: unknown, validHrefs: string[], maxItems: number) {
+function cleanDockHrefs(
+  hrefs: unknown,
+  validHrefs: string[],
+  maxItems: number
+) {
   if (!Array.isArray(hrefs)) {
     return undefined
   }
@@ -30,19 +38,18 @@ function readLocalDockHrefs(validHrefs: string[], maxItems: number) {
     return undefined
   }
 
-  try {
-    const stored = window.localStorage.getItem(localStorageKey)
-    const parsed = stored ? JSON.parse(stored) : undefined
+  const stored = readUnknownJsonBrowserStorage("localStorage", localStorageKey)
 
-    return cleanDockHrefs(parsed, validHrefs, maxItems)
-  } catch {
-    return undefined
-  }
+  return cleanDockHrefs(stored, validHrefs, maxItems)
 }
 
 function writeLocalDockHrefs(dockHrefs: string[]) {
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(localStorageKey, JSON.stringify(dockHrefs))
+    writeBrowserStorage(
+      "localStorage",
+      localStorageKey,
+      JSON.stringify(dockHrefs)
+    )
   }
 }
 
@@ -62,7 +69,11 @@ export async function getMobileNavDockHrefs(
       return readLocalDockHrefs(validHrefs, maxItems)
     }
 
-    const dockHrefs = cleanDockHrefs(data?.value?.dockHrefs, validHrefs, maxItems)
+    const dockHrefs = cleanDockHrefs(
+      data?.value?.dockHrefs,
+      validHrefs,
+      maxItems
+    )
 
     if (dockHrefs) {
       writeLocalDockHrefs(dockHrefs)

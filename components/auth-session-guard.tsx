@@ -22,40 +22,64 @@ export function AuthSessionGuard() {
     }
 
     let isMounted = true
+    let isChecking = false
     const supabase = createClient()
 
     async function enforceTimeout() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-
-      if (!isMounted || !session) {
+      if (isChecking || document.visibilityState === "hidden") {
         return
       }
 
-      if (!hasAuthSessionStarted() && !isPhoneAuthSession()) {
-        markAuthSessionStarted()
-        return
-      }
+      isChecking = true
 
-      if (hasAuthSessionExpired()) {
-        clearAuthSessionStart()
-        await supabase.auth.signOut()
-        router.replace("/login")
-        router.refresh()
+      try {
+        const {
+          data: { session },
+          error,
+        } = await supabase.auth.getSession()
+
+        if (!isMounted || error || !session) {
+          return
+        }
+
+        if (!hasAuthSessionStarted() && !isPhoneAuthSession()) {
+          markAuthSessionStarted()
+          return
+        }
+
+        if (hasAuthSessionExpired()) {
+          clearAuthSessionStart()
+          await supabase.auth.signOut()
+
+          if (isMounted) {
+            router.replace("/login")
+            router.refresh()
+          }
+        }
+      } catch (error) {
+        console.warn("[ACTN auth] Session refresh failed", {
+          message: error instanceof Error ? error.message : String(error),
+          online: navigator.onLine,
+        })
+      } finally {
+        isChecking = false
       }
     }
 
-    enforceTimeout()
+    void enforceTimeout()
     const intervalId = window.setInterval(enforceTimeout, 60_000)
-    window.addEventListener("focus", enforceTimeout)
-    document.addEventListener("visibilitychange", enforceTimeout)
+    const handleResume = () => void enforceTimeout()
+
+    window.addEventListener("focus", handleResume)
+    window.addEventListener("online", handleResume)
+    document.addEventListener("visibilitychange", handleResume)
 
     return () => {
       isMounted = false
       window.clearInterval(intervalId)
-      window.removeEventListener("focus", enforceTimeout)
-      document.removeEventListener("visibilitychange", enforceTimeout)
+      window.removeEventListener("focus", handleResume)
+      window.removeEventListener("online", handleResume)
+      document.removeEventListener("visibilitychange", handleResume)
     }
   }, [pathname, router])
 

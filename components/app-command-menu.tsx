@@ -177,6 +177,10 @@ export function AppCommandMenu() {
   }, [])
 
   React.useEffect(() => {
+    if (!open) {
+      return
+    }
+
     let isMounted = true
 
     async function syncNotebookItems() {
@@ -213,9 +217,13 @@ export function AppCommandMenu() {
         syncNotebookItems
       )
     }
-  }, [])
+  }, [open])
 
   React.useEffect(() => {
+    if (!open) {
+      return
+    }
+
     let isMounted = true
 
     async function syncMonthEndCountryItems() {
@@ -287,7 +295,7 @@ export function AppCommandMenu() {
         syncMonthEndCountryItems
       )
     }
-  }, [])
+  }, [open])
 
   function goToPage(href: string) {
     setOpen(false)

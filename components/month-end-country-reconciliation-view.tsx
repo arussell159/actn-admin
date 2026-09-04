@@ -125,6 +125,7 @@ import {
   readMonthEndReturnPoint,
 } from "@/lib/month-end-return-point"
 import { normalizeCsvHeader, parseCsv } from "@/lib/csv"
+import { fetchWithTimeout } from "@/lib/network"
 import { cn } from "@/lib/utils"
 
 const ANGOLA_OOT_COUNTRY_ID = "angola-oot"
@@ -1048,23 +1049,27 @@ async function parseCountryReportWithAiMapping({
   fileName: string
   mapping: ReportFieldMapping
 }) {
-  const response = await fetch("/api/report-mapping/ai-suggest", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      mappingKind: "countryReport",
-      fields: countryReportAiFields,
-      sampleFields: [],
-      savedAssignments: mapping.fields,
-      trainingExamples: mapping.aiTrainingExamples ?? [],
-      preview: {
-        fileName,
-        fileType: "Country report upload",
-        textLines: reportTextLines(csvText),
-        rows: parseCsv(csvText),
-      },
-    }),
-  })
+  const response = await fetchWithTimeout(
+    "/api/report-mapping/ai-suggest",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mappingKind: "countryReport",
+        fields: countryReportAiFields,
+        sampleFields: [],
+        savedAssignments: mapping.fields,
+        trainingExamples: mapping.aiTrainingExamples ?? [],
+        preview: {
+          fileName,
+          fileType: "Country report upload",
+          textLines: reportTextLines(csvText),
+          rows: parseCsv(csvText),
+        },
+      }),
+    },
+    45_000
+  )
 
   if (!response.ok) {
     return []
@@ -6316,7 +6321,7 @@ function FrabemarInvoicePackageStep({
   const frabemarCombinedJournalRows: JournalEntryRow[] = packageDocument
     ? [
         {
-          account: "Income",
+          account: "Accounts Payable",
           debit: totalJournalAmount,
         },
         ...frabemarReviewRows.map((row) => ({
@@ -8350,7 +8355,7 @@ export function MonthEndCountryReconciliationView({
         entries: [],
         simpleRows: [
           {
-            account: "Income",
+            account: "Accounts Payable",
             debit: totalJournalAmount,
           },
           ...countryRows,
@@ -9373,7 +9378,7 @@ export function MonthEndCountryReconciliationView({
     frabemarCountryConfig && frabemarCountryJournalValues
       ? [
           {
-            account: "Income",
+            account: "Accounts Payable",
             debit: frabemarConvertedNetInvoiceAmount,
           },
           {
