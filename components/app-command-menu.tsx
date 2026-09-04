@@ -24,6 +24,7 @@ import {
   informationUpdatedEvent,
 } from "@/lib/information-notes"
 import { getMonthEndTitle, listMonthEndRecords } from "@/lib/month-end-db"
+import { monthEndCountryHref } from "@/lib/month-end-country-route"
 import { getMonthEndTemplate } from "@/lib/month-end-template"
 
 export const openAppCommandMenuEvent = "app-command-menu:open"
@@ -240,9 +241,13 @@ export function AppCommandMenu() {
             .map((country) => ({
               id: `month-end-country-${country.id}`,
               title: country.name,
-              href: `/month-end/country?period=${encodeURIComponent(
-                openRecord.period
-              )}&country=${encodeURIComponent(country.id)}`,
+              href: monthEndCountryHref({
+                period: openRecord.period,
+                countryId: country.id,
+                row: country,
+                checked: openRecord.checked,
+                countries: template.countries,
+              }),
               section: getMonthEndTitle(openRecord),
               keywords: [
                 "month end",

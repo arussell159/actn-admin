@@ -6,15 +6,15 @@ import { RouteScrollReset } from "@/components/route-scroll-reset"
 import { ThemeProvider } from "@/components/theme-provider"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { appTitle } from "@/lib/page-title"
-import { cn } from "@/lib/utils"
 import type { Metadata } from "next"
 import type { Viewport } from "next"
-import { Inter } from "next/font/google"
+import localFont from "next/font/local"
 import * as React from "react"
 
-const inter = Inter({
-  subsets: ["latin"],
-  display: "optional",
+const inter = localFont({
+  src: "../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2",
+  display: "swap",
+  weight: "100 900",
   variable: "--font-inter",
 })
 
@@ -75,7 +75,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={cn("antialiased", "font-sans", inter.variable)}
+      className={`font-sans antialiased ${inter.variable}`}
     >
       <body>
         <ThemeProvider>

@@ -1,14 +1,29 @@
 "use client"
 
+import type { MonthEndRecord } from "@/lib/month-end-db"
+
 export type MonthEndReturnPoint = {
   period: string
   countryId?: string
   activeSection?: string
+  countrySearchQuery?: string
+  countryTableFilter?: string
   scrollY: number
 }
 
 const monthEndReturnPointKey = "month-end:return-point"
 const monthEndReturnIntentKey = "month-end:return-intent"
+let monthEndReturnRecord: MonthEndRecord | undefined
+
+export function saveMonthEndReturnRecord(record: MonthEndRecord) {
+  monthEndReturnRecord = record
+}
+
+export function readMonthEndReturnRecord(period?: string) {
+  return !period || monthEndReturnRecord?.period === period
+    ? monthEndReturnRecord
+    : undefined
+}
 
 export function saveMonthEndReturnPoint(returnPoint: MonthEndReturnPoint) {
   if (typeof window === "undefined") {
@@ -50,6 +65,16 @@ export function readMonthEndReturnPoint(
         activeSection:
           "activeSection" in parsed && typeof parsed.activeSection === "string"
             ? parsed.activeSection
+            : undefined,
+        countrySearchQuery:
+          "countrySearchQuery" in parsed &&
+          typeof parsed.countrySearchQuery === "string"
+            ? parsed.countrySearchQuery
+            : undefined,
+        countryTableFilter:
+          "countryTableFilter" in parsed &&
+          typeof parsed.countryTableFilter === "string"
+            ? parsed.countryTableFilter
             : undefined,
         scrollY: parsed.scrollY,
       }

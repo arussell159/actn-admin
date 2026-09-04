@@ -19,7 +19,10 @@ import { AppLink } from "@/components/app-link"
 import { AppSidebar } from "@/components/app-sidebar"
 import { CountryTableFilters } from "@/components/country-table-filters"
 import { HeaderActionMenuTrigger } from "@/components/header-action-menu-trigger"
-import { CountryReconciliationSkeleton } from "@/components/page-skeletons"
+import {
+  CountryJournalBodySkeleton,
+  CountryReconciliationSkeleton,
+} from "@/components/page-skeletons"
 import { SiteHeader } from "@/components/site-header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -45,6 +48,7 @@ import {
   NavigationMenuList,
 } from "@/components/ui/navigation-menu"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Table,
   TableBody,
@@ -76,6 +80,7 @@ import {
   replaceMonthEndCountryMasterRecords,
   type MonthEndMasterRecord,
 } from "@/lib/month-end-master-records"
+import { monthEndCountryHref } from "@/lib/month-end-country-route"
 import {
   getMonthEndTemplate,
   isDefaultCountryReportMapping,
@@ -4708,9 +4713,9 @@ function DashboardMatchedTable({
   records: ReturnType<typeof reconcileRecords>["matched"]
 }) {
   return (
-    <div className="h-full min-h-0 overflow-auto md:overflow-x-hidden md:overflow-y-auto">
+    <div className="h-full min-h-0 touch-pan-x overflow-auto md:overflow-x-hidden md:overflow-y-auto">
       <Table
-        className="min-w-[48rem] table-fixed text-xs md:w-full md:min-w-0"
+        className="min-w-[68rem] table-fixed text-xs md:w-full md:min-w-0"
         containerClassName="overflow-visible md:overflow-x-hidden"
       >
         <TableHeader>
@@ -4732,10 +4737,12 @@ function DashboardMatchedTable({
                         match.countryRecord.invoiceNumber ||
                         "-"}
                     </span>
-                    <span>
+                    <span className="whitespace-nowrap md:whitespace-normal">
                       BL: {match.countryRecord.billOfLadingNumber || "-"}
                     </span>
-                    <span>CTN: {match.countryRecord.ctnNumber || "-"}</span>
+                    <span className="whitespace-nowrap md:whitespace-normal">
+                      CTN: {match.countryRecord.ctnNumber || "-"}
+                    </span>
                   </div>
                 </TableCell>
                 <TableCell className="align-top">
@@ -4743,10 +4750,12 @@ function DashboardMatchedTable({
                     <span className="break-words text-foreground">
                       {match.masterRecord.salesOrderNumber || "-"}
                     </span>
-                    <span>
+                    <span className="whitespace-nowrap md:whitespace-normal">
                       BL: {match.masterRecord.billOfLadingNumber || "-"}
                     </span>
-                    <span>CTN: {match.masterRecord.ctnNumber || "-"}</span>
+                    <span className="whitespace-nowrap md:whitespace-normal">
+                      CTN: {match.masterRecord.ctnNumber || "-"}
+                    </span>
                   </div>
                 </TableCell>
                 <TableCell className="align-top">
@@ -4798,9 +4807,9 @@ function DashboardMasterTable({
   const total = records.reduce((sum, record) => sum + record.amount, 0)
 
   return (
-    <div className="h-full min-h-0 overflow-auto md:overflow-x-hidden md:overflow-y-auto">
+    <div className="h-full min-h-0 touch-pan-x overflow-auto md:overflow-x-hidden md:overflow-y-auto">
       <Table
-        className="min-w-[44rem] table-fixed text-xs md:w-full md:min-w-0"
+        className="min-w-[60rem] table-fixed text-xs md:w-full md:min-w-0"
         containerClassName="overflow-visible md:overflow-x-hidden"
       >
         <TableHeader>
@@ -4824,10 +4833,10 @@ function DashboardMasterTable({
                       {formatTransactionDate(record.transactionDate)}
                     </span>
                   </TableCell>
-                  <TableCell className="font-medium break-words">
+                  <TableCell className="font-medium whitespace-nowrap md:break-words md:whitespace-normal">
                     {record.salesOrderNumber || "-"}
                   </TableCell>
-                  <TableCell className="break-words">
+                  <TableCell className="whitespace-nowrap md:break-words md:whitespace-normal">
                     {record.billOfLadingNumber
                       ? `BL: ${record.billOfLadingNumber}`
                       : record.ctnNumber
@@ -4876,7 +4885,7 @@ function DashboardDataTableSkeleton({
     return (
       <div className="h-full min-h-0 overflow-hidden">
         <Table
-          className="min-w-[48rem] table-fixed text-xs md:w-full md:min-w-0"
+          className="min-w-[68rem] table-fixed text-xs md:w-full md:min-w-0"
           containerClassName="overflow-hidden"
         >
           <TableHeader>
@@ -4935,7 +4944,7 @@ function DashboardDataTableSkeleton({
   return (
     <div className="h-full min-h-0 overflow-hidden">
       <Table
-        className="min-w-[44rem] table-fixed text-xs md:w-full md:min-w-0"
+        className="min-w-[60rem] table-fixed text-xs md:w-full md:min-w-0"
         containerClassName="overflow-hidden"
       >
         <TableHeader>
@@ -4993,21 +5002,17 @@ function DashboardDataTableSkeleton({
 function CountryDashboardSkeleton() {
   return (
     <div className="@container/month-end flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
-      <section className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <span className="hidden md:block" aria-hidden="true" />
-      </section>
-
       <div className="grid min-h-0 gap-4">
         <section className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center">
+          <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center">
             <Skeleton className="h-9 w-full rounded-lg md:w-64" />
-            <div className="inline-flex h-9 w-fit items-center gap-1 rounded-lg bg-muted p-1">
-              <Skeleton className="h-7 w-24 rounded-md bg-background" />
-              <Skeleton className="h-7 w-16 rounded-md" />
-              <Skeleton className="h-7 w-20 rounded-md" />
+            <div className="inline-flex h-9 w-full items-center gap-1 rounded-lg bg-muted p-1 md:w-fit">
+              <Skeleton className="h-7 flex-1 rounded-md bg-background md:w-24 md:flex-none" />
+              <Skeleton className="h-7 flex-1 rounded-md md:w-16 md:flex-none" />
+              <Skeleton className="h-7 flex-1 rounded-md md:w-20 md:flex-none" />
             </div>
           </div>
-          <Skeleton className="h-9 w-28 rounded-lg" />
+          <Skeleton className="hidden h-9 w-28 rounded-lg md:block" />
         </section>
 
         <div className="min-h-0 flex-1 overflow-hidden rounded-lg border bg-background">
@@ -5152,31 +5157,29 @@ function CountryProcessBreadcrumb({
   reconciliationHref,
   journalHref,
   dashboardHref,
-  hideReconciliation = false,
 }: {
-  activeView: "reconciliation" | "journal" | "dashboard"
+  activeView?: "reconciliation" | "journal" | "dashboard"
   reconciliationHref: string
   journalHref: string
   dashboardHref: string
-  hideReconciliation?: boolean
 }) {
   const steps = [
     {
       value: "reconciliation",
-      label: "Reconciliation",
+      label: "Recon",
       href: reconciliationHref,
     },
     {
       value: "journal",
-      label: "Journal Entry",
+      label: "Journal",
       href: journalHref,
     },
     {
       value: "dashboard",
-      label: "Country Dashboard",
+      label: "Dashboard",
       href: dashboardHref,
     },
-  ].filter((step) => !hideReconciliation || step.value !== "reconciliation")
+  ]
   return (
     <NavigationMenu className="max-w-none justify-start">
       <NavigationMenuList className="min-w-0 flex-wrap justify-start gap-6">
@@ -5199,6 +5202,41 @@ function CountryProcessBreadcrumb({
         })}
       </NavigationMenuList>
     </NavigationMenu>
+  )
+}
+
+function CountryProcessMobileTabs({
+  activeView,
+  reconciliationHref,
+  journalHref,
+  dashboardHref,
+}: {
+  activeView?: "reconciliation" | "journal" | "dashboard"
+  reconciliationHref: string
+  journalHref: string
+  dashboardHref: string
+}) {
+  const router = useRouter()
+  const hrefByView = {
+    reconciliation: reconciliationHref,
+    journal: journalHref,
+    dashboard: dashboardHref,
+  }
+
+  return (
+    <Tabs
+      value={activeView}
+      onValueChange={(value) =>
+        router.push(hrefByView[value as keyof typeof hrefByView])
+      }
+      className="w-full"
+    >
+      <TabsList className="w-full">
+        <TabsTrigger value="reconciliation">Recon</TabsTrigger>
+        <TabsTrigger value="journal">Journal</TabsTrigger>
+        <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+      </TabsList>
+    </Tabs>
   )
 }
 
@@ -5260,7 +5298,8 @@ function CountryReconciliationDashboard({
     value: CountryDashboardSection
     label: string
     count: number
-    records: MonthEndMasterRecord[] | ReturnType<typeof reconcileRecords>["matched"]
+    records:
+      MonthEndMasterRecord[] | ReturnType<typeof reconcileRecords>["matched"]
   }[] = [
     {
       value: "matched",
@@ -5367,10 +5406,6 @@ function CountryReconciliationDashboard({
 
   return (
     <div className="@container/month-end flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
-      <section className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <span className="hidden md:block" aria-hidden="true" />
-      </section>
-
       <div className="grid min-h-0 gap-4">
         <CountryTableFilters
           searchQuery={searchQuery}
@@ -5380,8 +5415,9 @@ function CountryReconciliationDashboard({
           filterOptions={filteredDashboardSections.map((section) => ({
             id: section.value,
             label: section.label,
-            count: section.count,
           }))}
+          mobileFiltersFullWidth
+          hideActionOnMobile
           action={
             <Button
               type="button"
@@ -5410,7 +5446,9 @@ function CountryReconciliationDashboard({
 
         <div className="min-h-0 flex-1 overflow-hidden rounded-lg border bg-background">
           {isTableLoading ? (
-            <DashboardDataTableSkeleton section={activeDashboardSection.value} />
+            <DashboardDataTableSkeleton
+              section={activeDashboardSection.value}
+            />
           ) : activeDashboardSection.value === "matched" ? (
             <DashboardMatchedTable
               records={
@@ -5762,10 +5800,12 @@ function JournalEntryPreview({
               </div>
             ) : null}
 
-            <div className="overflow-hidden rounded-lg border">
+            <div className="touch-pan-x overflow-x-auto rounded-lg border">
               <Table
                 className={
-                  hasDetailedJournal ? "table-fixed text-xs" : undefined
+                  hasDetailedJournal
+                    ? "min-w-[60rem] table-fixed text-xs md:w-full md:min-w-0"
+                    : "min-w-[36rem] table-fixed text-xs md:w-full md:min-w-0"
                 }
               >
                 <TableHeader>
@@ -6458,6 +6498,9 @@ export function MonthEndCountryReconciliationView({
   const [countryNavigationIds, setCountryNavigationIds] = React.useState<
     string[]
   >([])
+  const [templateCountries, setTemplateCountries] = React.useState<
+    TemplateCountryRow[]
+  >(() => loadMonthEndTemplate().countries)
   const [canPasteReport, setCanPasteReport] = React.useState(false)
   const [records, setRecords] = React.useState<MonthEndMasterRecord[]>([])
   const [countryReportRecords, setCountryReportRecords] = React.useState<
@@ -6614,6 +6657,7 @@ export function MonthEndCountryReconciliationView({
         setLinkedCountries(linkedCountryRows)
         setLinkedCountryIds(linkedIds)
         setCountryNavigationIds(navigationIds)
+        setTemplateCountries(template.countries)
         setCanPasteReport(supportsPasteReport)
         setDatabaseReconciliationSnapshot(savedReconciliation?.snapshot)
         const savedCongoInvoiceValues =
@@ -8905,15 +8949,17 @@ export function MonthEndCountryReconciliationView({
       : undefined
 
   function countryPageHref(targetCountryId: string) {
-    const navigationQuery = new URLSearchParams()
-
-    if (period) {
-      navigationQuery.set("period", period)
+    if (!period) {
+      return "/month-end/country"
     }
 
-    navigationQuery.set("country", targetCountryId)
-
-    return `/month-end/country?${navigationQuery.toString()}`
+    return monthEndCountryHref({
+      period,
+      countryId: targetCountryId,
+      row: templateCountries.find((item) => item.id === targetCountryId),
+      checked: record?.checked,
+      countries: templateCountries,
+    })
   }
 
   const previousCountryHref = previousCountryId
@@ -9466,20 +9512,22 @@ export function MonthEndCountryReconciliationView({
   const frabemarPackageDocument = parseFrabemarInvoicePackage(
     record?.checked[frabemarInvoicePackageKey()]
   )
-  const shouldShowDashboardLoadingState =
-    requestedView === "dashboard" ||
-    (requestedView === "auto" && Boolean(activeCountryId))
-  const showCountryHeaderControls = hasLoaded || shouldShowDashboardLoadingState
+  const isResolvingAutomaticView = requestedView === "auto" && !hasLoaded
+  const showCountryHeaderControls = Boolean(activeCountryId)
   const backHref = period
     ? `/month-end?period=${encodeURIComponent(period)}`
     : "/month-end"
   function goBackToMonthEnd() {
     const returnPoint = readMonthEndReturnPoint(period)
-    const href = returnPoint?.period
-      ? `/month-end?period=${encodeURIComponent(returnPoint.period)}`
-      : backHref
+    const returnPeriod = returnPoint?.period ?? period
+    const href =
+      record?.status === "Open"
+        ? "/month-end"
+        : returnPeriod
+          ? `/month-end?period=${encodeURIComponent(returnPeriod)}`
+          : backHref
 
-    markMonthEndReturnIntent(returnPoint?.period ?? period)
+    markMonthEndReturnIntent(returnPeriod)
     router.replace(href, { scroll: false })
   }
 
@@ -9487,11 +9535,24 @@ export function MonthEndCountryReconciliationView({
     <Button
       type="button"
       variant="outline"
+      className="w-[4.625rem]"
       aria-label="Back to month end"
       onClick={goBackToMonthEnd}
     >
       <ArrowLeftIcon />
       Back
+    </Button>
+  ) : undefined
+  const countryHeaderMobileLeading = showCountryHeaderControls ? (
+    <Button
+      type="button"
+      variant="outline"
+      size="icon-lg"
+      className="size-10 rounded-full border-white/70 bg-background/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_4px_14px_rgba(15,23,42,0.08)] backdrop-blur-xl hover:bg-background/75 dark:border-white/15 dark:bg-background/35 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_4px_14px_rgba(0,0,0,0.22)] dark:hover:bg-background/55"
+      aria-label="Back to month end"
+      onClick={goBackToMonthEnd}
+    >
+      <ArrowLeftIcon className="size-4.5" />
     </Button>
   ) : undefined
   const showCountryNavigation =
@@ -9528,7 +9589,7 @@ export function MonthEndCountryReconciliationView({
             }
           : undefined
   const countryHeaderActions = showCountryHeaderControls ? (
-    <>
+    <div className="flex w-48 shrink-0 items-center justify-end gap-2">
       {showCountryNavigation ? (
         <CountryNavigationButtons
           onPrevious={
@@ -9562,28 +9623,28 @@ export function MonthEndCountryReconciliationView({
           </DropdownMenuContent>
         </DropdownMenu>
       ) : null}
-    </>
+    </div>
   ) : undefined
-  const showCountryProcessMenu =
-    (hasLoaded || shouldShowDashboardLoadingState) &&
-    (!shouldShowFrabemarPackage ||
-      (Boolean(frabemarPackageDocument) && isReconciliationComplete))
+  const showCountryProcessMenu = Boolean(activeCountryId)
+  const activeCountryProcessView = isResolvingAutomaticView
+    ? undefined
+    : shouldShowFrabemarPackage
+      ? "journal"
+      : resolvedView
   const countryProcessMenu = showCountryProcessMenu ? (
     <CountryProcessBreadcrumb
-      activeView={
-        shouldShowFrabemarPackage
-          ? "journal"
-          : shouldShowDashboardLoadingState
-            ? "dashboard"
-            : resolvedView
-      }
+      activeView={activeCountryProcessView}
       reconciliationHref={reconciliationReportHref}
       journalHref={journalEntryHref}
       dashboardHref={countryDashboardHref}
-      hideReconciliation={
-        shouldShowFrabemarPackage ||
-        (resolvedView === "journal" && isFrabemarChildCountry)
-      }
+    />
+  ) : undefined
+  const countryMobileProcessMenu = showCountryProcessMenu ? (
+    <CountryProcessMobileTabs
+      activeView={activeCountryProcessView}
+      reconciliationHref={reconciliationReportHref}
+      journalHref={journalEntryHref}
+      dashboardHref={countryDashboardHref}
     />
   ) : undefined
 
@@ -9602,6 +9663,7 @@ export function MonthEndCountryReconciliationView({
           <SiteHeader
             title={title}
             leadingContent={countryHeaderLeading}
+            mobileLeadingContent={countryHeaderMobileLeading}
             actions={countryHeaderActions}
             bottomContent={countryProcessMenu}
           />
@@ -9627,6 +9689,11 @@ export function MonthEndCountryReconciliationView({
             accept=".pdf,.csv,.xls,.xlsx,application/pdf,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             onFiles={uploadInvoiceFiles}
           />
+          {countryMobileProcessMenu ? (
+            <div className="overflow-x-auto px-4 pt-4 md:hidden">
+              {countryMobileProcessMenu}
+            </div>
+          ) : null}
           {uploadError || loadError ? (
             <div className="px-4 pt-4 lg:px-6">
               {uploadError ? (
@@ -9638,8 +9705,12 @@ export function MonthEndCountryReconciliationView({
             </div>
           ) : null}
           {!hasLoaded ? (
-            shouldShowDashboardLoadingState || resolvedView === "dashboard" ? (
+            resolvedView === "dashboard" ? (
               <CountryDashboardSkeleton />
+            ) : resolvedView === "journal" ? (
+              <div className="flex flex-1 px-4 py-4 lg:px-6">
+                <CountryJournalBodySkeleton />
+              </div>
             ) : (
               <CountryReconciliationSkeleton />
             )

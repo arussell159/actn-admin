@@ -4,6 +4,7 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import {
   ArrowLeftIcon,
+  ArrowRightIcon,
   Building2Icon,
   CheckIcon,
   CheckCircle2Icon,
@@ -11,11 +12,15 @@ import {
   DownloadIcon,
   FileCheck2Icon,
   FileTextIcon,
+  ListTodoIcon,
+  MessageSquareTextIcon,
   MoreHorizontalIcon,
+  NotebookPenIcon,
   Trash2Icon,
   UploadIcon,
   XIcon,
 } from "lucide-react"
+import { Bar, BarChart, Pie, PieChart, XAxis, YAxis } from "recharts"
 
 import { AppLink } from "@/components/app-link"
 import { AppSidebar } from "@/components/app-sidebar"
@@ -23,6 +28,7 @@ import { CountryTableFilters } from "@/components/country-table-filters"
 import { HeaderActionMenuTrigger } from "@/components/header-action-menu-trigger"
 import { MonthEndDashboardSkeleton } from "@/components/page-skeletons"
 import { SiteHeader } from "@/components/site-header"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ButtonGroup } from "@/components/ui/button-group"
 import {
@@ -32,6 +38,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   DropdownMenu,
@@ -48,6 +60,7 @@ import {
   NavigationMenuList,
 } from "@/components/ui/navigation-menu"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Table,
   TableBody,
@@ -56,6 +69,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Textarea } from "@/components/ui/textarea"
 import {
   exchangeRateKey,
   ensureMonthEndRecord,
@@ -66,14 +80,13 @@ import {
   type MonthEndRecord,
 } from "@/lib/month-end-db"
 import {
-  getCanonicalCountryId,
   getMasterTransactionDateCheckedValues,
-  getLinkedCountryIds,
   masterTransactionDatesKey,
   parseMappedCountryMasterCsv,
   parseCountryMasterCsv,
   saveMonthEndMasterRecords,
 } from "@/lib/month-end-master-records"
+import { monthEndCountryHref } from "@/lib/month-end-country-route"
 import { extractWorkbookRows } from "@/lib/country-report-import"
 import {
   getMonthEndTemplate,
@@ -90,10 +103,12 @@ import {
 } from "@/lib/month-end-roll-invoices"
 import {
   consumeMonthEndReturnIntent,
+  hasMonthEndReturnIntent,
+  readMonthEndReturnRecord,
   readMonthEndReturnPoint,
+  saveMonthEndReturnRecord,
   saveMonthEndReturnPoint,
 } from "@/lib/month-end-return-point"
-import { simpleMapAfricaPaths } from "@/lib/simplemap-africa-paths"
 import { cn } from "@/lib/utils"
 
 const workflowTaskIcons: Record<CloseTaskId, React.ElementType> = {
@@ -101,13 +116,9 @@ const workflowTaskIcons: Record<CloseTaskId, React.ElementType> = {
   reconcile: ClipboardCheckIcon,
   journal: Building2Icon,
 }
-const FRABEMAR_COUNTRY_ID = "frabemar"
-const FRABEMAR_CHILD_COUNTRY_IDS = [
-  "frabemar-gabon",
-  "frabemar-dr-congo",
-  "frabemar-mali",
-  "frabemar-republic-of-guinea",
-]
+
+const dashboardHandoffNoteKey = "__dashboard_handoff_note"
+const dashboardHandoffUpdatedAtKey = "__dashboard_handoff_updated_at"
 
 type MonthEndSectionId = "dashboard" | "countries" | "tasks" | string
 type CountryTableFilterId = "all" | "not-reconciled" | "missing-invoice"
@@ -129,6 +140,25 @@ function noteKey(rowId: string) {
   return `${rowId}__note`
 }
 
+function noteUpdatedAtKey(rowId: string) {
+  return `${rowId}__note_updated_at`
+}
+
+function formatNoteTimestamp(value: string) {
+  const timestamp = new Date(value)
+
+  if (Number.isNaN(timestamp.getTime())) {
+    return "Earlier"
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(timestamp)
+}
+
 function masterSourceFileNameKey(rowId: string) {
   return `${rowId}__master_source_file`
 }
@@ -139,31 +169,7 @@ function countryRecordHref(
   row?: TemplateCountryRow,
   checked?: Record<string, unknown>
 ) {
-  const canonicalCountryId = getCanonicalCountryId(countryId)
-  const isFrabemarPackage = countryId === FRABEMAR_COUNTRY_ID
-  const isFrabemarChild = FRABEMAR_CHILD_COUNTRY_IDS.includes(countryId)
-  const isFrabemarMasterJournalComplete =
-    checked?.[taskKey(FRABEMAR_COUNTRY_ID, "journal")] === true
-  const isJournalComplete =
-    checked?.[taskKey(countryId, "journal")] === true ||
-    checked?.[taskKey(canonicalCountryId, "journal")] === true ||
-    ((isFrabemarPackage || isFrabemarChild) && isFrabemarMasterJournalComplete)
-  const shouldOpenJournal =
-    !isJournalComplete &&
-    (isFrabemarPackage ||
-      (row?.invoiceRequired === true &&
-        checked?.[taskKey(row.id, "reconcile")] === true))
-  const viewQuery = isJournalComplete
-    ? "&view=dashboard"
-    : shouldOpenJournal
-      ? "&view=journal"
-      : ""
-
-  return `/month-end/country?period=${encodeURIComponent(
-    period
-  )}&country=${encodeURIComponent(
-    isFrabemarPackage ? countryId : canonicalCountryId
-  )}${viewQuery}`
+  return monthEndCountryHref({ period, countryId, row, checked })
 }
 
 function getMonthEndScrollY() {
@@ -174,8 +180,7 @@ function getMonthEndScrollY() {
   const sidebarInset = document.querySelector<HTMLElement>(
     "[data-slot='sidebar-inset']"
   )
-  const documentScrollY =
-    document.scrollingElement?.scrollTop ?? window.scrollY
+  const documentScrollY = document.scrollingElement?.scrollTop ?? window.scrollY
 
   return Math.max(window.scrollY, documentScrollY, sidebarInset?.scrollTop ?? 0)
 }
@@ -232,16 +237,68 @@ function formatExchangeRate(value: number) {
   })
 }
 
-function ProgressBar({ value }: { value: number }) {
+function MonthEndMetricCard({
+  title,
+  value,
+  icon: Icon,
+  progress,
+}: {
+  title: string
+  value: string
+  icon: React.ElementType
+  progress?: number
+}) {
   return (
-    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-      <div
-        className="h-full rounded-full bg-primary transition-all"
-        style={{ width: `${value}%` }}
-      />
-    </div>
+    <Card className="gap-3 py-4 shadow-sm">
+      <CardHeader className="flex flex-row items-center justify-between px-4">
+        <CardDescription className="font-medium text-foreground">
+          {title}
+        </CardDescription>
+        <Icon className="size-4 text-muted-foreground" />
+      </CardHeader>
+      <CardContent className="grid gap-3 px-4">
+        <div className="text-2xl font-semibold tabular-nums">{value}</div>
+        {progress !== undefined ? (
+          <div
+            className="h-2 overflow-hidden rounded-full bg-muted"
+            role="progressbar"
+            aria-label={title}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progress}
+          >
+            <div
+              className="h-full rounded-full bg-primary"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
   )
 }
+
+const workflowChartConfig = {
+  completed: {
+    label: "Completed",
+    color: "var(--chart-1)",
+  },
+} satisfies ChartConfig
+
+const countryStatusChartConfig = {
+  complete: {
+    label: "Complete",
+    color: "var(--chart-1)",
+  },
+  inProgress: {
+    label: "In Progress",
+    color: "var(--chart-2)",
+  },
+  notStarted: {
+    label: "Not Started",
+    color: "var(--muted)",
+  },
+} satisfies ChartConfig
 
 function MonthEndSectionNavigation({
   items,
@@ -288,132 +345,63 @@ function MonthEndTaskGroupsList({
   updateTask: (key: string, value: boolean) => void
   isReadOnly?: boolean
 }) {
-  return (
-    <div className="grid max-w-2xl gap-5">
-      {groups.map((group) => (
-        <Card
-          key={group.id}
-          className={cn(
-            "shadow-none",
-            group.tasks.length > 0 &&
-              group.tasks.every((task) =>
-                asBool(checked[taskKey(group.id, task.id)])
-              ) &&
-              "border-emerald-300 bg-emerald-100 text-emerald-950 dark:border-emerald-700 dark:bg-emerald-900/35 dark:text-emerald-50"
-          )}
-        >
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg">{group.title}</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-0">
-            {group.tasks.map((task, taskIndex) => {
-              const key = taskKey(group.id, task.id)
-
-              return (
-                <label
-                  key={task.id}
-                  className={cn(
-                    "flex min-h-11 items-center justify-between gap-3 px-1 py-2 text-sm font-medium hover:bg-muted/60",
-                    taskIndex > 0 && "border-t",
-                    asBool(checked[key]) &&
-                      "bg-emerald-100 hover:bg-emerald-100/80 dark:bg-emerald-900/35 dark:hover:bg-emerald-900/45"
-                  )}
-                >
-                  <span className="min-w-0 flex-1">{task.label}</span>
-                  <Checkbox
-                    checked={asBool(checked[key])}
-                    disabled={isReadOnly}
-                    onCheckedChange={(value) => updateTask(key, value === true)}
-                  />
-                </label>
-              )
-            })}
-          </CardContent>
-        </Card>
-      ))}
-    </div>
+  const columns = groups.reduce(
+    (groupColumns, group, index) => {
+      groupColumns[index % groupColumns.length].push(group)
+      return groupColumns
+    },
+    [[], []] as MonthEndTemplate["taskGroups"][]
   )
-}
 
-const monthEndRowIdByCountryCode: Record<string, string | undefined> = {
-  AO: "angola",
-  BJ: "benin",
-  BF: "burkina-faso",
-  CM: "cameroon",
-  TD: "foremost-chad",
-  CD: "frabemar-dr-congo",
-  GA: "frabemar-gabon",
-  ML: "frabemar-mali",
-  GN: "frabemar-republic-of-guinea",
-  LR: "gtms-liberia",
-  CI: "ivory-coast",
-  MG: "madagascar",
-  CG: "republic-of-congo",
-  DJ: "sck-djibouti",
-  KE: "sck-kenya",
-  SL: "sck-sierra-leone",
-  SO: "sck-somalia",
-  SD: "sck-sudan",
-  YE: "sck-yemen",
-  SN: "senegal",
-  NE: "antaser",
-  CF: "antaser",
-  GW: "antaser",
-  TG: "antaser-afrique",
-  BI: "antaser-afrique",
-  GQ: "antaser-afrique",
-  SS: "antaser-afrique",
-}
-
-function isMapCountryIncomplete(
-  countryCode: string,
-  completedByCountryId: Record<string, boolean>,
-  template: MonthEndTemplate
-) {
-  const rowId = monthEndRowIdByCountryCode[countryCode]
-  const rowIds = rowId ? getLinkedCountryIds(rowId, template.countries) : []
-
-  return rowIds.length
-    ? !rowIds.every((linkedRowId) => completedByCountryId[linkedRowId])
-    : false
-}
-
-function AfricaStatusMap({
-  completedByCountryId,
-  template,
-}: {
-  completedByCountryId: Record<string, boolean>
-  template: MonthEndTemplate
-}) {
   return (
-    <div className="absolute top-2 right-3 z-10 shrink-0">
-      <svg
-        viewBox="845 245 500 490"
-        role="img"
-        aria-label="Country completion map"
-        className="h-30 w-34"
-      >
-        {simpleMapAfricaPaths.map((country) => {
-          const isIncomplete = isMapCountryIncomplete(
-            country.code,
-            completedByCountryId,
-            template
-          )
+    <div className="grid max-w-5xl gap-5 md:grid-cols-2">
+      {columns.map((column, columnIndex) => (
+        <div key={columnIndex} className="grid content-start gap-5">
+          {column.map((group) => (
+            <Card
+              key={group.id}
+              className={cn(
+                "shadow-none",
+                group.tasks.length > 0 &&
+                  group.tasks.every((task) =>
+                    asBool(checked[taskKey(group.id, task.id)])
+                  ) &&
+                  "border-emerald-300 bg-emerald-100 text-emerald-950 dark:border-emerald-700 dark:bg-emerald-900/35 dark:text-emerald-50"
+              )}
+            >
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg">{group.title}</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-0">
+                {group.tasks.map((task, taskIndex) => {
+                  const key = taskKey(group.id, task.id)
 
-          return (
-            <path
-              key={country.code}
-              d={country.path}
-              className={
-                isIncomplete
-                  ? "fill-muted stroke-background dark:fill-muted/70 dark:stroke-background"
-                  : "fill-primary/75 stroke-background dark:fill-primary/85 dark:stroke-background"
-              }
-              strokeWidth="1.5"
-            />
-          )
-        })}
-      </svg>
+                  return (
+                    <label
+                      key={task.id}
+                      className={cn(
+                        "flex min-h-11 items-center justify-between gap-3 px-1 py-2 text-sm font-medium hover:bg-muted/60",
+                        taskIndex > 0 && "border-t",
+                        asBool(checked[key]) &&
+                          "bg-emerald-100 hover:bg-emerald-100/80 dark:bg-emerald-900/35 dark:hover:bg-emerald-900/45"
+                      )}
+                    >
+                      <span className="min-w-0 flex-1">{task.label}</span>
+                      <Checkbox
+                        checked={asBool(checked[key])}
+                        disabled={isReadOnly}
+                        onCheckedChange={(value) =>
+                          updateTask(key, value === true)
+                        }
+                      />
+                    </label>
+                  )
+                })}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ))}
     </div>
   )
 }
@@ -430,25 +418,55 @@ async function reportFileToCsvText(file: File, period?: string) {
 
 export function MonthEndView({ period }: { period?: string } = {}) {
   const router = useRouter()
+  const [initialReturnState] = React.useState(() => {
+    if (!hasMonthEndReturnIntent(period)) {
+      return {}
+    }
+
+    return {
+      point: readMonthEndReturnPoint(period),
+      record: readMonthEndReturnRecord(period),
+    }
+  })
+  const initialReturnPoint = initialReturnState.point
+  const initialReturnRecord = initialReturnState.record
   const [template, setTemplate] =
     React.useState<MonthEndTemplate>(loadMonthEndTemplate)
-  const [record, setRecord] = React.useState<MonthEndRecord | null>(null)
-  const recordRef = React.useRef<MonthEndRecord | null>(null)
+  const [record, setRecord] = React.useState<MonthEndRecord | null>(
+    initialReturnRecord ?? null
+  )
+  const recordRef = React.useRef<MonthEndRecord | null>(
+    initialReturnRecord ?? null
+  )
   const [checked, setChecked] = React.useState<Record<string, MonthEndValue>>(
-    {}
+    initialReturnRecord?.checked ?? {}
   )
   const [editingNoteRowId, setEditingNoteRowId] = React.useState<string | null>(
     null
   )
   const [noteDraft, setNoteDraft] = React.useState("")
+  const [dashboardHandoffDraft, setDashboardHandoffDraft] = React.useState("")
+  const [isSavingDashboardHandoff, setIsSavingDashboardHandoff] =
+    React.useState(false)
+  const [dashboardHandoffSaveError, setDashboardHandoffSaveError] =
+    React.useState("")
   const [editingExchangeRateRowId, setEditingExchangeRateRowId] =
     React.useState<string | null>(null)
   const [exchangeRateDraft, setExchangeRateDraft] = React.useState("")
   const [activeMonthEndSection, setActiveMonthEndSection] =
-    React.useState<MonthEndSectionId>("dashboard")
-  const [countrySearchQuery, setCountrySearchQuery] = React.useState("")
+    React.useState<MonthEndSectionId>(
+      initialReturnPoint?.activeSection ?? "dashboard"
+    )
+  const [countrySearchQuery, setCountrySearchQuery] = React.useState(
+    initialReturnPoint?.countrySearchQuery ?? ""
+  )
   const [countryTableFilter, setCountryTableFilter] =
-    React.useState<CountryTableFilterId>("all")
+    React.useState<CountryTableFilterId>(
+      initialReturnPoint?.countryTableFilter === "not-reconciled" ||
+        initialReturnPoint?.countryTableFilter === "missing-invoice"
+        ? initialReturnPoint.countryTableFilter
+        : "all"
+    )
   const [masterUploadMessage, setMasterUploadMessage] = React.useState("")
   const [isUploadingMasterSheet, setIsUploadingMasterSheet] =
     React.useState(false)
@@ -456,8 +474,11 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     React.useState(false)
   const [showReopenMonthConfirm, setShowReopenMonthConfirm] =
     React.useState(false)
-  const [hasLoaded, setHasLoaded] = React.useState(false)
+  const [hasLoaded, setHasLoaded] = React.useState(Boolean(initialReturnRecord))
   const masterUploadInputRef = React.useRef<HTMLInputElement>(null)
+  const pendingReturnScrollYRef = React.useRef<number | null>(
+    initialReturnPoint?.scrollY ?? null
+  )
 
   React.useEffect(() => {
     let isMounted = true
@@ -482,7 +503,9 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     let isMounted = true
 
     async function loadRecord() {
-      setHasLoaded(false)
+      if (!initialReturnRecord) {
+        setHasLoaded(false)
+      }
 
       try {
         const activeRecord = period
@@ -495,15 +518,29 @@ export function MonthEndView({ period }: { period?: string } = {}) {
           null
 
         if (isMounted) {
+          const returnPeriod = openRecord?.period ?? period
+          const returnPoint = consumeMonthEndReturnIntent(returnPeriod)
+            ? readMonthEndReturnPoint(returnPeriod)
+            : undefined
+
+          if (returnPoint?.activeSection) {
+            setActiveMonthEndSection(returnPoint.activeSection)
+          }
+
+          if (!initialReturnPoint) {
+            pendingReturnScrollYRef.current = returnPoint?.scrollY ?? null
+          }
           recordRef.current = openRecord
           setRecord(openRecord)
           setChecked(openRecord?.checked ?? {})
+          setDashboardHandoffDraft("")
         }
       } catch {
         if (isMounted) {
           recordRef.current = null
           setRecord(null)
           setChecked({})
+          setDashboardHandoffDraft("")
         }
       } finally {
         if (isMounted) {
@@ -517,7 +554,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     return () => {
       isMounted = false
     }
-  }, [period])
+  }, [initialReturnPoint, initialReturnRecord, period])
 
   React.useEffect(() => {
     if (
@@ -577,41 +614,24 @@ export function MonthEndView({ period }: { period?: string } = {}) {
       period: activeRecordPeriod,
       countryId,
       activeSection: activeMonthEndSection,
+      countrySearchQuery,
+      countryTableFilter,
       scrollY: getMonthEndScrollY(),
     })
+    if (recordRef.current) {
+      saveMonthEndReturnRecord(recordRef.current)
+    }
   }
 
-  React.useEffect(() => {
-    if (!hasLoaded || !activeRecordPeriod) {
+  React.useLayoutEffect(() => {
+    if (!hasLoaded || pendingReturnScrollYRef.current === null) {
       return
     }
 
-    if (!consumeMonthEndReturnIntent(activeRecordPeriod)) {
-      return
-    }
-
-    const returnPoint = readMonthEndReturnPoint(activeRecordPeriod)
-
-    if (!returnPoint) {
-      return
-    }
-
-    if (returnPoint.activeSection) {
-      setActiveMonthEndSection(returnPoint.activeSection)
-    }
-
-    const restoreDelays = [0, 50, 150, 300]
-
-    window.requestAnimationFrame(() => {
-      restoreMonthEndScrollY(returnPoint.scrollY)
-    })
-
-    restoreDelays.forEach((delay) => {
-      window.setTimeout(() => {
-        restoreMonthEndScrollY(returnPoint.scrollY)
-      }, delay)
-    })
-  }, [activeRecordPeriod, hasLoaded])
+    const scrollY = pendingReturnScrollYRef.current
+    pendingReturnScrollYRef.current = null
+    restoreMonthEndScrollY(scrollY)
+  }, [hasLoaded])
 
   const checkableRows = template.countries.filter(
     (row) => row.checkable !== false
@@ -664,52 +684,28 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     { id: "countries", label: countriesModule.tab },
     { id: "tasks", label: "Tasks" },
   ]
-  const supplementalTaskSummaries = orderedTaskGroups.map((group) => {
-    const done = group.tasks.filter((task) =>
-      asBool(checked[taskKey(group.id, task.id)])
-    ).length
-
-    return {
-      id: group.id,
-      name: group.tab,
-      done,
-      total: group.tasks.length,
-    }
-  })
-  const dashboardSupplementalTaskSummaries = supplementalTaskSummaries.filter(
-    (module) =>
-      module.id !== "other-tasks" &&
-      module.name.trim().toLowerCase() !== "other tasks"
-  )
   const grandTotalTasks = totalTasks + supplementalTaskTotal
   const totalDone = countryDone + supplementalTaskDone
   const completion = grandTotalTasks
     ? Math.round((totalDone / grandTotalTasks) * 100)
     : 0
-  const completedRows = checkableRows.filter((row) =>
-    getRequiredTasks(row).every((task) =>
-      asBool(checked[taskKey(row.id, task.id)])
-    )
-  ).length
-  const completedByCountryId = checkableRows.reduce<Record<string, boolean>>(
-    (completionById, row) => {
-      const requiredTasks = getRequiredTasks(row)
-
-      completionById[row.id] =
-        requiredTasks.length > 0 &&
-        requiredTasks.every((task) => asBool(checked[taskKey(row.id, task.id)]))
-
-      return completionById
-    },
-    {}
-  )
   const invoiceRequiredRows = checkableRows.filter((row) => row.invoiceRequired)
   const openInvoiceRows = invoiceRequiredRows.filter(
     (row) => !asBool(checked[taskKey(row.id, "invoice")])
   ).length
+  const completedInvoiceRows = invoiceRequiredRows.length - openInvoiceRows
   const reconciliationRows = checkableRows.filter((row) =>
     getRequiredTasks(row).some((task) => task.id === "reconcile")
   )
+  const completedReconciliationRows = reconciliationRows.filter((row) =>
+    asBool(checked[taskKey(row.id, "reconcile")])
+  ).length
+  const journalRows = checkableRows.filter((row) =>
+    getRequiredTasks(row).some((task) => task.id === "journal")
+  )
+  const completedJournalRows = journalRows.filter((row) =>
+    asBool(checked[taskKey(row.id, "journal")])
+  ).length
   const areAllCountryReconciliationsComplete =
     reconciliationRows.length > 0 &&
     reconciliationRows.every((row) =>
@@ -723,6 +719,116 @@ export function MonthEndView({ period }: { period?: string } = {}) {
   const isClosed = record?.status === "Closed"
   const shouldShowPreviousBackButton = Boolean(period && isClosed)
   const activePeriod = record?.period ?? period ?? ""
+  const countryProgressRows = checkableRows.map((row) => {
+    const requiredTasks = getRequiredTasks(row)
+    const done = requiredTasks.filter((task) =>
+      asBool(checked[taskKey(row.id, task.id)])
+    ).length
+    const nextTask = requiredTasks.find(
+      (task) => !asBool(checked[taskKey(row.id, task.id)])
+    )
+
+    return {
+      row,
+      done,
+      total: requiredTasks.length,
+      nextTask,
+      percentage: requiredTasks.length
+        ? Math.round((done / requiredTasks.length) * 100)
+        : 0,
+    }
+  })
+  const countryWorkQueue = countryProgressRows
+    .filter((item) => item.done < item.total)
+    .sort(
+      (first, second) =>
+        first.percentage - second.percentage ||
+        first.row.name.localeCompare(second.row.name)
+    )
+  const countryDashboardRows = [
+    ...countryWorkQueue,
+    ...countryProgressRows.filter((item) => item.done === item.total),
+  ].slice(0, 7)
+  const completedCountryCount = countryProgressRows.filter(
+    (item) => item.total > 0 && item.done === item.total
+  ).length
+  const inProgressCountryCount = countryProgressRows.filter(
+    (item) => item.done > 0 && item.done < item.total
+  ).length
+  const notStartedCountryCount = countryProgressRows.filter(
+    (item) => item.done === 0
+  ).length
+  const workflowChartData = [
+    {
+      stage: "Invoices",
+      completed: completedInvoiceRows,
+    },
+    {
+      stage: "Reconciliations",
+      completed: completedReconciliationRows,
+    },
+    {
+      stage: "Journals",
+      completed: completedJournalRows,
+    },
+    {
+      stage: "Shared Tasks",
+      completed: supplementalTaskDone,
+    },
+  ]
+  const countryStatusChartData = [
+    {
+      status: "complete",
+      label: "Complete",
+      value: completedCountryCount,
+      fill: "var(--color-complete)",
+    },
+    {
+      status: "inProgress",
+      label: "In Progress",
+      value: inProgressCountryCount,
+      fill: "var(--color-inProgress)",
+    },
+    {
+      status: "notStarted",
+      label: "Not Started",
+      value: notStartedCountryCount,
+      fill: "var(--color-notStarted)",
+    },
+  ]
+  const savedDashboardHandoffNote = asString(checked[dashboardHandoffNoteKey])
+  const dashboardCountryNotes = checkableRows
+    .map((row) => ({
+      id: row.id,
+      label: row.name,
+      note: asString(checked[noteKey(row.id)]),
+      updatedAt:
+        asString(checked[noteUpdatedAtKey(row.id)]) || record?.updatedAt || "",
+      row,
+      isHandoff: false,
+    }))
+    .filter((item) => Boolean(item.note.trim()))
+  const dashboardNotes = [
+    ...(savedDashboardHandoffNote
+      ? [
+          {
+            id: "handoff",
+            label: "Handoff",
+            note: savedDashboardHandoffNote,
+            updatedAt:
+              asString(checked[dashboardHandoffUpdatedAtKey]) ||
+              record?.updatedAt ||
+              "",
+            row: undefined,
+            isHandoff: true,
+          },
+        ]
+      : []),
+    ...dashboardCountryNotes,
+  ].sort(
+    (first, second) =>
+      new Date(second.updatedAt).getTime() - new Date(first.updatedAt).getTime()
+  )
   const countrySearchTerm = countrySearchQuery.trim().toLowerCase()
 
   function rowMatchesCountryTableFilter(row: TemplateCountryRow) {
@@ -805,8 +911,10 @@ export function MonthEndView({ period }: { period?: string } = {}) {
 
       if (cleanNote) {
         nextChecked[noteKey(rowId)] = cleanNote
+        nextChecked[noteUpdatedAtKey(rowId)] = new Date().toISOString()
       } else {
         delete nextChecked[noteKey(rowId)]
+        delete nextChecked[noteUpdatedAtKey(rowId)]
       }
 
       return nextChecked
@@ -823,6 +931,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
       const nextChecked = { ...current }
 
       delete nextChecked[noteKey(rowId)]
+      delete nextChecked[noteUpdatedAtKey(rowId)]
 
       return nextChecked
     })
@@ -830,6 +939,52 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     if (editingNoteRowId === rowId) {
       cancelEditNote()
     }
+  }
+
+  async function saveDashboardHandoffNote() {
+    const activeRecord = recordRef.current
+
+    if (isClosed || !activeRecord) {
+      return
+    }
+
+    const cleanNote = dashboardHandoffDraft.trim()
+
+    if (!cleanNote) {
+      return
+    }
+
+    const nextChecked = {
+      ...checked,
+      [dashboardHandoffNoteKey]: cleanNote,
+      [dashboardHandoffUpdatedAtKey]: new Date().toISOString(),
+    }
+    const updatedRecord: MonthEndRecord = {
+      ...activeRecord,
+      checked: nextChecked,
+      updatedAt: new Date().toISOString(),
+    }
+
+    setIsSavingDashboardHandoff(true)
+    setDashboardHandoffSaveError("")
+
+    try {
+      await saveMonthEndRecord(updatedRecord)
+      recordRef.current = updatedRecord
+      setRecord(updatedRecord)
+      setChecked(nextChecked)
+      setDashboardHandoffDraft("")
+      window.dispatchEvent(new Event("month-end:records-updated"))
+    } catch {
+      setDashboardHandoffSaveError("Could not save the handoff note.")
+    } finally {
+      setIsSavingDashboardHandoff(false)
+    }
+  }
+
+  function showCountryWork(filter: CountryTableFilterId = "all") {
+    setCountryTableFilter(filter)
+    setActiveMonthEndSection("countries")
   }
 
   function startEditExchangeRate(rowId: string) {
@@ -1186,9 +1341,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
               titleContent={<Skeleton className="h-5 w-32 rounded-md" />}
             />
             <div className="@container/month-end flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
-              <section className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <span className="hidden md:block" aria-hidden="true" />
-              </section>
+              <Skeleton className="h-8 w-full rounded-lg md:hidden" />
               <MonthEndDashboardSkeleton />
             </div>
           </main>
@@ -1223,8 +1376,8 @@ export function MonthEndView({ period }: { period?: string } = {}) {
             }
           />
           <div className="@container/month-end flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
-            <section className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              {shouldShowPreviousBackButton ? (
+            {shouldShowPreviousBackButton ? (
+              <section className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <Button
                   variant="outline"
                   size="icon-sm"
@@ -1234,10 +1387,8 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                 >
                   <ArrowLeftIcon />
                 </Button>
-              ) : (
-                <span className="hidden md:block" aria-hidden="true" />
-              )}
-            </section>
+              </section>
+            ) : null}
 
             {masterUploadMessage ? (
               <p className="text-sm text-muted-foreground">
@@ -1245,146 +1396,322 @@ export function MonthEndView({ period }: { period?: string } = {}) {
               </p>
             ) : null}
 
+            <Tabs
+              value={activeMonthEndSection}
+              onValueChange={setActiveMonthEndSection}
+              className="md:hidden"
+            >
+              <TabsList className="w-full">
+                {monthEndSectionItems.map((item) => (
+                  <TabsTrigger key={item.id} value={item.id}>
+                    {item.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+
             {activeMonthEndSection === "dashboard" ? (
-              <>
-                <section className="rounded-lg border bg-linear-to-t from-primary/5 to-card p-3 shadow-sm md:hidden dark:bg-card">
-                  <div className="grid grid-cols-3 divide-x">
-                    <div className="pr-3">
-                      <div className="text-[11px] text-muted-foreground">
-                        Progress
-                      </div>
-                      <div className="mt-1 text-lg font-semibold">
-                        {completion}%
-                      </div>
-                    </div>
-                    <div className="px-3">
-                      <div className="text-[11px] text-muted-foreground">
-                        Countries
-                      </div>
-                      <div className="mt-1 text-lg font-semibold">
-                        {completedRows}/{checkableRows.length}
-                      </div>
-                    </div>
-                    <div className="pl-3">
-                      <div className="text-[11px] text-muted-foreground">
-                        Invoices
-                      </div>
-                      <div className="mt-1 text-lg font-semibold">
-                        {openInvoiceRows}/{invoiceRequiredRows.length}
-                      </div>
-                    </div>
-                  </div>
-                  <details className="group mt-3 border-t pt-2">
-                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium marker:hidden">
-                      <span>Settings</span>
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {supplementalTaskDone}/{supplementalTaskTotal}
-                      </span>
-                    </summary>
-                    <div className="mt-2 grid gap-1.5">
-                      {supplementalTaskSummaries.length ? (
-                        supplementalTaskSummaries.map((module) => (
-                          <div
-                            key={module.id}
-                            className="flex items-center justify-between gap-3 text-xs"
-                          >
-                            <span className="min-w-0 truncate">
-                              {module.name}
-                            </span>
-                            <span className="shrink-0 font-medium text-muted-foreground tabular-nums">
-                              {module.done}/{module.total}
-                            </span>
-                          </div>
-                        ))
-                      ) : (
-                        <span className="text-xs text-muted-foreground">
-                          No tasks
-                        </span>
-                      )}
-                    </div>
-                  </details>
+              <div className="grid gap-6">
+                <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  <MonthEndMetricCard
+                    title="Overall Progress"
+                    value={`${completion}%`}
+                    icon={CheckCircle2Icon}
+                    progress={completion}
+                  />
+                  <MonthEndMetricCard
+                    title="Countries Complete"
+                    value={`${completedCountryCount}/${checkableRows.length}`}
+                    icon={Building2Icon}
+                  />
+                  <MonthEndMetricCard
+                    title="Invoices Complete"
+                    value={`${completedInvoiceRows}/${invoiceRequiredRows.length}`}
+                    icon={FileTextIcon}
+                  />
+                  <MonthEndMetricCard
+                    title="Shared Tasks"
+                    value={`${supplementalTaskDone}/${supplementalTaskTotal}`}
+                    icon={ListTodoIcon}
+                  />
                 </section>
 
-                <section className="hidden gap-4 md:grid md:grid-cols-4">
-                  <Card className="rounded-lg bg-linear-to-t from-primary/5 to-card shadow-sm dark:bg-card">
-                    <CardHeader className="gap-2">
-                      <CardDescription>Progress</CardDescription>
-                      <CardTitle className="flex items-end gap-2 text-3xl">
-                        {completion}%
-                      </CardTitle>
+                <section className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(19rem,0.75fr)]">
+                  <Card className="shadow-sm">
+                    <CardHeader>
+                      <CardTitle>Workflow Progress</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <ProgressBar value={completion} />
+                      <ChartContainer
+                        config={workflowChartConfig}
+                        className="h-[280px] w-full"
+                      >
+                        <BarChart
+                          accessibilityLayer
+                          data={workflowChartData}
+                          layout="vertical"
+                          margin={{ left: 12, right: 8 }}
+                        >
+                          <XAxis type="number" dataKey="completed" hide />
+                          <YAxis
+                            dataKey="stage"
+                            type="category"
+                            axisLine={false}
+                            tickLine={false}
+                            tickMargin={10}
+                            width={112}
+                          />
+                          <ChartTooltip
+                            cursor={false}
+                            content={<ChartTooltipContent hideLabel />}
+                          />
+                          <Bar
+                            dataKey="completed"
+                            fill="var(--color-completed)"
+                            radius={5}
+                          />
+                        </BarChart>
+                      </ChartContainer>
                     </CardContent>
                   </Card>
-                  <Card className="relative overflow-visible rounded-lg bg-linear-to-t from-primary/5 to-card shadow-sm dark:bg-card">
-                    <CardHeader className="!flex flex-row flex-nowrap items-start justify-between gap-3 pr-28">
-                      <div className="min-w-0 shrink-0">
-                        <CardDescription>Countries</CardDescription>
-                        <CardTitle className="flex items-center gap-2 text-3xl whitespace-nowrap">
-                          <Building2Icon className="size-5 text-muted-foreground" />
-                          {completedRows}/{checkableRows.length}
-                        </CardTitle>
-                      </div>
-                      <AfricaStatusMap
-                        completedByCountryId={completedByCountryId}
-                        template={template}
-                      />
-                    </CardHeader>
-                  </Card>
-                  <Card className="rounded-lg bg-linear-to-t from-primary/5 to-card shadow-sm dark:bg-card">
-                    <CardHeader>
-                      <CardDescription>Waiting on Invoice</CardDescription>
-                      <CardTitle className="flex items-center gap-2 text-3xl">
-                        <FileTextIcon className="size-5 text-muted-foreground" />
-                        {openInvoiceRows}/{invoiceRequiredRows.length}
-                      </CardTitle>
-                    </CardHeader>
-                  </Card>
-                  <Card className="rounded-lg bg-linear-to-t from-primary/5 to-card shadow-sm dark:bg-card">
-                    <CardHeader>
-                      <div className="grid gap-2">
-                        {dashboardSupplementalTaskSummaries.length ? (
-                          dashboardSupplementalTaskSummaries.map((module) => {
-                            const isComplete =
-                              module.total > 0 && module.done === module.total
 
-                            return (
-                              <div
-                                key={module.id}
-                                className={
-                                  "flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm " +
-                                  (isComplete
-                                    ? "bg-emerald-100 text-emerald-900 ring-1 ring-emerald-300/70 dark:bg-emerald-900/35 dark:text-emerald-100 dark:ring-emerald-600/50"
-                                    : "text-foreground")
-                                }
-                              >
-                                <span className="min-w-0 truncate font-medium">
-                                  {module.name}
-                                </span>
-                                <span
-                                  className={
-                                    "shrink-0 font-semibold tabular-nums " +
-                                    (isComplete
-                                      ? "text-emerald-900 dark:text-emerald-100"
-                                      : "text-muted-foreground")
-                                  }
-                                >
-                                  {module.done}/{module.total}
-                                </span>
-                              </div>
-                            )
-                          })
-                        ) : (
-                          <span className="text-sm text-muted-foreground">
-                            No tasks
-                          </span>
-                        )}
-                      </div>
+                  <Card className="shadow-sm">
+                    <CardHeader>
+                      <CardTitle>Country Status</CardTitle>
                     </CardHeader>
+                    <CardContent className="grid gap-4">
+                      <ChartContainer
+                        config={countryStatusChartConfig}
+                        className="mx-auto h-[190px] w-full max-w-[260px]"
+                      >
+                        <PieChart accessibilityLayer>
+                          <ChartTooltip
+                            cursor={false}
+                            content={<ChartTooltipContent hideLabel />}
+                          />
+                          <Pie
+                            data={countryStatusChartData}
+                            dataKey="value"
+                            nameKey="status"
+                          />
+                        </PieChart>
+                      </ChartContainer>
+                      <div className="grid gap-2 text-sm">
+                        {countryStatusChartData.map((item) => (
+                          <div
+                            key={item.status}
+                            className="flex items-center justify-between gap-3"
+                          >
+                            <span className="flex items-center gap-2 text-muted-foreground">
+                              <span
+                                className="size-2.5 rounded-full"
+                                style={{ backgroundColor: item.fill }}
+                              />
+                              {item.label}
+                            </span>
+                            <span className="font-medium tabular-nums">
+                              {item.value}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
                   </Card>
                 </section>
-              </>
+
+                <section className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(20rem,0.75fr)]">
+                  <Card className="gap-0 overflow-hidden py-0 shadow-sm">
+                    <CardHeader className="flex flex-row items-center justify-between gap-3 border-b py-5">
+                      <div>
+                        <CardTitle>Country Progress</CardTitle>
+                        <CardDescription>
+                          Completed tasks and the next required step for each
+                          country
+                        </CardDescription>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => showCountryWork()}
+                      >
+                        View all
+                        <ArrowRightIcon data-icon="inline-end" />
+                      </Button>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <Table>
+                        <TableHeader className="bg-muted/50">
+                          <TableRow>
+                            <TableHead className="pl-6">Country</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="hidden sm:table-cell">
+                              Next Step
+                            </TableHead>
+                            <TableHead className="pr-6 text-right">
+                              Progress
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {countryDashboardRows.map((item) => {
+                            const isComplete =
+                              item.total > 0 && item.done === item.total
+                            const isInProgress = item.done > 0 && !isComplete
+
+                            return (
+                              <TableRow key={item.row.id}>
+                                <TableCell className="pl-6 font-medium">
+                                  <AppLink
+                                    className="hover:underline"
+                                    href={countryRecordHref(
+                                      activePeriod,
+                                      item.row.id,
+                                      item.row,
+                                      checked
+                                    )}
+                                    onClick={() =>
+                                      saveCurrentMonthEndReturnPoint(
+                                        item.row.id
+                                      )
+                                    }
+                                  >
+                                    {item.row.name}
+                                  </AppLink>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge
+                                    variant={
+                                      isComplete ? "secondary" : "outline"
+                                    }
+                                  >
+                                    {isComplete
+                                      ? "Complete"
+                                      : isInProgress
+                                        ? "In progress"
+                                        : "Not started"}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="hidden max-w-52 truncate text-muted-foreground sm:table-cell">
+                                  {item.nextTask?.label ?? "—"}
+                                </TableCell>
+                                <TableCell className="pr-6 text-right tabular-nums">
+                                  {item.done}/{item.total}
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="shadow-sm">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <NotebookPenIcon className="size-4" />
+                        Handoff Notes
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="grid gap-4">
+                      <Textarea
+                        value={dashboardHandoffDraft}
+                        disabled={isClosed}
+                        rows={5}
+                        className="min-h-28 resize-y"
+                        placeholder="Add an update or blocker..."
+                        onChange={(event) =>
+                          setDashboardHandoffDraft(event.target.value)
+                        }
+                        onKeyDown={(event) => {
+                          if (
+                            (event.ctrlKey || event.metaKey) &&
+                            event.key === "Enter"
+                          ) {
+                            event.preventDefault()
+                            saveDashboardHandoffNote()
+                          }
+                        }}
+                      />
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs text-muted-foreground">
+                          {isClosed ? "Read only" : "Ctrl + Enter to save"}
+                        </span>
+                        <Button
+                          size="sm"
+                          disabled={
+                            isClosed ||
+                            isSavingDashboardHandoff ||
+                            !dashboardHandoffDraft.trim()
+                          }
+                          onClick={saveDashboardHandoffNote}
+                        >
+                          {isSavingDashboardHandoff ? "Saving..." : "Save"}
+                        </Button>
+                      </div>
+                      {dashboardHandoffSaveError ? (
+                        <p className="text-xs text-destructive">
+                          {dashboardHandoffSaveError}
+                        </p>
+                      ) : null}
+                      {dashboardNotes.length ? (
+                        <div className="grid gap-4">
+                          {dashboardNotes.map((item) => (
+                            <div key={item.id} className="flex gap-3">
+                              <MessageSquareTextIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                                  {item.row ? (
+                                    <AppLink
+                                      className="text-sm font-medium hover:underline"
+                                      href={countryRecordHref(
+                                        activePeriod,
+                                        item.row.id,
+                                        item.row,
+                                        checked
+                                      )}
+                                      onClick={() =>
+                                        saveCurrentMonthEndReturnPoint(
+                                          item.row.id
+                                        )
+                                      }
+                                    >
+                                      {item.label}
+                                    </AppLink>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="text-sm font-medium hover:underline disabled:no-underline"
+                                      disabled={isClosed}
+                                      onClick={() =>
+                                        setDashboardHandoffDraft(item.note)
+                                      }
+                                    >
+                                      {item.label}
+                                    </button>
+                                  )}
+                                  <time
+                                    className="text-xs text-muted-foreground"
+                                    dateTime={item.updatedAt}
+                                  >
+                                    {formatNoteTimestamp(item.updatedAt)}
+                                  </time>
+                                </div>
+                                <p className="mt-1 text-sm whitespace-pre-wrap text-muted-foreground">
+                                  {item.note}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          No notes yet.
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                </section>
+              </div>
             ) : null}
 
             {activeMonthEndSection === "countries" ? (
@@ -1395,6 +1722,8 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                   searchAriaLabel="Search countries"
                   selectedFilter={countryTableFilter}
                   filterOptions={countryTableFilterOptions}
+                  mobileFiltersFullWidth
+                  hideActionOnMobile
                   action={
                     <Button
                       size="lg"

@@ -26,7 +26,9 @@ export default async function Page({
       ? "reconciliation"
       : requestedView === "journal" || requestedView === "invoice"
         ? "journal"
-        : "dashboard"
+        : requestedView === "dashboard"
+          ? "dashboard"
+          : undefined
 
   return (
     <Suspense

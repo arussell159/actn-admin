@@ -57,9 +57,7 @@ export function AppRouteSkeleton({
           <div
             className={[
               "relative z-10 hidden h-(--header-height) w-full items-center gap-3 px-4 md:grid lg:px-6",
-              actions
-                ? "grid-cols-[minmax(0,1fr)_auto]"
-                : "grid-cols-1",
+              actions ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-1",
             ].join(" ")}
           >
             <h1 className="min-w-0 truncate text-base font-medium">
@@ -90,8 +88,8 @@ export function AppRouteSkeleton({
               </div>
             </div>
           ) : null}
-          <div className="relative z-10 grid w-full grid-cols-[2.25rem_1fr_2.25rem] items-center px-4 md:hidden">
-            <span aria-hidden="true" />
+          <div className="relative z-10 grid w-full grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-center px-4 md:hidden">
+            <Skeleton className="size-10 rounded-full" />
             <h1 className="truncate text-center text-base font-semibold">
               {heading}
             </h1>
@@ -118,7 +116,7 @@ export function SkeletonActionButton({ label }: { label: string }) {
 export function CountryDashboardRouteSkeleton({
   countryId,
   periodTitle,
-  activeView = "dashboard",
+  activeView,
 }: {
   countryId?: string
   periodTitle?: string
@@ -156,19 +154,19 @@ export function CountryDashboardRouteSkeleton({
         <header className="sticky top-0 z-40 flex h-[calc(2.5rem+env(safe-area-inset-top,0px))] shrink-0 items-center gap-2 bg-transparent pt-[env(safe-area-inset-top,0px)] md:relative md:z-auto md:h-auto md:min-h-(--header-height) md:flex-col md:items-stretch md:bg-background md:pt-0">
           <div className="relative z-10 hidden h-(--header-height) w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 md:grid lg:px-6">
             <div className="flex min-w-8 items-center gap-2">
-              <div className="inline-flex h-9 items-center gap-2 rounded-lg border bg-background px-3 text-sm font-medium">
+              <div className="inline-flex h-8 w-[4.625rem] items-center justify-center gap-1.5 rounded-lg border bg-background px-2.5 text-sm font-medium">
                 <Skeleton className="size-4 rounded-sm" />
                 <span>Back</span>
               </div>
               <div className="mx-1 h-4 w-px bg-border" />
             </div>
             <h1 className="min-w-0 truncate text-base font-medium">{title}</h1>
-            <div className="flex shrink-0 items-center gap-1">
-              <div className="inline-flex h-9 items-center gap-1 rounded-lg border bg-background px-3 text-sm text-muted-foreground">
+            <div className="flex w-48 shrink-0 items-center justify-end gap-1">
+              <div className="inline-flex h-8 items-center gap-1.5 rounded-lg border bg-background px-2.5 text-sm text-muted-foreground">
                 <Skeleton className="size-4 rounded-sm" />
                 <span>Previous</span>
               </div>
-              <div className="inline-flex h-9 items-center gap-1 rounded-lg border bg-background px-3 text-sm font-medium">
+              <div className="inline-flex h-8 items-center gap-1.5 rounded-lg border bg-background px-2.5 text-sm font-medium">
                 <span>Next</span>
                 <Skeleton className="size-4 rounded-sm" />
               </div>
@@ -322,7 +320,7 @@ function CountryReconciliationBodySkeleton() {
   )
 }
 
-function CountryJournalBodySkeleton() {
+export function CountryJournalBodySkeleton() {
   return (
     <div className="grid flex-1 place-items-start md:place-items-center">
       <section className="w-full max-w-3xl overflow-hidden rounded-lg border bg-background">
@@ -492,31 +490,65 @@ export function CompactCreateMonthEndSkeleton() {
 
 export function MonthEndDashboardSkeleton() {
   return (
-    <>
-      <section className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <span className="hidden md:block" aria-hidden="true" />
-      </section>
-      <section className="rounded-lg border bg-background p-3 md:hidden">
-        <div className="grid grid-cols-3 divide-x">
-          {Array.from({ length: 3 }).map((_, index) => (
-            <div
-              key={index}
-              className={index === 0 ? "pr-3" : index === 1 ? "px-3" : "pl-3"}
-            >
-              <Skeleton className="h-3 w-14 rounded-md" />
-              <Skeleton className="mt-2 h-6 w-12 rounded-md" />
+    <div className="grid gap-6">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div key={index} className="rounded-lg border bg-background p-4">
+            <div className="flex items-center justify-between gap-3">
+              <Skeleton className="h-4 w-28 rounded-md" />
+              <Skeleton className="size-4 rounded-sm" />
             </div>
-          ))}
+            <Skeleton className="mt-4 h-7 w-20 rounded-md" />
+            {index === 0 ? (
+              <Skeleton className="mt-3 h-2 w-full rounded-full" />
+            ) : null}
+          </div>
+        ))}
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(19rem,0.75fr)]">
+        {Array.from({ length: 2 }).map((_, index) => (
+          <div key={index} className="rounded-lg border bg-background p-5">
+            <Skeleton className="h-5 w-36 rounded-md" />
+            <Skeleton className="mt-6 h-[280px] w-full rounded-md" />
+          </div>
+        ))}
+      </section>
+
+      <section className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(20rem,0.75fr)]">
+        <div className="overflow-hidden rounded-lg border bg-background">
+          <div className="border-b p-5">
+            <Skeleton className="h-5 w-36 rounded-md" />
+            <Skeleton className="mt-2 h-4 w-64 max-w-full rounded-md" />
+          </div>
+          <div className="divide-y">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div
+                key={index}
+                className="flex items-center justify-between gap-4 p-4 sm:px-5"
+              >
+                <div className="grid flex-1 gap-2">
+                  <Skeleton className="h-4 w-32 rounded-md" />
+                </div>
+                <Skeleton className="h-5 w-20 rounded-full" />
+                <Skeleton className="h-4 w-10 rounded-md" />
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="mt-3 border-t pt-2">
-          <div className="flex items-center justify-between gap-3">
-            <Skeleton className="h-4 w-16 rounded-md" />
-            <Skeleton className="h-3 w-8 rounded-md" />
+        <div className="rounded-lg border bg-background p-5">
+          <Skeleton className="h-5 w-28 rounded-md" />
+          <Skeleton className="mt-5 h-28 w-full rounded-md" />
+          <div className="mt-3 flex justify-between gap-3">
+            <Skeleton className="h-3 w-28 rounded-md" />
+            <Skeleton className="h-7 w-20 rounded-lg" />
+          </div>
+          <div className="mt-5 border-t pt-4">
+            <Skeleton className="h-4 w-24 rounded-md" />
           </div>
         </div>
       </section>
-      <SkeletonStatGrid />
-    </>
+    </div>
   )
 }
 

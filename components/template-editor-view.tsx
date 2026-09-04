@@ -36,6 +36,7 @@ import {
 
 import { AppSidebar } from "@/components/app-sidebar"
 import { HeaderActionMenuTrigger } from "@/components/header-action-menu-trigger"
+import { PricingUploadContent } from "@/components/pricing-upload-view"
 import { SiteHeader } from "@/components/site-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -110,6 +111,8 @@ import {
 import { parseCsv } from "@/lib/csv"
 
 const countriesModuleId = "countries"
+const tasksModuleId = "tasks"
+const netsuiteModuleId = "netsuite"
 const protectedModuleIds = new Set([
   countriesModuleId,
   "prepaid-accounts",
@@ -371,6 +374,9 @@ export function TemplateEditorView() {
   const [activeModuleId, setActiveModuleId] = React.useState<string | null>(
     countriesModuleId
   )
+  const [activeTaskGroupId, setActiveTaskGroupId] = React.useState<
+    string | null
+  >(null)
   const [showModuleForm, setShowModuleForm] = React.useState(false)
   const [editingModuleId, setEditingModuleId] = React.useState<string | null>(
     null
@@ -405,19 +411,33 @@ export function TemplateEditorView() {
         lastModified: template.countriesModule?.updatedAt,
         count: template.countries.length,
       },
-      ...template.taskGroups.map((group) => ({
-        id: group.id,
-        name: group.tab,
-        level: group.level ?? "organizational",
-        lastModified: group.updatedAt,
-        count: group.tasks.length,
-      })),
+      {
+        id: tasksModuleId,
+        name: "Tasks",
+        level: "organizational" as const,
+        lastModified: template.taskGroups
+          .map((group) => group.updatedAt)
+          .filter(Boolean)
+          .sort()
+          .at(-1),
+        count: template.taskGroups.reduce(
+          (count, group) => count + group.tasks.length,
+          0
+        ),
+      },
+      {
+        id: netsuiteModuleId,
+        name: "NetSuite",
+        level: "organizational" as const,
+        lastModified: undefined,
+        count: 1,
+      },
     ],
     [template]
   )
-  const activeTaskGroup = template.taskGroups.find(
-    (group) => group.id === activeModuleId
-  )
+  const activeTaskGroup =
+    template.taskGroups.find((group) => group.id === activeTaskGroupId) ??
+    template.taskGroups[0]
   const activeModule = modules.find((module) => module.id === activeModuleId)
   const activeCountry = activeCountryId
     ? template.countries.find((country) => country.id === activeCountryId)
@@ -543,7 +563,8 @@ export function TemplateEditorView() {
         },
       ],
     })
-    setActiveModuleId(id)
+    setActiveModuleId(tasksModuleId)
+    setActiveTaskGroupId(id)
     cancelModuleForm()
   }
 
@@ -588,6 +609,11 @@ export function TemplateEditorView() {
     setActiveCountryId(null)
     setEditingModuleId(null)
     setShowModuleForm(false)
+  }
+
+  function startAddTask(groupId: string) {
+    setActiveTaskGroupId(groupId)
+    setItemForm({ mode: "add-task", draft: { label: "" } })
   }
 
   function startEditCountry(row: TemplateCountryRow, rowIndex: number) {
@@ -645,7 +671,8 @@ export function TemplateEditorView() {
     closeActiveCountry()
   }
 
-  function startEditTask(task: TemplateSimpleTask) {
+  function startEditTask(groupId: string, task: TemplateSimpleTask) {
+    setActiveTaskGroupId(groupId)
     setItemForm({
       mode: "edit-task",
       taskId: task.id,
@@ -682,8 +709,8 @@ export function TemplateEditorView() {
       Back
     </Button>
   ) : undefined
-  const settingsHeaderActions =
-    !activeCountry ? (
+  const settingsHeaderActions = !activeCountry ? (
+    activeModuleId === countriesModuleId ? (
       <div className="flex items-center gap-2">
         <Button onClick={startAddItem}>
           <PlusIcon />
@@ -699,11 +726,9 @@ export function TemplateEditorView() {
               }
             />
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setShowModuleForm(true)}>
-                <PlusIcon />
-                Add Setting
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => startEditModule(activeModule.id)}>
+              <DropdownMenuItem
+                onClick={() => startEditModule(activeModule.id)}
+              >
                 <PencilIcon />
                 Edit Setting
               </DropdownMenuItem>
@@ -720,7 +745,13 @@ export function TemplateEditorView() {
           </DropdownMenu>
         ) : null}
       </div>
+    ) : activeModuleId === tasksModuleId ? (
+      <Button onClick={() => setShowModuleForm(true)}>
+        <PlusIcon />
+        Add Task Group
+      </Button>
     ) : undefined
+  ) : undefined
   const settingsHeaderTabs =
     activeModuleId === countriesModuleId && activeCountry ? (
       <CountrySettingsNavigation
@@ -1124,17 +1155,13 @@ export function TemplateEditorView() {
     })
   }
 
-  function deleteTask(taskId: string) {
-    if (!activeTaskGroup) {
-      return
-    }
-
+  function deleteTask(groupId: string, taskId: string) {
     const updatedAt = new Date().toISOString()
 
     persist({
       ...template,
       taskGroups: template.taskGroups.map((group) =>
-        group.id === activeTaskGroup.id
+        group.id === groupId
           ? {
               ...group,
               updatedAt,
@@ -1416,7 +1443,7 @@ export function TemplateEditorView() {
                     />
                   ) : null}
                   {itemForm ? (
-                    itemForm.mode === "edit-country" ? null : (
+                    itemForm.mode === "add-country" ? (
                       <ItemFormPanel
                         form={itemForm}
                         parentRows={parentRows}
@@ -1425,7 +1452,7 @@ export function TemplateEditorView() {
                         onCancel={() => setItemForm(null)}
                         onSave={saveItemForm}
                       />
-                    )
+                    ) : null
                   ) : null}
 
                   {activeModuleId === countriesModuleId && activeCountry ? (
@@ -1475,12 +1502,23 @@ export function TemplateEditorView() {
                       onDragEnd={reorderCountryRow}
                       onSaveItemForm={saveItemForm}
                     />
-                  ) : activeTaskGroup ? (
-                    <TasksTable
-                      group={activeTaskGroup}
+                  ) : activeModuleId === tasksModuleId ? (
+                    <TaskGroupsPanel
+                      groups={template.taskGroups}
+                      protectedModuleIds={protectedModuleIds}
+                      activeTaskGroupId={activeTaskGroup?.id ?? null}
+                      itemForm={itemForm}
+                      onChangeItemForm={setItemForm}
+                      onCancelItemForm={() => setItemForm(null)}
+                      onSaveItemForm={saveItemForm}
+                      onAddTask={startAddTask}
                       onEditTask={startEditTask}
                       onDeleteTask={deleteTask}
+                      onEditGroup={startEditModule}
+                      onDeleteGroup={deleteModule}
                     />
+                  ) : activeModuleId === netsuiteModuleId ? (
+                    <PricingUploadContent />
                   ) : null}
                 </div>
               </section>
@@ -1866,7 +1904,8 @@ function ModuleSettingsNavigation({
               type="button"
               className={cn(
                 "-mb-px inline-flex h-9 items-center border-b border-transparent bg-transparent px-0 py-1 text-sm font-medium text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30",
-                activeModuleId === item.id && "border-foreground text-foreground"
+                activeModuleId === item.id &&
+                  "border-foreground text-foreground"
               )}
               onClick={() => onActiveModuleChange(item.id)}
             >
@@ -2284,7 +2323,8 @@ function getCountryAiRuleGroups(country: TemplateCountryRow) {
   const groups: CountryAiRuleGroup[] = [
     {
       title: "Upload Reading",
-      description: "How files, screenshots, PDFs, and pasted report text are interpreted.",
+      description:
+        "How files, screenshots, PDFs, and pasted report text are interpreted.",
       rules: [
         "AI upload reading is the default mapper for new or edited report mappings.",
         "AI must normalize PDFs, Excel files, CSV files, screenshots, and pasted text into a clean table before assigning fields.",
@@ -2302,7 +2342,8 @@ function getCountryAiRuleGroups(country: TemplateCountryRow) {
     },
     {
       title: "Reconciliation Actions",
-      description: "How matches and manual decisions affect unresolved records.",
+      description:
+        "How matches and manual decisions affect unresolved records.",
       rules: [
         "Normal reconciliation can match by Bill of Lading, CTN / ECTN, or Invoice / Sales Order number.",
         "Manual country reconciliation requires a reason and note, then removes those country rows from the unresolved report.",
@@ -2318,7 +2359,8 @@ function getCountryAiRuleGroups(country: TemplateCountryRow) {
       ...groups,
       {
         title: "Gabon Rules",
-        description: "Country-specific matching, Form/Tariff handling, and import cleanup.",
+        description:
+          "Country-specific matching, Form/Tariff handling, and import cleanup.",
         rules: [
           "Gabon matching uses Bill of Lading number or Invoice number only; CTN number must not be used for matching.",
           "Gabon rows with a Validation Date auto reconcile when their Bill of Lading or Invoice number matches NetSuite.",
@@ -3570,16 +3612,24 @@ const ReportMappingCard = React.forwardRef<
 
 function TasksTable({
   group,
+  taskForm,
+  onChangeTaskForm,
+  onCancelTaskForm,
+  onSaveTaskForm,
   onEditTask,
   onDeleteTask,
 }: {
   group: MonthEndTemplate["taskGroups"][number]
+  taskForm: Extract<ItemForm, { mode: "add-task" | "edit-task" }> | null
+  onChangeTaskForm: (form: ItemForm) => void
+  onCancelTaskForm: () => void
+  onSaveTaskForm: () => void
   onEditTask: (task: TemplateSimpleTask) => void
   onDeleteTask: (taskId: string) => void
 }) {
   return (
     <Table containerClassName="rounded-lg border bg-background">
-      <TableHeader>
+      <TableHeader className="bg-muted/50">
         <TableRow>
           <TableHead>Name</TableHead>
           <TableHead>Level</TableHead>
@@ -3588,47 +3638,218 @@ function TasksTable({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {group.tasks.map((task) => (
-          <TableRow key={task.id}>
-            <TableCell className="font-medium">{task.label}</TableCell>
-            <TableCell>
-              <ModuleLevelBadge level={group.level ?? "organizational"} />
-            </TableCell>
-            <TableCell>
-              <Badge variant="outline">Checkbox</Badge>
-            </TableCell>
-            <TableCell>
+        {group.tasks.map((task) =>
+          taskForm?.mode === "edit-task" && taskForm.taskId === task.id ? (
+            <TaskFormTableRow
+              key={task.id}
+              form={taskForm}
+              onChange={onChangeTaskForm}
+              onCancel={onCancelTaskForm}
+              onSave={onSaveTaskForm}
+            />
+          ) : (
+            <TableRow key={task.id}>
+              <TableCell className="font-medium">{task.label}</TableCell>
+              <TableCell>
+                <ModuleLevelBadge level={group.level ?? "organizational"} />
+              </TableCell>
+              <TableCell>
+                <Badge variant="outline">Checkbox</Badge>
+              </TableCell>
+              <TableCell>
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`Edit ${task.label}`}
+                      />
+                    }
+                  >
+                    <MoreHorizontalIcon />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => onEditTask(task)}>
+                      <PencilIcon />
+                      Edit
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onClick={() => onDeleteTask(task.id)}
+                    >
+                      <Trash2Icon />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TableCell>
+            </TableRow>
+          )
+        )}
+        {taskForm?.mode === "add-task" ? (
+          <TaskFormTableRow
+            form={taskForm}
+            onChange={onChangeTaskForm}
+            onCancel={onCancelTaskForm}
+            onSave={onSaveTaskForm}
+          />
+        ) : null}
+      </TableBody>
+    </Table>
+  )
+}
+
+function TaskFormTableRow({
+  form,
+  onChange,
+  onCancel,
+  onSave,
+}: {
+  form: Extract<ItemForm, { mode: "add-task" | "edit-task" }>
+  onChange: (form: ItemForm) => void
+  onCancel: () => void
+  onSave: () => void
+}) {
+  return (
+    <TableRow className="bg-muted/20 hover:bg-muted/20">
+      <TableCell colSpan={4}>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Input
+            autoFocus
+            value={form.draft.label}
+            aria-label={form.mode === "add-task" ? "New task name" : "Task name"}
+            placeholder="Task name"
+            onChange={(event) =>
+              onChange({
+                ...form,
+                draft: { label: event.target.value },
+              })
+            }
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && form.draft.label.trim()) {
+                event.preventDefault()
+                onSave()
+              }
+              if (event.key === "Escape") {
+                onCancel()
+              }
+            }}
+          />
+          <div className="flex shrink-0 justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={onCancel}>
+              <XIcon />
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={!form.draft.label.trim()}
+              onClick={onSave}
+            >
+              <SaveIcon />
+              Save
+            </Button>
+          </div>
+        </div>
+      </TableCell>
+    </TableRow>
+  )
+}
+
+function TaskGroupsPanel({
+  groups,
+  protectedModuleIds,
+  activeTaskGroupId,
+  itemForm,
+  onChangeItemForm,
+  onCancelItemForm,
+  onSaveItemForm,
+  onAddTask,
+  onEditTask,
+  onDeleteTask,
+  onEditGroup,
+  onDeleteGroup,
+}: {
+  groups: MonthEndTemplate["taskGroups"]
+  protectedModuleIds: Set<string>
+  activeTaskGroupId: string | null
+  itemForm: ItemForm
+  onChangeItemForm: (form: ItemForm) => void
+  onCancelItemForm: () => void
+  onSaveItemForm: () => void
+  onAddTask: (groupId: string) => void
+  onEditTask: (groupId: string, task: TemplateSimpleTask) => void
+  onDeleteTask: (groupId: string, taskId: string) => void
+  onEditGroup: (groupId: string) => void
+  onDeleteGroup: (groupId: string) => void
+}) {
+  return (
+    <div className="grid gap-4">
+      {groups.map((group) => (
+        <section key={group.id} className="grid gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <h2 className="truncate text-base font-semibold">{group.tab}</h2>
+              <Badge variant="secondary">{group.tasks.length}</Badge>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onAddTask(group.id)}
+              >
+                <PlusIcon />
+                Add Task
+              </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`Edit ${task.label}`}
+                    <HeaderActionMenuTrigger
+                      label={`Actions for ${group.tab}`}
                     />
                   }
-                >
-                  <MoreHorizontalIcon />
-                </DropdownMenuTrigger>
+                />
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => onEditTask(task)}>
+                  <DropdownMenuItem onClick={() => onEditGroup(group.id)}>
                     <PencilIcon />
-                    Edit
+                    Edit Task Group
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onClick={() => onDeleteTask(task.id)}
-                  >
-                    <Trash2Icon />
-                    Delete
-                  </DropdownMenuItem>
+                  {protectedModuleIds.has(group.id) ? null : (
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onClick={() => onDeleteGroup(group.id)}
+                    >
+                      <Trash2Icon />
+                      Delete Task Group
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+            </div>
+          </div>
+          <TasksTable
+            group={group}
+            taskForm={
+              activeTaskGroupId === group.id &&
+              (itemForm?.mode === "add-task" ||
+                itemForm?.mode === "edit-task")
+                ? itemForm
+                : null
+            }
+            onChangeTaskForm={onChangeItemForm}
+            onCancelTaskForm={onCancelItemForm}
+            onSaveTaskForm={onSaveItemForm}
+            onEditTask={(task) => onEditTask(group.id, task)}
+            onDeleteTask={(taskId) => onDeleteTask(group.id, taskId)}
+          />
+        </section>
+      ))}
+      {!groups.length ? (
+        <div className="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
+          No task groups yet. Add a task group to get started.
+        </div>
+      ) : null}
+    </div>
   )
 }
 

@@ -20,6 +20,8 @@ export function CountryTableFilters({
   selectedFilter,
   filterOptions,
   action,
+  mobileFiltersFullWidth = false,
+  hideActionOnMobile = false,
   onSearchQueryChange,
   onSelectedFilterChange,
 }: {
@@ -29,12 +31,19 @@ export function CountryTableFilters({
   selectedFilter: string
   filterOptions: CountryTableFilterOption[]
   action?: React.ReactNode
+  mobileFiltersFullWidth?: boolean
+  hideActionOnMobile?: boolean
   onSearchQueryChange: (value: string) => void
   onSelectedFilterChange: (value: string) => void
 }) {
   return (
     <section className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-      <div className="flex flex-col gap-2 md:flex-row md:items-center">
+      <div
+        className={cn(
+          "flex flex-col gap-2 md:flex-row md:items-center",
+          mobileFiltersFullWidth && "w-full md:w-auto"
+        )}
+      >
         <div className="relative w-full md:w-64">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -56,7 +65,12 @@ export function CountryTableFilters({
           ) : null}
         </div>
         <div
-          className="inline-flex h-9 w-fit items-center rounded-lg bg-muted p-1"
+          className={cn(
+            "inline-flex h-9 items-center rounded-lg bg-muted p-1",
+            mobileFiltersFullWidth
+              ? "w-full justify-center md:w-fit md:justify-start"
+              : "w-fit"
+          )}
           aria-label="Country table filters"
         >
           {filterOptions.map((option) => {
@@ -67,7 +81,10 @@ export function CountryTableFilters({
                 key={option.id}
                 type="button"
                 className={cn(
-                  "h-7 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground",
+                  "h-7 rounded-md text-sm font-medium text-muted-foreground transition-colors hover:text-foreground",
+                  mobileFiltersFullWidth
+                    ? "flex-1 px-4 text-center md:flex-none md:px-3"
+                    : "px-3",
                   isSelected && "bg-background text-foreground shadow-xs"
                 )}
                 aria-pressed={isSelected}
@@ -80,7 +97,11 @@ export function CountryTableFilters({
           })}
         </div>
       </div>
-      {action ? <div className="w-fit">{action}</div> : null}
+      {action ? (
+        <div className={cn("w-fit", hideActionOnMobile && "hidden md:block")}>
+          {action}
+        </div>
+      ) : null}
     </section>
   )
 }

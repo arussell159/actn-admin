@@ -19,6 +19,7 @@ export function MonthEndCountryRouteView() {
 
   return (
     <MonthEndCountryReconciliationView
+      key={`${period ?? ""}:${countryId ?? ""}`}
       period={period}
       countryId={countryId}
       view={view}

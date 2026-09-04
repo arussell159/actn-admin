@@ -43,7 +43,6 @@ import {
   PlusIcon,
   SearchIcon,
   Settings2Icon,
-  UploadIcon,
 } from "lucide-react"
 import {
   getPinnedInformationNodes,
@@ -275,15 +274,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarGroup>
           <SidebarGroupLabel>Settings</SidebarGroupLabel>
           <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                isActive={isActiveUrl("/pricing-upload")}
-                render={<AppLink href="/pricing-upload" />}
-              >
-                <UploadIcon />
-                <span>Pricing Upload</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton
                 isActive={isActiveUrl("/template-builder")}

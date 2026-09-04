@@ -29,6 +29,32 @@ function countCountries(items: QuoteCatalogItem[]) {
 }
 
 export function PricingUploadView() {
+  return (
+    <SidebarProvider
+      style={
+        {
+          "--sidebar-width": "calc(var(--spacing) * 72)",
+          "--header-height": "calc(var(--spacing) * 12)",
+        } as React.CSSProperties
+      }
+    >
+      <AppSidebar variant="inset" />
+      <SidebarInset>
+        <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
+          <SiteHeader title="Pricing Upload" />
+          <div className="grid gap-4 px-4 py-4 lg:px-6">
+            <section>
+              <h1 className="text-2xl font-semibold">Pricing Upload</h1>
+            </section>
+            <PricingUploadContent />
+          </div>
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
+  )
+}
+
+export function PricingUploadContent() {
   const [fileName, setFileName] = React.useState("")
   const [items, setItems] = React.useState<QuoteCatalogItem[]>([])
   const [status, setStatus] = React.useState("")
@@ -92,122 +118,100 @@ export function PricingUploadView() {
   }
 
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
-      }
-    >
-      <AppSidebar variant="inset" />
-      <SidebarInset>
-        <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
-          <SiteHeader title="Pricing Upload" />
-          <div className="grid gap-4 px-4 py-4 lg:px-6">
-            <section>
-              <h1 className="text-2xl font-semibold">Pricing Upload</h1>
-            </section>
-            <Card className="rounded-lg shadow-sm">
-            <CardHeader>
-              <CardTitle>Pricing Sheet</CardTitle>
-              <CardDescription>
-                Upload a CSV pricing sheet to replace the quote item catalog.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-5">
-              <div
-                role="button"
-                tabIndex={0}
-                data-dragging={isDragging}
-                className="flex min-h-32 cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border border-dashed bg-background p-6 text-center transition-colors hover:bg-muted/50 data-[dragging=true]:border-primary data-[dragging=true]:bg-primary/5"
-                onClick={() => fileInputRef.current?.click()}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault()
-                    fileInputRef.current?.click()
-                  }
-                }}
-                onDragEnter={(event) => {
-                  event.preventDefault()
-                  setIsDragging(true)
-                }}
-                onDragOver={(event) => {
-                  event.preventDefault()
-                  setIsDragging(true)
-                }}
-                onDragLeave={(event) => {
-                  event.preventDefault()
-                  setIsDragging(false)
-                }}
-                onDrop={(event) => {
-                  event.preventDefault()
-                  setIsDragging(false)
-                  handleDroppedFiles(event.dataTransfer.files)
-                }}
-              >
-                <UploadIcon className="size-6 text-muted-foreground" />
-                <span className="font-medium">
-                  Drag and drop the pricing CSV
-                </span>
-                <span className="text-sm text-muted-foreground">
-                  {fileName || "or click to choose a file"}
-                </span>
-                <Input
-                  ref={fileInputRef}
-                  className="sr-only"
-                  id="pricing-file"
-                  type="file"
-                  accept=".csv,text/csv"
-                  onChange={(event) => handleDroppedFiles(event.target.files)}
-                />
-              </div>
+    <Card className="rounded-lg shadow-sm">
+      <CardHeader>
+        <CardTitle>Pricing Sheet</CardTitle>
+        <CardDescription>
+          Upload a CSV pricing sheet to replace the quote item catalog.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-5">
+        <div
+          role="button"
+          tabIndex={0}
+          data-dragging={isDragging}
+          className="flex min-h-32 cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border border-dashed bg-background p-6 text-center transition-colors hover:bg-muted/50 data-[dragging=true]:border-primary data-[dragging=true]:bg-primary/5"
+          onClick={() => fileInputRef.current?.click()}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault()
+              fileInputRef.current?.click()
+            }
+          }}
+          onDragEnter={(event) => {
+            event.preventDefault()
+            setIsDragging(true)
+          }}
+          onDragOver={(event) => {
+            event.preventDefault()
+            setIsDragging(true)
+          }}
+          onDragLeave={(event) => {
+            event.preventDefault()
+            setIsDragging(false)
+          }}
+          onDrop={(event) => {
+            event.preventDefault()
+            setIsDragging(false)
+            handleDroppedFiles(event.dataTransfer.files)
+          }}
+        >
+          <UploadIcon className="size-6 text-muted-foreground" />
+          <span className="font-medium">Drag and drop the pricing CSV</span>
+          <span className="text-sm text-muted-foreground">
+            {fileName || "or click to choose a file"}
+          </span>
+          <Input
+            ref={fileInputRef}
+            className="sr-only"
+            id="pricing-file"
+            type="file"
+            accept=".csv,text/csv"
+            onChange={(event) => handleDroppedFiles(event.target.files)}
+          />
+        </div>
 
-              <div className="flex justify-end gap-2">
-                <Button
-                  disabled={!items.length || isUploading}
-                  onClick={uploadPricing}
-                >
-                  <FileSpreadsheetIcon />
-                  Upload Pricing
-                </Button>
-              </div>
+        <div className="flex justify-end gap-2">
+          <Button
+            disabled={!items.length || isUploading}
+            onClick={uploadPricing}
+          >
+            <FileSpreadsheetIcon />
+            Upload Pricing
+          </Button>
+        </div>
 
-              {items.length ? (
-                <div className="grid gap-3 rounded-lg border bg-muted/30 p-4 text-sm md:grid-cols-3">
-                  <div>
-                    <div className="text-muted-foreground">File</div>
-                    <div className="font-medium">{fileName}</div>
-                  </div>
-                  <div>
-                    <div className="text-muted-foreground">Items</div>
-                    <div className="font-medium">{items.length}</div>
-                  </div>
-                  <div>
-                    <div className="text-muted-foreground">Countries</div>
-                    <div className="font-medium">{countCountries(items)}</div>
-                  </div>
-                </div>
-              ) : null}
-
-              {status ? (
-                <div className="flex items-center gap-2 rounded-lg border bg-muted/30 p-3 text-sm">
-                  <CheckCircle2Icon className="size-4 text-primary" />
-                  {status}
-                </div>
-              ) : null}
-
-              {error ? (
-                <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-                  <AlertCircleIcon className="size-4" />
-                  {error}
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
+        {items.length ? (
+          <div className="grid gap-3 rounded-lg border bg-muted/30 p-4 text-sm md:grid-cols-3">
+            <div>
+              <div className="text-muted-foreground">File</div>
+              <div className="font-medium">{fileName}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Items</div>
+              <div className="font-medium">{items.length}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Countries</div>
+              <div className="font-medium">{countCountries(items)}</div>
+            </div>
           </div>
-        </main>
-      </SidebarInset>
-    </SidebarProvider>
+        ) : null}
+
+        {status ? (
+          <div className="flex items-center gap-2 rounded-lg border bg-muted/30 p-3 text-sm">
+            <CheckCircle2Icon className="size-4 text-primary" />
+            {status}
+          </div>
+        ) : null}
+
+        {error ? (
+          <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+            <AlertCircleIcon className="size-4" />
+            {error}
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
   )
 }

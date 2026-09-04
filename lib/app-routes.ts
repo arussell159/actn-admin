@@ -5,7 +5,6 @@ import {
   HistoryIcon,
   PlusIcon,
   Settings2Icon,
-  UploadIcon,
 } from "lucide-react"
 
 export const appCommandPages = [
@@ -45,17 +44,18 @@ export const appCommandPages = [
     icon: CalculatorIcon,
   },
   {
-    title: "Pricing Upload",
-    href: "/pricing-upload",
-    section: "Settings",
-    keywords: ["prices", "import", "upload"],
-    icon: UploadIcon,
-  },
-  {
     title: "Settings",
     href: "/template-builder",
     section: "Settings",
-    keywords: ["template", "builder", "settings"],
+    keywords: [
+      "template",
+      "builder",
+      "settings",
+      "tasks",
+      "netsuite",
+      "pricing",
+      "upload",
+    ],
     icon: Settings2Icon,
   },
 ]

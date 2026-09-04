@@ -2,7 +2,6 @@
 
 import type { ReactNode } from "react"
 import { useRouter } from "next/navigation"
-import { Separator } from "@/components/ui/separator"
 import { MobileTabBar } from "@/components/mobile-tab-bar"
 import { MobilePullRefresh } from "@/components/mobile-pull-refresh"
 import { useMobileScrollLock } from "@/hooks/use-mobile-scroll-lock"
@@ -50,12 +49,14 @@ export function SiteHeader({
   title = "Documents",
   titleContent,
   leadingContent,
+  mobileLeadingContent,
   actions,
   bottomContent,
 }: {
   title?: string
   titleContent?: ReactNode
   leadingContent?: ReactNode
+  mobileLeadingContent?: ReactNode
   actions?: ReactNode
   bottomContent?: ReactNode
 }) {
@@ -66,7 +67,7 @@ export function SiteHeader({
     <>
       <header
         className={cn(
-          "sticky top-0 z-40 flex h-[calc(2.5rem+env(safe-area-inset-top,0px))] shrink-0 items-center gap-2 bg-transparent pt-[env(safe-area-inset-top,0px)] transition-[width,height] ease-linear md:relative md:z-auto md:h-auto md:min-h-(--header-height) md:flex-col md:items-stretch md:bg-background md:pt-0 group-has-data-[collapsible=icon]/sidebar-wrapper:md:min-h-(--header-height)",
+          "sticky top-0 z-40 flex h-[calc(2.5rem+env(safe-area-inset-top,0px))] shrink-0 items-center gap-2 bg-transparent pt-[env(safe-area-inset-top,0px)] md:relative md:z-auto md:h-auto md:min-h-(--header-height) md:flex-col md:items-stretch md:bg-background md:pt-0 group-has-data-[collapsible=icon]/sidebar-wrapper:md:min-h-(--header-height)",
           bottomContent ? "md:border-b-0" : "md:border-b"
         )}
       >
@@ -87,9 +88,9 @@ export function SiteHeader({
           {leadingContent ? (
             <div className="flex min-w-8 items-center gap-2">
               {leadingContent}
-              <Separator
-                orientation="vertical"
-                className="mx-1 h-4 data-vertical:self-auto"
+              <span
+                aria-hidden="true"
+                className="mx-1 h-4 w-px shrink-0 self-center bg-border"
               />
             </div>
           ) : null}
@@ -103,8 +104,14 @@ export function SiteHeader({
             {bottomContent}
           </div>
         ) : null}
-        <div className="relative z-10 grid w-full grid-cols-[2.25rem_1fr_2.25rem] items-center px-4 md:hidden">
-          <span aria-hidden="true" />
+        <div className="relative z-10 grid w-full grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-center px-4 md:hidden">
+          {mobileLeadingContent ? (
+            <div className="grid size-10 place-items-center">
+              {mobileLeadingContent}
+            </div>
+          ) : (
+            <span aria-hidden="true" />
+          )}
           <h1 className="truncate text-center text-base font-semibold">
             {heading}
           </h1>
