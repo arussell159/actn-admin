@@ -2,6 +2,7 @@ import "./globals.css"
 import { PwaRegister } from "@/components/pwa-register"
 import { AppCommandMenu } from "@/components/app-command-menu"
 import { AuthSessionGuard } from "@/components/auth-session-guard"
+import { MobileAppGuard } from "@/components/mobile-app-guard"
 import { RouteScrollReset } from "@/components/route-scroll-reset"
 import { ThemeProvider } from "@/components/theme-provider"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -61,6 +62,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
   viewportFit: "cover",
   colorScheme: "light",
   themeColor: "#ffffff",
@@ -81,6 +84,7 @@ export default function RootLayout({
         <ThemeProvider>
           <TooltipProvider>
             <PwaRegister />
+            <MobileAppGuard />
             <AuthSessionGuard />
             <React.Suspense fallback={null}>
               <RouteScrollReset />

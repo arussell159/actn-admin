@@ -27,7 +27,7 @@ import { AppSidebar } from "@/components/app-sidebar"
 import { CountryTableFilters } from "@/components/country-table-filters"
 import { HeaderActionMenuTrigger } from "@/components/header-action-menu-trigger"
 import { MonthEndDashboardSkeleton } from "@/components/page-skeletons"
-import { SiteHeader } from "@/components/site-header"
+import { SiteHeader, SiteHeaderBackButton } from "@/components/site-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ButtonGroup } from "@/components/ui/button-group"
@@ -109,6 +109,7 @@ import {
   saveMonthEndReturnRecord,
   saveMonthEndReturnPoint,
 } from "@/lib/month-end-return-point"
+import { simpleMapAfricaPaths } from "@/lib/simplemap-africa-paths"
 import { cn } from "@/lib/utils"
 
 const workflowTaskIcons: Record<CloseTaskId, React.ElementType> = {
@@ -122,14 +123,49 @@ const dashboardHandoffUpdatedAtKey = "__dashboard_handoff_updated_at"
 
 type MonthEndSectionId = "dashboard" | "countries" | "tasks" | string
 type CountryTableFilterId = "all" | "not-reconciled" | "missing-invoice"
+type DashboardMetricDetailId = "countries" | "invoices" | "shared-tasks"
+type CountryHeatMapDetail = {
+  name: string
+  tasks: Array<{ id: string; label: string; isComplete: boolean }>
+}
+
+const monthEndCountryRowIdByCode: Record<string, string | undefined> = {
+  AO: "angola",
+  BJ: "benin",
+  BF: "burkina-faso",
+  CM: "cameroon",
+  TD: "foremost-chad",
+  CD: "frabemar-dr-congo",
+  GA: "frabemar-gabon",
+  ML: "frabemar-mali",
+  GN: "frabemar-republic-of-guinea",
+  LR: "gtms-liberia",
+  CI: "ivory-coast",
+  MG: "madagascar",
+  CG: "republic-of-congo",
+  DJ: "sck-djibouti",
+  KE: "sck-kenya",
+  SL: "sck-sierra-leone",
+  SO: "sck-somalia",
+  SD: "sck-sudan",
+  YE: "sck-yemen",
+  SN: "senegal",
+  NE: "antaser",
+  CF: "antaser",
+  GW: "antaser",
+  TG: "antaser-afrique",
+  BI: "antaser-afrique",
+  GQ: "antaser-afrique",
+  SS: "antaser-afrique",
+}
 
 const countryTableFilterOptions: Array<{
   id: CountryTableFilterId
   label: string
 }> = [
   { id: "all", label: "All" },
-  { id: "not-reconciled", label: "Not Reconciled" },
-  { id: "missing-invoice", label: "Missing Invoice" },
+  { id: "not-reconciled", label: "Not Recon" },
+  { id: "missing-invoice", label: "No Invoice" },
 ]
 
 function taskKey(scope: string, taskId: string) {
@@ -242,39 +278,268 @@ function MonthEndMetricCard({
   value,
   icon: Icon,
   progress,
+  isActive = false,
+  onActivate,
+  expandedContent,
 }: {
   title: string
   value: string
   icon: React.ElementType
   progress?: number
+  isActive?: boolean
+  onActivate?: () => void
+  expandedContent?: React.ReactNode
 }) {
   return (
-    <Card className="gap-3 py-4 shadow-sm">
-      <CardHeader className="flex flex-row items-center justify-between px-4">
-        <CardDescription className="font-medium text-foreground">
-          {title}
-        </CardDescription>
-        <Icon className="size-4 text-muted-foreground" />
-      </CardHeader>
-      <CardContent className="grid gap-3 px-4">
-        <div className="text-2xl font-semibold tabular-nums">{value}</div>
-        {progress !== undefined ? (
-          <div
-            className="h-2 overflow-hidden rounded-full bg-muted"
-            role="progressbar"
-            aria-label={title}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={progress}
-          >
+    <Card
+      className={cn(
+        "gap-0 py-0 shadow-sm",
+        isActive && "ring-primary/40",
+        isActive && expandedContent && "sm:col-span-2 md:col-span-1"
+      )}
+    >
+      <div
+        className={cn(
+          "grid gap-3 py-4 text-left",
+          onActivate &&
+            "cursor-pointer transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+          isActive && "bg-muted/30"
+        )}
+        role={onActivate ? "button" : undefined}
+        tabIndex={onActivate ? 0 : undefined}
+        aria-expanded={onActivate ? isActive : undefined}
+        onClick={onActivate}
+        onKeyDown={(event) => {
+          if (!onActivate || (event.key !== "Enter" && event.key !== " ")) {
+            return
+          }
+
+          event.preventDefault()
+          onActivate()
+        }}
+      >
+        <CardHeader className="flex flex-row items-center justify-between px-4">
+          <CardDescription className="font-medium text-foreground">
+            {title}
+          </CardDescription>
+          <Icon className="size-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent className="grid gap-3 px-4">
+          <div className="text-2xl font-semibold tabular-nums">{value}</div>
+          {progress !== undefined ? (
             <div
-              className="h-full rounded-full bg-primary"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-        ) : null}
-      </CardContent>
+              className="h-2 overflow-hidden rounded-full bg-muted"
+              role="progressbar"
+              aria-label={title}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={progress}
+            >
+              <div
+                className="h-full rounded-full bg-primary"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          ) : null}
+        </CardContent>
+      </div>
+      {isActive && expandedContent ? (
+        <div className="border-t md:hidden [&>[data-slot=card]]:rounded-none [&>[data-slot=card]]:bg-transparent [&>[data-slot=card]]:shadow-none [&>[data-slot=card]]:ring-0">
+          {expandedContent}
+        </div>
+      ) : null}
     </Card>
+  )
+}
+
+function MonthEndCountryHeatMap({
+  progressByCountry,
+  detailsByCountry,
+  selectedCountryId,
+  highlightedCountryId,
+  onSelectCountry,
+  onHighlightCountry,
+  className,
+}: {
+  progressByCountry: Map<string, { done: number; total: number }>
+  detailsByCountry: Map<string, CountryHeatMapDetail>
+  selectedCountryId?: string
+  highlightedCountryId?: string
+  onSelectCountry: (countryId: string) => void
+  onHighlightCountry: (countryId?: string) => void
+  className?: string
+}) {
+  const [hoveredCountry, setHoveredCountry] = React.useState<{
+    code: string
+    countryId?: string
+    name: string
+    x: number
+    y: number
+  } | null>(null)
+  const highlightedCountryCode =
+    hoveredCountry?.code ??
+    Object.entries(monthEndCountryRowIdByCode).find(
+      ([, countryId]) => countryId === highlightedCountryId
+    )?.[0]
+  const highlightedCountryPath = simpleMapAfricaPaths.find(
+    (country) => country.code === highlightedCountryCode
+  )?.path
+
+  return (
+    <div className={cn("relative", className)}>
+      <svg
+        viewBox="845 245 500 490"
+        role="img"
+        aria-label="Month-end country completion heat map"
+        className="h-full w-full"
+        onPointerLeave={() => {
+          setHoveredCountry(null)
+          onHighlightCountry()
+        }}
+      >
+        {simpleMapAfricaPaths.map((country) => {
+          const countryId = monthEndCountryRowIdByCode[country.code]
+          const progress = countryId
+            ? progressByCountry.get(countryId)
+            : undefined
+          const isComplete =
+            progress && progress.total > 0 && progress.done === progress.total
+          const isInProgress = progress && progress.done > 0 && !isComplete
+          const isSelected = countryId === selectedCountryId
+          const isHovered = hoveredCountry?.code === country.code
+
+          return (
+            <path
+              key={country.code}
+              d={country.path}
+              className={cn(
+                "stroke-background transition-[filter,opacity] dark:stroke-background",
+                isComplete
+                  ? "fill-primary dark:fill-primary"
+                  : !progress
+                    ? "fill-primary dark:fill-primary"
+                    : isInProgress
+                      ? "fill-primary/55 dark:fill-primary/60"
+                      : "fill-primary/25 dark:fill-primary/30",
+                countryId && "cursor-pointer",
+                isSelected && !isHovered && "brightness-75 saturate-150"
+              )}
+              strokeWidth="1.5"
+              onPointerMove={(event) => {
+                const bounds =
+                  event.currentTarget.ownerSVGElement?.getBoundingClientRect()
+
+                if (!bounds) {
+                  return
+                }
+
+                setHoveredCountry({
+                  code: country.code,
+                  countryId,
+                  name: country.name,
+                  x: Math.max(
+                    8,
+                    Math.min(
+                      event.clientX - bounds.left + 12,
+                      Math.max(8, bounds.width - 228)
+                    )
+                  ),
+                  y: Math.max(
+                    8,
+                    Math.min(
+                      event.clientY - bounds.top + 12,
+                      Math.max(8, bounds.height - 150)
+                    )
+                  ),
+                })
+                onHighlightCountry(countryId)
+              }}
+              onClick={(event) => {
+                if (!countryId) {
+                  return
+                }
+
+                event.stopPropagation()
+                onSelectCountry(countryId)
+              }}
+            />
+          )
+        })}
+        {highlightedCountryPath ? (
+          <g className="pointer-events-none">
+            <path
+              d={highlightedCountryPath}
+              fill="none"
+              stroke="#60a5fa"
+              strokeWidth="9"
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+              opacity="0.95"
+              style={{ filter: "blur(4px)" }}
+            />
+            <path
+              d={highlightedCountryPath}
+              fill="none"
+              stroke="white"
+              strokeWidth="2.5"
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+              style={{
+                filter:
+                  "drop-shadow(0 0 3px white) drop-shadow(0 0 7px #3b82f6)",
+              }}
+            />
+          </g>
+        ) : null}
+      </svg>
+      {hoveredCountry ? (
+        <div
+          className="pointer-events-none absolute z-20 grid w-55 gap-2 rounded-lg border border-border/60 bg-popover/95 p-3 text-sm text-popover-foreground shadow-xl backdrop-blur-md"
+          style={{ left: hoveredCountry.x, top: hoveredCountry.y }}
+        >
+          <div>
+            <div className="font-semibold">{hoveredCountry.name}</div>
+            {hoveredCountry.countryId &&
+            detailsByCountry.get(hoveredCountry.countryId)?.name &&
+            detailsByCountry.get(hoveredCountry.countryId)?.name !==
+              hoveredCountry.name ? (
+              <div className="text-xs text-muted-foreground">
+                {detailsByCountry.get(hoveredCountry.countryId)?.name}
+              </div>
+            ) : null}
+          </div>
+          {hoveredCountry.countryId &&
+          detailsByCountry.get(hoveredCountry.countryId)?.tasks.length ? (
+            <div className="grid gap-1.5">
+              {detailsByCountry
+                .get(hoveredCountry.countryId)!
+                .tasks.map((task) => (
+                  <div
+                    key={task.id}
+                    className="flex items-center justify-between gap-3"
+                  >
+                    <span className="text-muted-foreground">{task.label}</span>
+                    <span
+                      className={cn(
+                        "font-medium",
+                        task.isComplete
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-foreground"
+                      )}
+                    >
+                      {task.isComplete ? "Complete" : "Open"}
+                    </span>
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <span className="text-xs text-muted-foreground">
+              Not included in this month end
+            </span>
+          )}
+        </div>
+      ) : null}
+    </div>
   )
 }
 
@@ -288,15 +553,15 @@ const workflowChartConfig = {
 const countryStatusChartConfig = {
   complete: {
     label: "Complete",
-    color: "var(--chart-1)",
+    color: "var(--primary)",
   },
   inProgress: {
     label: "In Progress",
-    color: "var(--chart-2)",
+    color: "color-mix(in oklch, var(--primary) 55%, var(--background))",
   },
   notStarted: {
     label: "Not Started",
-    color: "var(--muted)",
+    color: "color-mix(in oklch, var(--primary) 25%, var(--background))",
   },
 } satisfies ChartConfig
 
@@ -457,6 +722,14 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     React.useState<MonthEndSectionId>(
       initialReturnPoint?.activeSection ?? "dashboard"
     )
+  const [activeDashboardMetric, setActiveDashboardMetric] =
+    React.useState<DashboardMetricDetailId | null>(null)
+  const [selectedDashboardCountryId, setSelectedDashboardCountryId] =
+    React.useState("")
+  const [highlightedDashboardCountryId, setHighlightedDashboardCountryId] =
+    React.useState("")
+  const [countryDetailViewportHeight, setCountryDetailViewportHeight] =
+    React.useState<number>()
   const [countrySearchQuery, setCountrySearchQuery] = React.useState(
     initialReturnPoint?.countrySearchQuery ?? ""
   )
@@ -479,6 +752,38 @@ export function MonthEndView({ period }: { period?: string } = {}) {
   const pendingReturnScrollYRef = React.useRef<number | null>(
     initialReturnPoint?.scrollY ?? null
   )
+
+  React.useEffect(() => {
+    if (activeDashboardMetric !== "countries") {
+      setCountryDetailViewportHeight(undefined)
+      return
+    }
+
+    const updateHeight = () => {
+      const visibleCountryDetail = Array.from(
+        document.querySelectorAll<HTMLElement>("[data-country-detail]")
+      ).find((element) => element.getClientRects().length > 0)
+      const cardTop = visibleCountryDetail?.getBoundingClientRect().top
+
+      if (cardTop === undefined) {
+        return
+      }
+
+      setCountryDetailViewportHeight(
+        Math.max(320, Math.floor(window.innerHeight - cardTop - 16))
+      )
+    }
+    const frame = window.requestAnimationFrame(updateHeight)
+
+    window.addEventListener("resize", updateHeight)
+    window.visualViewport?.addEventListener("resize", updateHeight)
+
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.removeEventListener("resize", updateHeight)
+      window.visualViewport?.removeEventListener("resize", updateHeight)
+    }
+  }, [activeDashboardMetric])
 
   React.useEffect(() => {
     let isMounted = true
@@ -738,6 +1043,25 @@ export function MonthEndView({ period }: { period?: string } = {}) {
         : 0,
     }
   })
+  const countryProgressById = new Map(
+    countryProgressRows.map((item) => [
+      item.row.id,
+      { done: item.done, total: item.total },
+    ])
+  )
+  const countryDetailsById = new Map(
+    countryProgressRows.map((item) => [
+      item.row.id,
+      {
+        name: item.row.name,
+        tasks: getRequiredTasks(item.row).map((task) => ({
+          id: task.id,
+          label: task.label,
+          isComplete: asBool(checked[taskKey(item.row.id, task.id)]),
+        })),
+      },
+    ])
+  )
   const countryWorkQueue = countryProgressRows
     .filter((item) => item.done < item.total)
     .sort(
@@ -745,6 +1069,12 @@ export function MonthEndView({ period }: { period?: string } = {}) {
         first.percentage - second.percentage ||
         first.row.name.localeCompare(second.row.name)
     )
+  const countryCompletionDetailRows = [
+    ...countryWorkQueue,
+    ...countryProgressRows
+      .filter((item) => item.total > 0 && item.done === item.total)
+      .sort((first, second) => first.row.name.localeCompare(second.row.name)),
+  ]
   const countryDashboardRows = [
     ...countryWorkQueue,
     ...countryProgressRows.filter((item) => item.done === item.total),
@@ -764,7 +1094,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
       completed: completedInvoiceRows,
     },
     {
-      stage: "Reconciliations",
+      stage: "Recon",
       completed: completedReconciliationRows,
     },
     {
@@ -772,7 +1102,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
       completed: completedJournalRows,
     },
     {
-      stage: "Shared Tasks",
+      stage: "Tasks",
       completed: supplementalTaskDone,
     },
   ]
@@ -1224,6 +1554,163 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     })
   }
 
+  function renderDashboardMetricDetail(
+    metric: DashboardMetricDetailId,
+    hideHeader = false
+  ) {
+    const title =
+      metric === "countries"
+        ? "Country Completion"
+        : metric === "invoices"
+          ? "Invoice Completion"
+          : "Task Completion"
+    const description =
+      metric === "countries"
+        ? `${completedCountryCount} complete, ${inProgressCountryCount} in progress, and ${notStartedCountryCount} not started`
+        : metric === "invoices"
+          ? `${completedInvoiceRows} complete and ${openInvoiceRows} remaining`
+          : `${supplementalTaskDone} complete and ${supplementalTaskTotal - supplementalTaskDone} remaining`
+
+    return (
+      <Card
+        data-country-detail={metric === "countries" ? "" : undefined}
+        className="gap-0 overflow-hidden py-0 shadow-sm"
+        style={
+          metric === "countries" && countryDetailViewportHeight
+            ? { height: countryDetailViewportHeight }
+            : undefined
+        }
+      >
+        {!hideHeader ? (
+          <CardHeader className="border-b py-4">
+            <CardTitle>{title}</CardTitle>
+            <CardDescription>{description}</CardDescription>
+          </CardHeader>
+        ) : null}
+        {metric === "countries" ? (
+          <CardContent className="grid min-h-0 flex-1 grid-rows-[minmax(14rem,1.2fr)_minmax(8rem,0.8fr)] gap-4 p-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(16rem,0.75fr)] lg:grid-rows-none">
+            <div className="grid min-h-0 place-items-center">
+              <MonthEndCountryHeatMap
+                progressByCountry={countryProgressById}
+                detailsByCountry={countryDetailsById}
+                selectedCountryId={
+                  selectedDashboardCountryId ||
+                  countryWorkQueue[0]?.row.id ||
+                  countryProgressRows[0]?.row.id
+                }
+                highlightedCountryId={highlightedDashboardCountryId}
+                onSelectCountry={setSelectedDashboardCountryId}
+                onHighlightCountry={(countryId) =>
+                  setHighlightedDashboardCountryId(countryId ?? "")
+                }
+                className="h-full max-h-[28rem] w-full"
+              />
+            </div>
+            <div className="grid min-h-0 content-start gap-1.5 overflow-y-auto pr-1">
+              {countryCompletionDetailRows.map((item) => {
+                const isComplete = item.total > 0 && item.done === item.total
+                const isInProgress = item.done > 0 && !isComplete
+                const isSelected = item.row.id === selectedDashboardCountryId
+
+                return (
+                  <AppLink
+                    key={item.row.id}
+                    href={countryRecordHref(
+                      activePeriod,
+                      item.row.id,
+                      item.row,
+                      checked
+                    )}
+                    className={cn(
+                      "flex items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted",
+                      isSelected && !isComplete && "bg-muted",
+                      isComplete &&
+                        "bg-emerald-100 text-emerald-950 hover:bg-emerald-100/80 dark:bg-emerald-900/35 dark:text-emerald-50 dark:hover:bg-emerald-900/45"
+                    )}
+                    onMouseEnter={() =>
+                      setHighlightedDashboardCountryId(item.row.id)
+                    }
+                    onMouseLeave={() => setHighlightedDashboardCountryId("")}
+                    onFocus={() =>
+                      setHighlightedDashboardCountryId(item.row.id)
+                    }
+                    onBlur={() => setHighlightedDashboardCountryId("")}
+                    onClick={() => saveCurrentMonthEndReturnPoint(item.row.id)}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium">
+                        {item.row.name}
+                      </span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {item.nextTask?.label ?? "All tasks complete"}
+                      </span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <Badge
+                        className="hidden sm:inline-flex"
+                        variant={isComplete ? "secondary" : "outline"}
+                      >
+                        {isComplete
+                          ? "Complete"
+                          : isInProgress
+                            ? "In progress"
+                            : "Not started"}
+                      </Badge>
+                      <span className="w-9 text-right tabular-nums">
+                        {item.done}/{item.total}
+                      </span>
+                    </span>
+                  </AppLink>
+                )
+              })}
+            </div>
+          </CardContent>
+        ) : metric === "invoices" ? (
+          <CardContent className="p-4 sm:p-6">
+            <div className="mx-auto grid w-full max-w-4xl gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {invoiceRequiredRows.map((row) => {
+                const isComplete = asBool(checked[taskKey(row.id, "invoice")])
+
+                return (
+                  <AppLink
+                    key={row.id}
+                    href={countryRecordHref(activePeriod, row.id, row, checked)}
+                    className={cn(
+                      "flex min-h-14 items-center justify-between gap-3 rounded-lg border bg-background px-4 py-3 font-medium transition-colors hover:bg-muted/60",
+                      isComplete &&
+                        "border-emerald-300 bg-emerald-100 text-emerald-950 hover:bg-emerald-100/80 dark:border-emerald-700 dark:bg-emerald-900/35 dark:text-emerald-50 dark:hover:bg-emerald-900/45"
+                    )}
+                    onClick={() => saveCurrentMonthEndReturnPoint(row.id)}
+                  >
+                    <span className="min-w-0 truncate">{row.name}</span>
+                    {isComplete ? (
+                      <CheckIcon className="size-4 shrink-0" />
+                    ) : (
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        Missing
+                      </span>
+                    )}
+                  </AppLink>
+                )
+              })}
+            </div>
+          </CardContent>
+        ) : (
+          <CardContent className="p-4 sm:p-6">
+            <div className="mx-auto max-w-5xl">
+              <MonthEndTaskGroupsList
+                groups={orderedTaskGroups}
+                checked={checked}
+                updateTask={updateTask}
+                isReadOnly
+              />
+            </div>
+          </CardContent>
+        )}
+      </Card>
+    )
+  }
+
   const monthStatusAction = (
     <div className="hidden shrink-0 items-center gap-2 md:flex">
       <DropdownMenu
@@ -1341,7 +1828,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
               titleContent={<Skeleton className="h-5 w-32 rounded-md" />}
             />
             <div className="@container/month-end flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
-              <Skeleton className="h-8 w-full rounded-lg md:hidden" />
+              <Skeleton className="h-10 w-full rounded-lg md:hidden" />
               <MonthEndDashboardSkeleton />
             </div>
           </main>
@@ -1366,6 +1853,14 @@ export function MonthEndView({ period }: { period?: string } = {}) {
         <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
           <SiteHeader
             title={record ? formatPeriod(record.period) : "Month End"}
+            mobileLeadingContent={
+              shouldShowPreviousBackButton ? (
+                <SiteHeaderBackButton
+                  label="Back to previous months"
+                  href="/previous-month-ends"
+                />
+              ) : undefined
+            }
             actions={monthStatusAction}
             bottomContent={
               <MonthEndSectionNavigation
@@ -1377,7 +1872,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
           />
           <div className="@container/month-end flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
             {shouldShowPreviousBackButton ? (
-              <section className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <section className="hidden flex-col gap-3 md:flex md:flex-row md:items-center md:justify-between">
                 <Button
                   variant="outline"
                   size="icon-sm"
@@ -1401,9 +1896,13 @@ export function MonthEndView({ period }: { period?: string } = {}) {
               onValueChange={setActiveMonthEndSection}
               className="md:hidden"
             >
-              <TabsList className="w-full">
+              <TabsList className="h-10! w-full">
                 {monthEndSectionItems.map((item) => (
-                  <TabsTrigger key={item.id} value={item.id}>
+                  <TabsTrigger
+                    key={item.id}
+                    value={item.id}
+                    className="min-h-9 px-2 text-sm"
+                  >
                     {item.label}
                   </TabsTrigger>
                 ))}
@@ -1423,18 +1922,69 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                     title="Countries Complete"
                     value={`${completedCountryCount}/${checkableRows.length}`}
                     icon={Building2Icon}
+                    isActive={activeDashboardMetric === "countries"}
+                    expandedContent={renderDashboardMetricDetail(
+                      "countries",
+                      true
+                    )}
+                    onActivate={() =>
+                      setActiveDashboardMetric((current) =>
+                        current === "countries" ? null : "countries"
+                      )
+                    }
                   />
+                  {activeDashboardMetric === "countries" ? (
+                    <div className="col-span-full hidden md:block xl:hidden">
+                      {renderDashboardMetricDetail("countries")}
+                    </div>
+                  ) : null}
                   <MonthEndMetricCard
                     title="Invoices Complete"
                     value={`${completedInvoiceRows}/${invoiceRequiredRows.length}`}
                     icon={FileTextIcon}
+                    isActive={activeDashboardMetric === "invoices"}
+                    expandedContent={renderDashboardMetricDetail(
+                      "invoices",
+                      true
+                    )}
+                    onActivate={() =>
+                      setActiveDashboardMetric((current) =>
+                        current === "invoices" ? null : "invoices"
+                      )
+                    }
                   />
+                  {activeDashboardMetric === "invoices" ? (
+                    <div className="col-span-full hidden md:block xl:hidden">
+                      {renderDashboardMetricDetail("invoices")}
+                    </div>
+                  ) : null}
                   <MonthEndMetricCard
-                    title="Shared Tasks"
+                    title="Tasks"
                     value={`${supplementalTaskDone}/${supplementalTaskTotal}`}
                     icon={ListTodoIcon}
+                    isActive={activeDashboardMetric === "shared-tasks"}
+                    expandedContent={renderDashboardMetricDetail(
+                      "shared-tasks",
+                      true
+                    )}
+                    onActivate={() =>
+                      setActiveDashboardMetric((current) =>
+                        current === "shared-tasks" ? null : "shared-tasks"
+                      )
+                    }
                   />
+                  {activeDashboardMetric === "shared-tasks" ? (
+                    <div className="col-span-full hidden md:block xl:hidden">
+                      {renderDashboardMetricDetail("shared-tasks")}
+                    </div>
+                  ) : null}
                 </section>
+
+                {activeDashboardMetric ? (
+                  <div className="hidden xl:block">
+                    {renderDashboardMetricDetail(activeDashboardMetric)}
+                  </div>
+                ) : null}
 
                 <section className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(19rem,0.75fr)]">
                   <Card className="shadow-sm">

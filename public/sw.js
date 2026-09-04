@@ -1,4 +1,4 @@
-const CACHE_NAME = "actn-admin-v16"
+const CACHE_NAME = "actn-admin-v17"
 const STATIC_ASSETS = [
   "/manifest.webmanifest",
   "/actn-admin-icon.png",
@@ -55,7 +55,9 @@ self.addEventListener("fetch", (event) => {
       return fetch(event.request).then((response) => {
         if (response.ok) {
           const copy = response.clone()
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy))
+          caches
+            .open(CACHE_NAME)
+            .then((cache) => cache.put(event.request, copy))
         }
 
         return response

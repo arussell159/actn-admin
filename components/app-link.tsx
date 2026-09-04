@@ -7,6 +7,8 @@ type AppLinkProps = React.AnchorHTMLAttributes<HTMLAnchorElement> & {
   href: string
 }
 
+let navigationLockUntil = 0
+
 function isExternalHref(href: string) {
   return (
     href.startsWith("#") ||
@@ -36,7 +38,31 @@ export const AppLink = React.forwardRef<HTMLAnchorElement, AppLinkProps>(
         ref={ref}
         href={route}
         onClick={(event) => {
+          const isPlainPrimaryClick =
+            event.button === 0 &&
+            !event.metaKey &&
+            !event.ctrlKey &&
+            !event.shiftKey &&
+            !event.altKey
+
+          if (isPlainPrimaryClick) {
+            const now = window.performance.now()
+
+            if (now < navigationLockUntil) {
+              event.preventDefault()
+              return
+            }
+
+            navigationLockUntil = now + 650
+          }
+
           onClick?.(event)
+
+          if (event.defaultPrevented) {
+            navigationLockUntil = 0
+            return
+          }
+
           window.setTimeout(() => {
             window.dispatchEvent(new Event("information-notes:navigation"))
           }, 0)

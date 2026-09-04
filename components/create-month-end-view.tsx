@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import { AppSidebar } from "@/components/app-sidebar"
 import { NewMonthEndForm } from "@/components/new-month-end-form"
 import { CreateMonthEndSkeleton } from "@/components/page-skeletons"
-import { SiteHeader } from "@/components/site-header"
+import { SiteHeader, SiteHeaderBackButton } from "@/components/site-header"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { listMonthEndRecords, type MonthEndRecord } from "@/lib/month-end-db"
 
@@ -51,7 +51,15 @@ export function CreateMonthEndView() {
       <AppSidebar variant="inset" />
       <SidebarInset>
         <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
-          <SiteHeader title="Create Month End" />
+          <SiteHeader
+            title="Create Month End"
+            mobileLeadingContent={
+              <SiteHeaderBackButton
+                label="Back to previous months"
+                href="/previous-month-ends"
+              />
+            }
+          />
           <div className="grid gap-4 px-4 py-4 lg:px-6">
             {isLoading ? (
               <CreateMonthEndSkeleton />

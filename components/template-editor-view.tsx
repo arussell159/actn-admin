@@ -37,7 +37,7 @@ import {
 import { AppSidebar } from "@/components/app-sidebar"
 import { HeaderActionMenuTrigger } from "@/components/header-action-menu-trigger"
 import { PricingUploadContent } from "@/components/pricing-upload-view"
-import { SiteHeader } from "@/components/site-header"
+import { SiteHeader, SiteHeaderBackButton } from "@/components/site-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -1234,6 +1234,14 @@ export function TemplateEditorView() {
           <SiteHeader
             title={settingsHeaderTitle}
             leadingContent={settingsHeaderLeading}
+            mobileLeadingContent={
+              activeCountry ? (
+                <SiteHeaderBackButton
+                  label="Back to countries"
+                  onClick={requestCloseActiveCountry}
+                />
+              ) : undefined
+            }
             actions={settingsHeaderActions}
             bottomContent={settingsHeaderTabs}
           />

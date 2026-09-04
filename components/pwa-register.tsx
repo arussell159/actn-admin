@@ -31,7 +31,7 @@ export function PwaRegister() {
 
     window.caches?.keys().then((keys) => {
       keys.forEach((key) => {
-        if (key.startsWith("actn-admin") && key !== "actn-admin-v16") {
+        if (key.startsWith("actn-admin") && key !== "actn-admin-v17") {
           window.caches.delete(key)
         }
       })

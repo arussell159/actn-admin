@@ -1,6 +1,8 @@
 import type { CSSProperties, ReactNode } from "react"
 
 import { Skeleton } from "@/components/ui/skeleton"
+import { MobilePullRefresh } from "@/components/mobile-pull-refresh"
+import { MobileTabBar } from "@/components/mobile-tab-bar"
 
 function countryIdFallbackName(countryId?: string) {
   return countryId
@@ -26,81 +28,87 @@ export function AppRouteSkeleton({
   const heading = title ?? <Skeleton className="h-5 w-32 rounded-md" />
 
   return (
-    <div
-      className="flex min-h-svh bg-background md:p-2"
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as CSSProperties
-      }
-    >
-      <aside className="hidden w-72 shrink-0 rounded-xl bg-sidebar p-3 md:block">
-        <Skeleton className="h-10 rounded-lg" />
-        <div className="mt-5 grid gap-2">
-          {Array.from({ length: 8 }).map((_, index) => (
-            <Skeleton
-              key={index}
-              className="h-8 rounded-md"
-              style={{ width: `${92 - (index % 3) * 14}%` }}
-            />
-          ))}
-        </div>
-      </aside>
-      <main className="flex min-h-svh flex-1 flex-col bg-background md:min-h-[calc(100svh-1rem)]">
-        <header
-          className={[
-            "sticky top-0 z-40 flex h-[calc(2.5rem+env(safe-area-inset-top,0px))] shrink-0 items-center gap-2 bg-transparent pt-[env(safe-area-inset-top,0px)] md:relative md:z-auto md:h-auto md:min-h-(--header-height) md:flex-col md:items-stretch md:bg-background md:pt-0",
-            tabs?.length ? "md:border-b-0" : "md:border-b",
-          ].join(" ")}
-        >
-          <div
+    <>
+      <div
+        className="flex min-h-svh bg-background md:p-2"
+        style={
+          {
+            "--sidebar-width": "calc(var(--spacing) * 72)",
+            "--header-height": "calc(var(--spacing) * 12)",
+          } as CSSProperties
+        }
+      >
+        <aside className="hidden w-72 shrink-0 rounded-xl bg-sidebar p-3 md:block">
+          <Skeleton className="h-10 rounded-lg" />
+          <div className="mt-5 grid gap-2">
+            {Array.from({ length: 8 }).map((_, index) => (
+              <Skeleton
+                key={index}
+                className="h-8 rounded-md"
+                style={{ width: `${92 - (index % 3) * 14}%` }}
+              />
+            ))}
+          </div>
+        </aside>
+        <main className="flex min-h-svh flex-1 flex-col bg-background md:min-h-[calc(100svh-1rem)]">
+          <header
             className={[
-              "relative z-10 hidden h-(--header-height) w-full items-center gap-3 px-4 md:grid lg:px-6",
-              actions ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-1",
+              "sticky top-0 z-40 flex h-[calc(2.5rem+env(safe-area-inset-top,0px))] shrink-0 items-center gap-2 bg-transparent pt-[env(safe-area-inset-top,0px)] md:relative md:z-auto md:h-auto md:min-h-(--header-height) md:flex-col md:items-stretch md:bg-background md:pt-0",
+              tabs?.length ? "md:border-b-0" : "md:border-b",
             ].join(" ")}
           >
-            <h1 className="min-w-0 truncate text-base font-medium">
-              {heading}
-            </h1>
-            {actions ? (
-              <div className="flex shrink-0 items-center gap-2">{actions}</div>
-            ) : null}
-          </div>
-          {tabs?.length ? (
-            <div className="relative z-10 hidden h-9 border-b px-4 md:block lg:px-6">
-              <div className="flex min-w-0 flex-wrap justify-start gap-6">
-                {tabs.map((tab) => {
-                  const isActive = tab === activeTab
-
-                  return (
-                    <span
-                      key={tab}
-                      className={[
-                        "-mb-px inline-flex h-9 items-center border-b border-transparent text-sm font-medium text-muted-foreground",
-                        isActive ? "border-foreground text-foreground" : "",
-                      ].join(" ")}
-                    >
-                      {tab}
-                    </span>
-                  )
-                })}
-              </div>
+            <div
+              className={[
+                "relative z-10 hidden h-(--header-height) w-full items-center gap-3 px-4 md:grid lg:px-6",
+                actions ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-1",
+              ].join(" ")}
+            >
+              <h1 className="min-w-0 truncate text-base font-medium">
+                {heading}
+              </h1>
+              {actions ? (
+                <div className="flex shrink-0 items-center gap-2">
+                  {actions}
+                </div>
+              ) : null}
             </div>
-          ) : null}
-          <div className="relative z-10 grid w-full grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-center px-4 md:hidden">
-            <Skeleton className="size-10 rounded-full" />
-            <h1 className="truncate text-center text-base font-semibold">
-              {heading}
-            </h1>
-            <Skeleton className="size-10 rounded-full" />
+            {tabs?.length ? (
+              <div className="relative z-10 hidden h-9 border-b px-4 md:block lg:px-6">
+                <div className="flex min-w-0 flex-wrap justify-start gap-6">
+                  {tabs.map((tab) => {
+                    const isActive = tab === activeTab
+
+                    return (
+                      <span
+                        key={tab}
+                        className={[
+                          "-mb-px inline-flex h-9 items-center border-b border-transparent text-sm font-medium text-muted-foreground",
+                          isActive ? "border-foreground text-foreground" : "",
+                        ].join(" ")}
+                      >
+                        {tab}
+                      </span>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : null}
+            <div className="relative z-10 grid w-full grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-center px-4 md:hidden">
+              <Skeleton className="size-10 rounded-full" />
+              <h1 className="truncate text-center text-base font-semibold">
+                {heading}
+              </h1>
+              <Skeleton className="size-10 rounded-full" />
+            </div>
+          </header>
+          <div className="flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
+            {children}
           </div>
-        </header>
-        <div className="flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
-          {children}
-        </div>
-      </main>
-    </div>
+        </main>
+      </div>
+      <MobilePullRefresh />
+      <MobileTabBar />
+    </>
   )
 }
 

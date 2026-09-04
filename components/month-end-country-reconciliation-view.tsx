@@ -23,7 +23,7 @@ import {
   CountryJournalBodySkeleton,
   CountryReconciliationSkeleton,
 } from "@/components/page-skeletons"
-import { SiteHeader } from "@/components/site-header"
+import { SiteHeader, SiteHeaderBackButton } from "@/components/site-header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -5231,10 +5231,16 @@ function CountryProcessMobileTabs({
       }
       className="w-full"
     >
-      <TabsList className="w-full">
-        <TabsTrigger value="reconciliation">Recon</TabsTrigger>
-        <TabsTrigger value="journal">Journal</TabsTrigger>
-        <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+      <TabsList className="h-10! w-full">
+        <TabsTrigger value="reconciliation" className="min-h-9 px-2 text-sm">
+          Recon
+        </TabsTrigger>
+        <TabsTrigger value="journal" className="min-h-9 px-2 text-sm">
+          Journal
+        </TabsTrigger>
+        <TabsTrigger value="dashboard" className="min-h-9 px-2 text-sm">
+          Dashboard
+        </TabsTrigger>
       </TabsList>
     </Tabs>
   )
@@ -6316,11 +6322,14 @@ function FrabemarInvoicePackageStep({
         ...frabemarReviewRows.map((row) => ({
           account: row.country.accountName,
           credit: row.journalAmount,
-          lineDescription: parsedSharedExchangeRate
-            ? `${formatAmount(row.netAmount)} * ${formatFrabemarExchangeRate(
-                parsedSharedExchangeRate
-              )}`
-            : undefined,
+          lineDescription:
+            parsedSharedExchangeRate && row.countryValue
+              ? `(${formatAmount(row.countryValue.invoiceTotal)} - ${formatAmount(
+                  row.countryValue.commission
+                )}) = ${formatAmount(row.netAmount)} * ${formatFrabemarExchangeRate(
+                  parsedSharedExchangeRate
+                )}`
+              : undefined,
         })),
       ]
     : []
@@ -9544,16 +9553,10 @@ export function MonthEndCountryReconciliationView({
     </Button>
   ) : undefined
   const countryHeaderMobileLeading = showCountryHeaderControls ? (
-    <Button
-      type="button"
-      variant="outline"
-      size="icon-lg"
-      className="size-10 rounded-full border-white/70 bg-background/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_4px_14px_rgba(15,23,42,0.08)] backdrop-blur-xl hover:bg-background/75 dark:border-white/15 dark:bg-background/35 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_4px_14px_rgba(0,0,0,0.22)] dark:hover:bg-background/55"
-      aria-label="Back to month end"
+    <SiteHeaderBackButton
+      label="Back to month end"
       onClick={goBackToMonthEnd}
-    >
-      <ArrowLeftIcon className="size-4.5" />
-    </Button>
+    />
   ) : undefined
   const showCountryNavigation =
     showCountryHeaderControls && !shouldShowFrabemarPackage

@@ -7,13 +7,14 @@ export default function manifest(): MetadataRoute.Manifest {
     id: "/",
     name: "ACTN Admin",
     short_name: "ACTN Admin",
-    description: "Africa CTN admin tools for month end, quotes, notes, and pricing.",
+    description:
+      "Africa CTN admin tools for month end, quotes, notes, and pricing.",
     start_url: "/dashboard",
     scope: "/",
     display: "standalone",
     background_color: "#f7fafb",
     theme_color: "#ffffff",
-    orientation: "portrait",
+    orientation: "portrait-primary",
     categories: ["business", "productivity", "utilities"],
     shortcuts: [
       {

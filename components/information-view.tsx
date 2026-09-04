@@ -3,7 +3,6 @@
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
-  ArrowLeftIcon,
   ArrowDownAZIcon,
   ArrowDownZAIcon,
   CheckIcon,
@@ -30,7 +29,11 @@ import {
 
 import { AppSidebar } from "@/components/app-sidebar"
 import { NotebookSkeleton } from "@/components/page-skeletons"
-import { SiteHeader } from "@/components/site-header"
+import {
+  SiteHeader,
+  SiteHeaderBackButton,
+  siteHeaderGlassButtonClassName,
+} from "@/components/site-header"
 import { SimpleEditor } from "@/components/tiptap-templates/simple/simple-editor"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -40,6 +43,7 @@ import {
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -83,6 +87,153 @@ type InformationSortOrder =
   | "updated-asc"
   | "created-desc"
   | "created-asc"
+
+type NotebookBreadcrumbItem = {
+  id: string
+  label: string
+  onSelect?: () => void
+}
+
+function NotebookBreadcrumbs({ items }: { items: NotebookBreadcrumbItem[] }) {
+  const containerRef = React.useRef<HTMLSpanElement>(null)
+  const itemsRef = React.useRef(items)
+  const itemSignature = items
+    .map((item) => `${item.id}:${item.label}`)
+    .join("|")
+  const [layout, setLayout] = React.useState({
+    startIndex: Math.max(0, items.length - 2),
+    truncatedIndex: -1,
+    truncatedWidth: 0,
+  })
+
+  itemsRef.current = items
+
+  React.useLayoutEffect(() => {
+    const container = containerRef.current
+
+    if (!container) {
+      return
+    }
+
+    const updateLayout = () => {
+      const currentItems = itemsRef.current
+
+      if (currentItems.length < 2) {
+        return
+      }
+
+      const canvas = document.createElement("canvas")
+      const context = canvas.getContext("2d")
+      const computedStyle = window.getComputedStyle(container)
+
+      if (context) {
+        context.font = computedStyle.font
+      }
+
+      const measureLabel = (label: string) =>
+        Math.ceil(context?.measureText(label).width ?? label.length * 5.5) + 2
+      const availableWidth = Math.max(0, container.clientWidth - 16)
+      const separatorWidth = 10
+      const currentIndex = currentItems.length - 1
+      let usedWidth = measureLabel(currentItems[currentIndex].label)
+      let startIndex = currentIndex
+      let truncatedIndex = -1
+      let truncatedWidth = 0
+
+      for (let index = currentIndex - 1; index >= 0; index -= 1) {
+        const remainingWidth = availableWidth - usedWidth - separatorWidth
+
+        if (remainingWidth <= 0) {
+          break
+        }
+
+        const labelWidth = measureLabel(currentItems[index].label)
+
+        if (labelWidth <= remainingWidth) {
+          startIndex = index
+          usedWidth += separatorWidth + labelWidth
+          continue
+        }
+
+        if (index === currentIndex - 1 && remainingWidth >= 24) {
+          startIndex = index
+          truncatedIndex = index
+          truncatedWidth = remainingWidth
+        }
+
+        break
+      }
+
+      setLayout((current) =>
+        current.startIndex === startIndex &&
+        current.truncatedIndex === truncatedIndex &&
+        current.truncatedWidth === truncatedWidth
+          ? current
+          : { startIndex, truncatedIndex, truncatedWidth }
+      )
+    }
+
+    updateLayout()
+    const observer = new ResizeObserver(updateLayout)
+    observer.observe(container)
+
+    return () => observer.disconnect()
+  }, [itemSignature])
+
+  if (items.length === 1) {
+    return <span>{items[0].label}</span>
+  }
+
+  const visibleItems = items.slice(layout.startIndex)
+
+  return (
+    <span
+      ref={containerRef}
+      className="mx-auto flex w-full max-w-60 min-w-0 items-center justify-center gap-1 overflow-hidden px-2 text-[10px] leading-none font-normal text-muted-foreground/70 md:mx-0 md:max-w-none md:justify-start md:px-0"
+      aria-label="Notebook breadcrumb"
+    >
+      {visibleItems.map((item, visibleIndex) => {
+        const index = layout.startIndex + visibleIndex
+        const isCurrent = index === items.length - 1
+        const content = item.onSelect ? (
+          <button
+            type="button"
+            className="block max-w-full truncate rounded-sm text-[10px] leading-none font-normal text-muted-foreground/70 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+            onClick={item.onSelect}
+          >
+            {item.label}
+          </button>
+        ) : (
+          <span className="block max-w-full truncate text-[10px] leading-none font-normal text-muted-foreground/70">
+            {item.label}
+          </span>
+        )
+
+        return (
+          <React.Fragment key={item.id}>
+            {visibleIndex ? (
+              <span className="shrink-0 text-muted-foreground/50">/</span>
+            ) : null}
+            <span
+              className={cn(
+                "min-w-0 overflow-hidden",
+                isCurrent ? "shrink-0 whitespace-nowrap" : "shrink-0 truncate"
+              )}
+              style={
+                index === layout.truncatedIndex
+                  ? { width: layout.truncatedWidth }
+                  : undefined
+              }
+              title={item.label}
+            >
+              {content}
+            </span>
+          </React.Fragment>
+        )
+      })}
+    </span>
+  )
+}
 
 const informationSortOptions: {
   value: InformationSortOrder
@@ -504,18 +655,12 @@ function MobileFolderTitlePrompt({
 
 function MobileFoldersScreen({
   nodes,
-  trashCount,
   onOpenFolder,
   onOpenRootNotes,
-  onOpenTrash,
-  onCreate,
 }: {
   nodes: InformationNode[]
-  trashCount: number
   onOpenFolder: (nodeId: string) => void
   onOpenRootNotes: () => void
-  onOpenTrash: () => void
-  onCreate: (type: InformationNodeType, parentId?: string) => void
 }) {
   const rootItems = childNodes(nodes)
   const rootFolders = rootItems.filter((node) => node.type === "folder")
@@ -523,30 +668,7 @@ function MobileFoldersScreen({
   const totalNotes = nodes.filter((node) => node.type === "note").length
 
   return (
-    <div className="relative min-h-full bg-muted/60 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] pb-24 md:hidden">
-      <div className="mb-5 flex items-center justify-end gap-2">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="rounded-full bg-background shadow-sm"
-          aria-label="Open trash"
-          onClick={onOpenTrash}
-        >
-          <Trash2Icon />
-          {trashCount ? (
-            <span className="sr-only">{trashCount} deleted items</span>
-          ) : null}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="rounded-full bg-background shadow-sm"
-          aria-label="Add folder"
-          onClick={() => onCreate("folder")}
-        >
-          <FolderPlusIcon />
-        </Button>
-      </div>
+    <div className="relative min-h-full bg-muted/60 px-4 pt-4 pb-24 md:hidden">
       <h1 className="text-[30pt] leading-tight font-bold tracking-tight text-foreground md:text-3xl">
         Folders
       </h1>
@@ -667,100 +789,24 @@ function MobileFolderNotesScreen({
   folder,
   nodes,
   notes,
-  onBack,
   onOpenNote,
-  onCreateNote,
-  onCreateFolder,
   onDelete,
   onMove,
 }: {
   folder?: InformationNode
   nodes: InformationNode[]
   notes: InformationNode[]
-  onBack: () => void
   onOpenNote: (nodeId: string) => void
-  onCreateNote: () => void
-  onCreateFolder?: () => void
   onDelete: (nodeId: string) => void
   onMove: (nodeId: string, parentId?: string) => void
 }) {
   const allFolders = nodes.filter((node) => node.type === "folder")
-  const folderBlockedMoveIds = folder
-    ? descendantsOf(nodes, folder.id)
-    : new Set<string>()
   const childFolders = folder
     ? childNodes(nodes, folder.id).filter((node) => node.type === "folder")
     : []
 
   return (
-    <div className="relative min-h-full bg-muted/60 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] pb-24 md:hidden">
-      <div className="mb-5 flex items-center justify-between">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="rounded-full bg-background shadow-sm"
-          aria-label="Back to folders"
-          onClick={onBack}
-        >
-          <ArrowLeftIcon />
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="rounded-full bg-background shadow-sm"
-                aria-label="Folder actions"
-              />
-            }
-          >
-            <MoreHorizontalIcon />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-44">
-            <DropdownMenuItem onClick={onCreateNote}>
-              <FilePlus2Icon />
-              Add Note
-            </DropdownMenuItem>
-            {onCreateFolder ? (
-              <DropdownMenuItem onClick={onCreateFolder}>
-                <FolderPlusIcon />
-                Add Folder
-              </DropdownMenuItem>
-            ) : null}
-            {folder ? (
-              <DropdownMenuItem
-                variant="destructive"
-                onClick={() => onDelete(folder.id)}
-              >
-                <Trash2Icon />
-                Delete Folder
-              </DropdownMenuItem>
-            ) : null}
-            {folder ? (
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>Move Folder</DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="min-w-52">
-                  {folder.parentId ? (
-                    <DropdownMenuItem onClick={() => onMove(folder.id)}>
-                      Notebook
-                    </DropdownMenuItem>
-                  ) : null}
-                  <MobileMoveFolderMenuItems
-                    nodes={nodes}
-                    movingFolder={folder}
-                    blockedIds={folderBlockedMoveIds}
-                    onMove={onMove}
-                  />
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-            ) : null}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-      <h1 className="text-[30pt] leading-tight font-bold tracking-tight text-foreground md:text-3xl">
-        {folder?.title ?? "Notes"}
-      </h1>
+    <div className="relative min-h-full bg-muted/60 px-4 pt-4 pb-24 md:hidden">
       <p className="text-muted-foreground">
         {notes.length} Notes
         {childFolders.length ? `, ${childFolders.length} Folders` : ""}
@@ -972,7 +1018,7 @@ function TrashDashboard({
 
   return (
     <div className="grid gap-4 px-3 pt-3 pb-3 sm:px-0 sm:pt-0 sm:pb-0">
-      <div className="flex items-center justify-between gap-3">
+      <div className="hidden items-center justify-between gap-3 md:flex">
         <div>
           <h2 className="text-xl font-semibold tracking-tight">Trash</h2>
           <p className="text-sm text-muted-foreground">
@@ -1025,47 +1071,96 @@ function TrashDashboard({
   )
 }
 
-function MobileNoteHeader({
-  onClose,
+function MobileNotebookActions({
+  activeNode,
+  nodes,
+  onCreateNote,
+  onCreateFolder,
+  onOpenTrash,
+  trashCount,
   onDelete,
+  onMove,
 }: {
-  onClose: () => void
-  onDelete: () => void
+  activeNode?: InformationNode
+  nodes: InformationNode[]
+  onCreateNote: () => void
+  onCreateFolder: () => void
+  onOpenTrash: () => void
+  trashCount: number
+  onDelete: (nodeId: string) => void
+  onMove: (nodeId: string, parentId?: string) => void
 }) {
+  const isNote = activeNode?.type === "note"
+  const isFolder = activeNode?.type === "folder"
+  const blockedMoveIds = isFolder
+    ? descendantsOf(nodes, activeNode.id)
+    : new Set<string>()
+
   return (
-    <header className="sticky top-0 z-30 flex h-[calc(4rem+env(safe-area-inset-top,0px))] shrink-0 items-end justify-between bg-background px-4 pt-[env(safe-area-inset-top,0px)] pb-2 md:hidden">
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        className="rounded-full bg-background shadow-sm"
-        aria-label="Back to notes"
-        onClick={onClose}
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="outline"
+            size="icon-lg"
+            className={siteHeaderGlassButtonClassName}
+            aria-label="Notebook actions"
+          />
+        }
       >
-        <ArrowLeftIcon />
-      </Button>
-      <div className="flex items-center gap-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="rounded-full bg-background shadow-sm"
-                aria-label="Note actions"
-              />
-            }
-          >
-            <MoreHorizontalIcon />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-44">
-            <DropdownMenuItem variant="destructive" onClick={onDelete}>
-              <Trash2Icon />
-              Delete
+        <MoreHorizontalIcon />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-44">
+        {!isNote ? (
+          <>
+            <DropdownMenuItem onClick={onCreateNote}>
+              <FilePlus2Icon />
+              Add Note
             </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </header>
+            <DropdownMenuItem onClick={onCreateFolder}>
+              <FolderPlusIcon />
+              Add Folder
+            </DropdownMenuItem>
+          </>
+        ) : null}
+        {!isNote ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={onOpenTrash}>
+              <Trash2Icon />
+              Trash{trashCount ? ` (${trashCount})` : ""}
+            </DropdownMenuItem>
+          </>
+        ) : null}
+        {isFolder ? (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>Move Folder</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="min-w-52">
+              {activeNode.parentId ? (
+                <DropdownMenuItem onClick={() => onMove(activeNode.id)}>
+                  Notebook
+                </DropdownMenuItem>
+              ) : null}
+              <MobileMoveFolderMenuItems
+                nodes={nodes}
+                movingFolder={activeNode}
+                blockedIds={blockedMoveIds}
+                onMove={onMove}
+              />
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        ) : null}
+        {activeNode ? (
+          <DropdownMenuItem
+            variant="destructive"
+            onClick={() => onDelete(activeNode.id)}
+          >
+            <Trash2Icon />
+            Delete {isFolder ? "Folder" : "Note"}
+          </DropdownMenuItem>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -1460,10 +1555,11 @@ export function InformationView() {
           ]
         : loaded
       const shouldShowMobileFolders =
-        !requestedNode &&
-        requestedView !== "notes" &&
-        isMobile &&
-        !rememberedNote
+        requestedView === "folders" ||
+        (!requestedNode &&
+          requestedView !== "notes" &&
+          isMobile &&
+          !rememberedNote)
       const desktopRestoredNode = desktopState?.activeId
         ? loaded.find((node) => node.id === desktopState.activeId)
         : undefined
@@ -1519,15 +1615,19 @@ export function InformationView() {
             ? trashViewId
             : requestedView === "notes"
               ? mobileRootNotesId
-              : initialNode?.id
+              : requestedView === "folders"
+                ? undefined
+                : initialNode?.id
         )
         setActiveDrafts(
           requestedView === "trash"
             ? "Trash"
             : requestedView === "notes"
               ? "Notes"
-              : (initialNode?.title ?? ""),
-          initialNode?.content ?? ""
+              : requestedView === "folders"
+                ? ""
+                : (initialNode?.title ?? ""),
+          requestedView === "folders" ? "" : (initialNode?.content ?? "")
         )
         if (initialNode?.type === "note" && isDesktopViewport()) {
           setEditorRestoreSelectionSignal((signal) => signal + 1)
@@ -1757,7 +1857,10 @@ export function InformationView() {
       setActiveNodeId(undefined)
       setActiveDrafts("", "")
       mobileNoteSelectorRef.current?.removeAttribute("open")
-      updateInformationRoute("/information", mode)
+      updateInformationRoute(
+        isMobileViewport() ? "/information?view=folders" : "/information",
+        mode
+      )
       window.dispatchEvent(new Event("information-notes:navigation"))
       return
     }
@@ -2273,6 +2376,56 @@ export function InformationView() {
     informationSortOptions.find(
       (option) => option.value === informationSortOrder
     ) ?? informationSortOptions[0]
+  const activeNodePath: InformationNode[] = []
+
+  if (activeNode) {
+    const nodeById = new Map(nodes.map((node) => [node.id, node]))
+    let pathNode: InformationNode | undefined = activeNode
+
+    while (pathNode) {
+      activeNodePath.unshift(pathNode)
+      pathNode = pathNode.parentId ? nodeById.get(pathNode.parentId) : undefined
+    }
+  }
+
+  const notebookBreadcrumbItems: NotebookBreadcrumbItem[] = [
+    {
+      id: "notebook",
+      label: "Notebook",
+      onSelect:
+        activeNode || activeId ? () => selectNode("", "replace") : undefined,
+    },
+    ...(activeNode
+      ? activeNodePath.map((node, index) => ({
+          id: node.id,
+          label:
+            node.id === activeNode.id && node.type === "note"
+              ? titleDraft || node.title
+              : node.title,
+          onSelect:
+            index < activeNodePath.length - 1
+              ? () => selectNode(node.id, "replace")
+              : undefined,
+        }))
+      : activeId === mobileRootNotesId
+        ? [{ id: mobileRootNotesId, label: "Notes" }]
+        : activeId === trashViewId
+          ? [{ id: trashViewId, label: "Trash" }]
+          : []),
+  ]
+  const mobileHeaderBackAction = activeNode
+    ? () => {
+        if (activeNode.type === "note") {
+          saveActiveNote()
+          closeMobileNote()
+          return
+        }
+
+        closeMobileFolder(activeNode)
+      }
+    : activeId === mobileRootNotesId || activeId === trashViewId
+      ? () => selectNode("", "replace")
+      : undefined
 
   return (
     <SidebarProvider
@@ -2300,22 +2453,40 @@ export function InformationView() {
             activeNode?.type === "note" ? "bg-background" : "bg-muted/60"
           )}
         >
-          <div className="hidden md:block">
-            <SiteHeader title="Notebook" />
-          </div>
-          {activeNode?.type === "note" ? (
-            <MobileNoteHeader
-              onClose={() => {
-                saveActiveNote()
-                closeMobileNote()
-              }}
-              onDelete={() => {
-                if (activeNode) {
-                  deleteNode(activeNode.id)
+          <SiteHeader
+            titleContent={
+              <NotebookBreadcrumbs items={notebookBreadcrumbItems} />
+            }
+            mobileLeadingContent={
+              mobileHeaderBackAction ? (
+                <SiteHeaderBackButton
+                  label="Back to notes"
+                  onClick={mobileHeaderBackAction}
+                />
+              ) : undefined
+            }
+            mobileTrailingContent={
+              <MobileNotebookActions
+                activeNode={activeNode}
+                nodes={nodes}
+                onCreateNote={() =>
+                  startCreate(
+                    "note",
+                    activeNode?.type === "folder" ? activeNode.id : ""
+                  )
                 }
-              }}
-            />
-          ) : null}
+                onCreateFolder={() =>
+                  requestCreateFolder(
+                    activeNode?.type === "folder" ? activeNode.id : ""
+                  )
+                }
+                onOpenTrash={() => selectTrash()}
+                trashCount={trashedNodes.length}
+                onDelete={deleteNode}
+                onMove={moveNode}
+              />
+            }
+          />
           {folderPromptParentId !== null ? (
             <MobileFolderTitlePrompt
               value={folderPromptTitle}
@@ -2539,7 +2710,7 @@ export function InformationView() {
                         onRestore={restoreNode}
                       />
                     ) : activeNode?.type === "note" ? (
-                      <div className="min-h-0 flex-1 overflow-hidden bg-background sm:-m-5">
+                      <div className="min-h-0 flex-1 overflow-hidden bg-background pt-2 sm:-m-5 sm:pt-0">
                         <SimpleEditor
                           key={activeNode.id}
                           focusSignal={editorFocusSignal}
@@ -2571,14 +2742,7 @@ export function InformationView() {
                           folder={activeNode}
                           nodes={nodes}
                           notes={activeFolderNotes}
-                          onBack={() => closeMobileFolder(activeNode)}
                           onOpenNote={selectNode}
-                          onCreateNote={() =>
-                            startCreate("note", activeNode.id)
-                          }
-                          onCreateFolder={() =>
-                            requestCreateFolder(activeNode.id)
-                          }
                           onDelete={deleteNode}
                           onMove={moveNode}
                         />
@@ -2595,10 +2759,7 @@ export function InformationView() {
                         <MobileFolderNotesScreen
                           nodes={nodes}
                           notes={activeFolderNotes}
-                          onBack={() => closeMobileFolder()}
                           onOpenNote={selectNode}
-                          onCreateNote={() => startCreate("note")}
-                          onCreateFolder={() => requestCreateFolder()}
                           onDelete={deleteNode}
                           onMove={moveNode}
                         />
@@ -2615,15 +2776,8 @@ export function InformationView() {
                       <>
                         <MobileFoldersScreen
                           nodes={nodes}
-                          trashCount={trashedNodes.length}
                           onOpenFolder={selectNode}
                           onOpenRootNotes={selectRootNotes}
-                          onOpenTrash={selectTrash}
-                          onCreate={(type, parentId) =>
-                            type === "folder"
-                              ? requestCreateFolder(parentId)
-                              : startCreate(type, parentId)
-                          }
                         />
                         <div className="hidden px-3 pb-3 sm:px-0 sm:pb-0 md:block">
                           <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">

@@ -81,7 +81,7 @@ export function CountryTableFilters({
                 key={option.id}
                 type="button"
                 className={cn(
-                  "h-7 rounded-md text-sm font-medium text-muted-foreground transition-colors hover:text-foreground",
+                  "h-7 rounded-md text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground",
                   mobileFiltersFullWidth
                     ? "flex-1 px-4 text-center md:flex-none md:px-3"
                     : "px-3",
