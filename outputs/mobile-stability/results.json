@@ -1,0 +1,3240 @@
+{
+  "config": {
+    "argv": [
+      "C:\\Program Files\\nodejs\\node.exe",
+      "C:\\Users\\AlexRussell\\OneDrive - africactn.com\\Documents\\repositories\\new-framework\\next-app\\node_modules\\@playwright\\test\\cli.js",
+      "test"
+    ],
+    "configFile": "C:\\Users\\AlexRussell\\OneDrive - africactn.com\\Documents\\repositories\\new-framework\\next-app\\playwright.config.ts",
+    "rootDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/tests/browser",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": true,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 3
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/outputs/mobile-stability/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 3
+        },
+        "id": "chromium-320",
+        "name": "chromium-320",
+        "testDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/tests/browser",
+        "testIgnore": [],
+        "testMatch": [
+          "**/mobile-shell.spec.ts"
+        ],
+        "timeout": 90000
+      },
+      {
+        "outputDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/outputs/mobile-stability/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 3
+        },
+        "id": "chromium-375",
+        "name": "chromium-375",
+        "testDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/tests/browser",
+        "testIgnore": [],
+        "testMatch": [
+          "**/mobile-shell.spec.ts"
+        ],
+        "timeout": 90000
+      },
+      {
+        "outputDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/outputs/mobile-stability/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 3
+        },
+        "id": "chromium-390",
+        "name": "chromium-390",
+        "testDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/tests/browser",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.spec.ts"
+        ],
+        "timeout": 90000
+      },
+      {
+        "outputDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/outputs/mobile-stability/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 3
+        },
+        "id": "chromium-393",
+        "name": "chromium-393",
+        "testDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/tests/browser",
+        "testIgnore": [],
+        "testMatch": [
+          "**/mobile-shell.spec.ts"
+        ],
+        "timeout": 90000
+      },
+      {
+        "outputDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/outputs/mobile-stability/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 3
+        },
+        "id": "chromium-430",
+        "name": "chromium-430",
+        "testDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/tests/browser",
+        "testIgnore": [],
+        "testMatch": [
+          "**/mobile-shell.spec.ts"
+        ],
+        "timeout": 90000
+      },
+      {
+        "outputDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/outputs/mobile-stability/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 3
+        },
+        "id": "chromium-768",
+        "name": "chromium-768",
+        "testDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/tests/browser",
+        "testIgnore": [],
+        "testMatch": [
+          "**/mobile-shell.spec.ts"
+        ],
+        "timeout": 90000
+      },
+      {
+        "outputDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/outputs/mobile-stability/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 3
+        },
+        "id": "chromium-1280",
+        "name": "chromium-1280",
+        "testDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/tests/browser",
+        "testIgnore": [],
+        "testMatch": [
+          "**/mobile-shell.spec.ts"
+        ],
+        "timeout": 90000
+      },
+      {
+        "outputDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/outputs/mobile-stability/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 3
+        },
+        "id": "webkit-320",
+        "name": "webkit-320",
+        "testDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/tests/browser",
+        "testIgnore": [],
+        "testMatch": [
+          "**/mobile-shell.spec.ts"
+        ],
+        "timeout": 90000
+      },
+      {
+        "outputDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/outputs/mobile-stability/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 3
+        },
+        "id": "webkit-375",
+        "name": "webkit-375",
+        "testDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/tests/browser",
+        "testIgnore": [],
+        "testMatch": [
+          "**/mobile-shell.spec.ts"
+        ],
+        "timeout": 90000
+      },
+      {
+        "outputDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/outputs/mobile-stability/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 3
+        },
+        "id": "webkit-390",
+        "name": "webkit-390",
+        "testDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/tests/browser",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.spec.ts"
+        ],
+        "timeout": 90000
+      },
+      {
+        "outputDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/outputs/mobile-stability/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 3
+        },
+        "id": "webkit-393",
+        "name": "webkit-393",
+        "testDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/tests/browser",
+        "testIgnore": [],
+        "testMatch": [
+          "**/mobile-shell.spec.ts"
+        ],
+        "timeout": 90000
+      },
+      {
+        "outputDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/outputs/mobile-stability/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 3
+        },
+        "id": "webkit-430",
+        "name": "webkit-430",
+        "testDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/tests/browser",
+        "testIgnore": [],
+        "testMatch": [
+          "**/mobile-shell.spec.ts"
+        ],
+        "timeout": 90000
+      },
+      {
+        "outputDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/outputs/mobile-stability/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 3
+        },
+        "id": "webkit-768",
+        "name": "webkit-768",
+        "testDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/tests/browser",
+        "testIgnore": [],
+        "testMatch": [
+          "**/mobile-shell.spec.ts"
+        ],
+        "timeout": 90000
+      },
+      {
+        "outputDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/outputs/mobile-stability/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 3
+        },
+        "id": "webkit-1280",
+        "name": "webkit-1280",
+        "testDir": "C:/Users/AlexRussell/OneDrive - africactn.com/Documents/repositories/new-framework/next-app/tests/browser",
+        "testIgnore": [],
+        "testMatch": [
+          "**/mobile-shell.spec.ts"
+        ],
+        "timeout": 90000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "outputs/mobile-stability/results.json"
+        }
+      ],
+      [
+        "html",
+        {
+          "open": "never",
+          "outputFolder": "outputs/mobile-stability/report"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.63.0",
+    "workers": 3,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "mobile-shell.spec.ts",
+      "file": "mobile-shell.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "all important routes share chrome, scroll endpoints and menu anchoring",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-320",
+              "projectName": "chromium-320",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 32981,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:35:40.984Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-8b240706c258772aa2bf",
+          "file": "mobile-shell.spec.ts",
+          "line": 96,
+          "column": 1
+        },
+        {
+          "title": "30 client route transitions preserve the same chrome DOM and coordinates",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-320",
+              "projectName": "chromium-320",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 8655,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:35:40.880Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-a4c7f6418d3203a363e9",
+          "file": "mobile-shell.spec.ts",
+          "line": 143,
+          "column": 1
+        },
+        {
+          "title": "viewport height, rotation, safe areas and keyboard-sized resizing recover",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-320",
+              "projectName": "chromium-320",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 2,
+                  "status": "passed",
+                  "duration": 4498,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:35:40.935Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-8f9e23bd01cba36d14a7",
+          "file": "mobile-shell.spec.ts",
+          "line": 238,
+          "column": 1
+        },
+        {
+          "title": "back and forward restore useful prior scroll positions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-320",
+              "projectName": "chromium-320",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 2,
+                  "status": "passed",
+                  "duration": 617,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:35:45.634Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-b8c51a6d0110603d214d",
+          "file": "mobile-shell.spec.ts",
+          "line": 287,
+          "column": 1
+        },
+        {
+          "title": "all important routes share chrome, scroll endpoints and menu anchoring",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-375",
+              "projectName": "chromium-375",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 2,
+                  "status": "passed",
+                  "duration": 32706,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:35:46.610Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-a3add11f1369a398e7e6",
+          "file": "mobile-shell.spec.ts",
+          "line": 96,
+          "column": 1
+        },
+        {
+          "title": "30 client route transitions preserve the same chrome DOM and coordinates",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-375",
+              "projectName": "chromium-375",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 9068,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:35:50.165Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-1c25c7857365b2dfd540",
+          "file": "mobile-shell.spec.ts",
+          "line": 143,
+          "column": 1
+        },
+        {
+          "title": "viewport height, rotation, safe areas and keyboard-sized resizing recover",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-375",
+              "projectName": "chromium-375",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 4738,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:35:59.452Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-35f8ac8fc746115adeca",
+          "file": "mobile-shell.spec.ts",
+          "line": 238,
+          "column": 1
+        },
+        {
+          "title": "back and forward restore useful prior scroll positions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-375",
+              "projectName": "chromium-375",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 607,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:04.198Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-72c071732dd30f3bd133",
+          "file": "mobile-shell.spec.ts",
+          "line": 287,
+          "column": 1
+        },
+        {
+          "title": "all important routes share chrome, scroll endpoints and menu anchoring",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-390",
+              "projectName": "chromium-390",
+              "results": [
+                {
+                  "workerIndex": 6,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 32931,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:18.602Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-fe577fe1c1aa45cca4e1",
+          "file": "mobile-shell.spec.ts",
+          "line": 96,
+          "column": 1
+        },
+        {
+          "title": "30 client route transitions preserve the same chrome DOM and coordinates",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-390",
+              "projectName": "chromium-390",
+              "results": [
+                {
+                  "workerIndex": 7,
+                  "parallelIndex": 2,
+                  "status": "passed",
+                  "duration": 9817,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:20.025Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-960aed8ed0d7e93594b4",
+          "file": "mobile-shell.spec.ts",
+          "line": 143,
+          "column": 1
+        },
+        {
+          "title": "viewport height, rotation, safe areas and keyboard-sized resizing recover",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-390",
+              "projectName": "chromium-390",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 4547,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:20.681Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-0151a494932b3daa624f",
+          "file": "mobile-shell.spec.ts",
+          "line": 238,
+          "column": 1
+        },
+        {
+          "title": "back and forward restore useful prior scroll positions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-390",
+              "projectName": "chromium-390",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 812,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:25.235Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-a1fc111095abe5adb318",
+          "file": "mobile-shell.spec.ts",
+          "line": 287,
+          "column": 1
+        },
+        {
+          "title": "all important routes share chrome, scroll endpoints and menu anchoring",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-393",
+              "projectName": "chromium-393",
+              "results": [
+                {
+                  "workerIndex": 8,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 33034,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:30.830Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-b7c3c0921bbc01d947ca",
+          "file": "mobile-shell.spec.ts",
+          "line": 96,
+          "column": 1
+        },
+        {
+          "title": "30 client route transitions preserve the same chrome DOM and coordinates",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-393",
+              "projectName": "chromium-393",
+              "results": [
+                {
+                  "workerIndex": 9,
+                  "parallelIndex": 2,
+                  "status": "passed",
+                  "duration": 9723,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:30.876Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-97552ac1f8cf0aafe206",
+          "file": "mobile-shell.spec.ts",
+          "line": 143,
+          "column": 1
+        },
+        {
+          "title": "viewport height, rotation, safe areas and keyboard-sized resizing recover",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-393",
+              "projectName": "chromium-393",
+              "results": [
+                {
+                  "workerIndex": 9,
+                  "parallelIndex": 2,
+                  "status": "passed",
+                  "duration": 4597,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:40.836Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-26374b6dbcec160657b4",
+          "file": "mobile-shell.spec.ts",
+          "line": 238,
+          "column": 1
+        },
+        {
+          "title": "back and forward restore useful prior scroll positions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-393",
+              "projectName": "chromium-393",
+              "results": [
+                {
+                  "workerIndex": 9,
+                  "parallelIndex": 2,
+                  "status": "passed",
+                  "duration": 706,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:45.439Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-adc76589d24b2e7ba0d6",
+          "file": "mobile-shell.spec.ts",
+          "line": 287,
+          "column": 1
+        },
+        {
+          "title": "all important routes share chrome, scroll endpoints and menu anchoring",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-430",
+              "projectName": "chromium-430",
+              "results": [
+                {
+                  "workerIndex": 10,
+                  "parallelIndex": 2,
+                  "status": "passed",
+                  "duration": 33808,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:46.632Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-8e5c95798710f2db7471",
+          "file": "mobile-shell.spec.ts",
+          "line": 96,
+          "column": 1
+        },
+        {
+          "title": "30 client route transitions preserve the same chrome DOM and coordinates",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-430",
+              "projectName": "chromium-430",
+              "results": [
+                {
+                  "workerIndex": 11,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 9334,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:52.115Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-b1d9a711943b7edd8402",
+          "file": "mobile-shell.spec.ts",
+          "line": 143,
+          "column": 1
+        },
+        {
+          "title": "viewport height, rotation, safe areas and keyboard-sized resizing recover",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-430",
+              "projectName": "chromium-430",
+              "results": [
+                {
+                  "workerIndex": 11,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4876,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:37:01.674Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-490c0b0525c8e60caa08",
+          "file": "mobile-shell.spec.ts",
+          "line": 238,
+          "column": 1
+        },
+        {
+          "title": "back and forward restore useful prior scroll positions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-430",
+              "projectName": "chromium-430",
+              "results": [
+                {
+                  "workerIndex": 12,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 808,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:37:04.601Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-97b73309c7e929431dd1",
+          "file": "mobile-shell.spec.ts",
+          "line": 287,
+          "column": 1
+        },
+        {
+          "title": "all important routes share chrome, scroll endpoints and menu anchoring",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-768",
+              "projectName": "chromium-768",
+              "results": [
+                {
+                  "workerIndex": 13,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 7470,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:37:06.116Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-9baccd5c8f171aa9c3c6",
+          "file": "mobile-shell.spec.ts",
+          "line": 96,
+          "column": 1
+        },
+        {
+          "title": "30 client route transitions preserve the same chrome DOM and coordinates",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-768",
+              "projectName": "chromium-768",
+              "results": [
+                {
+                  "workerIndex": 14,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 8714,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:37:07.018Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-781c14e655e1cfd9299e",
+          "file": "mobile-shell.spec.ts",
+          "line": 143,
+          "column": 1
+        },
+        {
+          "title": "viewport height, rotation, safe areas and keyboard-sized resizing recover",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "location": {
+                    "file": "C:\\Users\\AlexRussell\\OneDrive - africactn.com\\Documents\\repositories\\new-framework\\next-app\\tests\\browser\\mobile-shell.spec.ts",
+                    "line": 241,
+                    "column": 47
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "chromium-768",
+              "projectName": "chromium-768",
+              "results": [
+                {
+                  "workerIndex": 13,
+                  "parallelIndex": 1,
+                  "status": "skipped",
+                  "duration": 109,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:37:13.832Z",
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "location": {
+                        "file": "C:\\Users\\AlexRussell\\OneDrive - africactn.com\\Documents\\repositories\\new-framework\\next-app\\tests\\browser\\mobile-shell.spec.ts",
+                        "line": 241,
+                        "column": 47
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-f078a8e3cc2e4bd54b67",
+          "file": "mobile-shell.spec.ts",
+          "line": 238,
+          "column": 1
+        },
+        {
+          "title": "back and forward restore useful prior scroll positions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-768",
+              "projectName": "chromium-768",
+              "results": [
+                {
+                  "workerIndex": 13,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 881,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:37:13.951Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-25bb2cd403530eea8d16",
+          "file": "mobile-shell.spec.ts",
+          "line": 287,
+          "column": 1
+        },
+        {
+          "title": "all important routes share chrome, scroll endpoints and menu anchoring",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-1280",
+              "projectName": "chromium-1280",
+              "results": [
+                {
+                  "workerIndex": 15,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 7761,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:37:15.315Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-775abaefdccc90495704",
+          "file": "mobile-shell.spec.ts",
+          "line": 96,
+          "column": 1
+        },
+        {
+          "title": "30 client route transitions preserve the same chrome DOM and coordinates",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-1280",
+              "projectName": "chromium-1280",
+              "results": [
+                {
+                  "workerIndex": 16,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 9248,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:37:16.759Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-e347def647aa0c69e078",
+          "file": "mobile-shell.spec.ts",
+          "line": 143,
+          "column": 1
+        },
+        {
+          "title": "viewport height, rotation, safe areas and keyboard-sized resizing recover",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "location": {
+                    "file": "C:\\Users\\AlexRussell\\OneDrive - africactn.com\\Documents\\repositories\\new-framework\\next-app\\tests\\browser\\mobile-shell.spec.ts",
+                    "line": 241,
+                    "column": 47
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "chromium-1280",
+              "projectName": "chromium-1280",
+              "results": [
+                {
+                  "workerIndex": 17,
+                  "parallelIndex": 2,
+                  "status": "skipped",
+                  "duration": 131,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:37:21.358Z",
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "location": {
+                        "file": "C:\\Users\\AlexRussell\\OneDrive - africactn.com\\Documents\\repositories\\new-framework\\next-app\\tests\\browser\\mobile-shell.spec.ts",
+                        "line": 241,
+                        "column": 47
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-0c8d5db3ac6ca9a7e461",
+          "file": "mobile-shell.spec.ts",
+          "line": 238,
+          "column": 1
+        },
+        {
+          "title": "back and forward restore useful prior scroll positions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-1280",
+              "projectName": "chromium-1280",
+              "results": [
+                {
+                  "workerIndex": 17,
+                  "parallelIndex": 2,
+                  "status": "passed",
+                  "duration": 1036,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:37:21.776Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-ee8ec7a6cf68dd919eb0",
+          "file": "mobile-shell.spec.ts",
+          "line": 287,
+          "column": 1
+        },
+        {
+          "title": "all important routes share chrome, scroll endpoints and menu anchoring",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-320",
+              "projectName": "webkit-320",
+              "results": [
+                {
+                  "workerIndex": 18,
+                  "parallelIndex": 2,
+                  "status": "passed",
+                  "duration": 46135,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:37:23.268Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-7636bcc6bd244c710f70",
+          "file": "mobile-shell.spec.ts",
+          "line": 96,
+          "column": 1
+        },
+        {
+          "title": "30 client route transitions preserve the same chrome DOM and coordinates",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-320",
+              "projectName": "webkit-320",
+              "results": [
+                {
+                  "workerIndex": 19,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 18470,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:37:23.844Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-3a035e078679a42321f4",
+          "file": "mobile-shell.spec.ts",
+          "line": 143,
+          "column": 1
+        },
+        {
+          "title": "viewport height, rotation, safe areas and keyboard-sized resizing recover",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-320",
+              "projectName": "webkit-320",
+              "results": [
+                {
+                  "workerIndex": 20,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 6768,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:37:26.699Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-1dd363b7dfca698c2791",
+          "file": "mobile-shell.spec.ts",
+          "line": 238,
+          "column": 1
+        },
+        {
+          "title": "back and forward restore useful prior scroll positions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-320",
+              "projectName": "webkit-320",
+              "results": [
+                {
+                  "workerIndex": 20,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1677,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:37:33.523Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-a5ed2f19b81b8db3606c",
+          "file": "mobile-shell.spec.ts",
+          "line": 287,
+          "column": 1
+        },
+        {
+          "title": "all important routes share chrome, scroll endpoints and menu anchoring",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-375",
+              "projectName": "webkit-375",
+              "results": [
+                {
+                  "workerIndex": 21,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 46575,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:37:35.609Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-ce88a73616d7ca2955b2",
+          "file": "mobile-shell.spec.ts",
+          "line": 96,
+          "column": 1
+        },
+        {
+          "title": "30 client route transitions preserve the same chrome DOM and coordinates",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-375",
+              "projectName": "webkit-375",
+              "results": [
+                {
+                  "workerIndex": 22,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 19596,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:37:42.747Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-37192da7a160501363fc",
+          "file": "mobile-shell.spec.ts",
+          "line": 143,
+          "column": 1
+        },
+        {
+          "title": "viewport height, rotation, safe areas and keyboard-sized resizing recover",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-375",
+              "projectName": "webkit-375",
+              "results": [
+                {
+                  "workerIndex": 22,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 6381,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:38:02.401Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-d20bd108ef46edc35884",
+          "file": "mobile-shell.spec.ts",
+          "line": 238,
+          "column": 1
+        },
+        {
+          "title": "back and forward restore useful prior scroll positions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-375",
+              "projectName": "webkit-375",
+              "results": [
+                {
+                  "workerIndex": 22,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 1623,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:38:08.789Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-17c40a9ee28be8ebecc0",
+          "file": "mobile-shell.spec.ts",
+          "line": 287,
+          "column": 1
+        },
+        {
+          "title": "all important routes share chrome, scroll endpoints and menu anchoring",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-390",
+              "projectName": "webkit-390",
+              "results": [
+                {
+                  "workerIndex": 23,
+                  "parallelIndex": 2,
+                  "status": "passed",
+                  "duration": 53600,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:38:22.621Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-bbd6eeb5c5b09be81b9b",
+          "file": "mobile-shell.spec.ts",
+          "line": 96,
+          "column": 1
+        },
+        {
+          "title": "30 client route transitions preserve the same chrome DOM and coordinates",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-390",
+              "projectName": "webkit-390",
+              "results": [
+                {
+                  "workerIndex": 24,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 24491,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:38:23.309Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-39adb4e6ce4f869653b7",
+          "file": "mobile-shell.spec.ts",
+          "line": 143,
+          "column": 1
+        },
+        {
+          "title": "viewport height, rotation, safe areas and keyboard-sized resizing recover",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-390",
+              "projectName": "webkit-390",
+              "results": [
+                {
+                  "workerIndex": 25,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 7102,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:38:23.615Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-bc8c8e2eb03dbd67a260",
+          "file": "mobile-shell.spec.ts",
+          "line": 238,
+          "column": 1
+        },
+        {
+          "title": "back and forward restore useful prior scroll positions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-390",
+              "projectName": "webkit-390",
+              "results": [
+                {
+                  "workerIndex": 25,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1812,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:38:30.724Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-1962c71bc719764b9b9c",
+          "file": "mobile-shell.spec.ts",
+          "line": 287,
+          "column": 1
+        },
+        {
+          "title": "all important routes share chrome, scroll endpoints and menu anchoring",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-393",
+              "projectName": "webkit-393",
+              "results": [
+                {
+                  "workerIndex": 26,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 46457,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:38:43.070Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-a0a182075eacdc59aea3",
+          "file": "mobile-shell.spec.ts",
+          "line": 96,
+          "column": 1
+        },
+        {
+          "title": "30 client route transitions preserve the same chrome DOM and coordinates",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-393",
+              "projectName": "webkit-393",
+              "results": [
+                {
+                  "workerIndex": 27,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 20297,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:38:48.242Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-760e2300128548ea6649",
+          "file": "mobile-shell.spec.ts",
+          "line": 143,
+          "column": 1
+        },
+        {
+          "title": "viewport height, rotation, safe areas and keyboard-sized resizing recover",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-393",
+              "projectName": "webkit-393",
+              "results": [
+                {
+                  "workerIndex": 27,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 6170,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:39:08.601Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-3e2c830c1d7074bec5c4",
+          "file": "mobile-shell.spec.ts",
+          "line": 238,
+          "column": 1
+        },
+        {
+          "title": "back and forward restore useful prior scroll positions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-393",
+              "projectName": "webkit-393",
+              "results": [
+                {
+                  "workerIndex": 27,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 1740,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:39:14.778Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-ec0d9f69c44c960aa2f4",
+          "file": "mobile-shell.spec.ts",
+          "line": 287,
+          "column": 1
+        },
+        {
+          "title": "all important routes share chrome, scroll endpoints and menu anchoring",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-430",
+              "projectName": "webkit-430",
+              "results": [
+                {
+                  "workerIndex": 28,
+                  "parallelIndex": 2,
+                  "status": "passed",
+                  "duration": 47659,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:39:16.718Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-c74e2eaef62dbdb76eb9",
+          "file": "mobile-shell.spec.ts",
+          "line": 96,
+          "column": 1
+        },
+        {
+          "title": "30 client route transitions preserve the same chrome DOM and coordinates",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-430",
+              "projectName": "webkit-430",
+              "results": [
+                {
+                  "workerIndex": 29,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 21331,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:39:16.970Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-2fce8e444e5baf532a54",
+          "file": "mobile-shell.spec.ts",
+          "line": 143,
+          "column": 1
+        },
+        {
+          "title": "viewport height, rotation, safe areas and keyboard-sized resizing recover",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-430",
+              "projectName": "webkit-430",
+              "results": [
+                {
+                  "workerIndex": 30,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 6919,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:39:30.039Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-aafd0f65285b4710098c",
+          "file": "mobile-shell.spec.ts",
+          "line": 238,
+          "column": 1
+        },
+        {
+          "title": "back and forward restore useful prior scroll positions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-430",
+              "projectName": "webkit-430",
+              "results": [
+                {
+                  "workerIndex": 30,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1798,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:39:37.014Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-59d190583f03b1e10a6b",
+          "file": "mobile-shell.spec.ts",
+          "line": 287,
+          "column": 1
+        },
+        {
+          "title": "all important routes share chrome, scroll endpoints and menu anchoring",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-768",
+              "projectName": "webkit-768",
+              "results": [
+                {
+                  "workerIndex": 31,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 16171,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:39:38.832Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-8dde4135d3ee5ec63461",
+          "file": "mobile-shell.spec.ts",
+          "line": 96,
+          "column": 1
+        },
+        {
+          "title": "30 client route transitions preserve the same chrome DOM and coordinates",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-768",
+              "projectName": "webkit-768",
+              "results": [
+                {
+                  "workerIndex": 32,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 20072,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:39:39.237Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-28879c11443bec03f4ca",
+          "file": "mobile-shell.spec.ts",
+          "line": 143,
+          "column": 1
+        },
+        {
+          "title": "viewport height, rotation, safe areas and keyboard-sized resizing recover",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "location": {
+                    "file": "C:\\Users\\AlexRussell\\OneDrive - africactn.com\\Documents\\repositories\\new-framework\\next-app\\tests\\browser\\mobile-shell.spec.ts",
+                    "line": 241,
+                    "column": 47
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "webkit-768",
+              "projectName": "webkit-768",
+              "results": [
+                {
+                  "workerIndex": 31,
+                  "parallelIndex": 1,
+                  "status": "skipped",
+                  "duration": 321,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:39:55.070Z",
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "location": {
+                        "file": "C:\\Users\\AlexRussell\\OneDrive - africactn.com\\Documents\\repositories\\new-framework\\next-app\\tests\\browser\\mobile-shell.spec.ts",
+                        "line": 241,
+                        "column": 47
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-68a477421968c4d7c052",
+          "file": "mobile-shell.spec.ts",
+          "line": 238,
+          "column": 1
+        },
+        {
+          "title": "back and forward restore useful prior scroll positions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-768",
+              "projectName": "webkit-768",
+              "results": [
+                {
+                  "workerIndex": 31,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 2046,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:39:55.404Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-2f9f30add8ed4bfc6377",
+          "file": "mobile-shell.spec.ts",
+          "line": 287,
+          "column": 1
+        },
+        {
+          "title": "all important routes share chrome, scroll endpoints and menu anchoring",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-1280",
+              "projectName": "webkit-1280",
+              "results": [
+                {
+                  "workerIndex": 33,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 15681,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:39:57.856Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-6a75e4123ceda567bdae",
+          "file": "mobile-shell.spec.ts",
+          "line": 96,
+          "column": 1
+        },
+        {
+          "title": "30 client route transitions preserve the same chrome DOM and coordinates",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-1280",
+              "projectName": "webkit-1280",
+              "results": [
+                {
+                  "workerIndex": 34,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 21381,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:39:59.790Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-b8b1d35d428ce996477c",
+          "file": "mobile-shell.spec.ts",
+          "line": 143,
+          "column": 1
+        },
+        {
+          "title": "viewport height, rotation, safe areas and keyboard-sized resizing recover",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "location": {
+                    "file": "C:\\Users\\AlexRussell\\OneDrive - africactn.com\\Documents\\repositories\\new-framework\\next-app\\tests\\browser\\mobile-shell.spec.ts",
+                    "line": 241,
+                    "column": 47
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "webkit-1280",
+              "projectName": "webkit-1280",
+              "results": [
+                {
+                  "workerIndex": 35,
+                  "parallelIndex": 2,
+                  "status": "skipped",
+                  "duration": 300,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:40:04.868Z",
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "location": {
+                        "file": "C:\\Users\\AlexRussell\\OneDrive - africactn.com\\Documents\\repositories\\new-framework\\next-app\\tests\\browser\\mobile-shell.spec.ts",
+                        "line": 241,
+                        "column": 47
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-f244cb7005d66ac27687",
+          "file": "mobile-shell.spec.ts",
+          "line": 238,
+          "column": 1
+        },
+        {
+          "title": "back and forward restore useful prior scroll positions",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-1280",
+              "projectName": "webkit-1280",
+              "results": [
+                {
+                  "workerIndex": 35,
+                  "parallelIndex": 2,
+                  "status": "passed",
+                  "duration": 2387,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:40:05.225Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "caeeee52b686924bfcb1-ca8f14d449ba56c150f9",
+          "file": "mobile-shell.spec.ts",
+          "line": 287,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "early-interaction.spec.ts",
+      "file": "early-interaction.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "saved template preferences hydrate without replacing the page",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-390",
+              "projectName": "chromium-390",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 7911,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:05.174Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3802847159e4c08e4bd6-fc0931a1f365aa9a28fa",
+          "file": "early-interaction.spec.ts",
+          "line": 3,
+          "column": 1
+        },
+        {
+          "title": "visual-only keyboard resizing clears after focus loss and resume",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-390",
+              "projectName": "chromium-390",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 559,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:13.271Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3802847159e4c08e4bd6-252d9b679cb342f9c613",
+          "file": "early-interaction.spec.ts",
+          "line": 36,
+          "column": 1
+        },
+        {
+          "title": "scrolling the server-rendered page before hydration is preserved",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-390",
+              "projectName": "chromium-390",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 2158,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:13.837Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3802847159e4c08e4bd6-71e0d93b313a40d2e929",
+          "file": "early-interaction.spec.ts",
+          "line": 75,
+          "column": 1
+        },
+        {
+          "title": "menu can resize and customize, then release scroll and focus on navigation",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-390",
+              "projectName": "chromium-390",
+              "results": [
+                {
+                  "workerIndex": 6,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1451,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:14.699Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3802847159e4c08e4bd6-7d663bcb8b3dbf051824",
+          "file": "early-interaction.spec.ts",
+          "line": 93,
+          "column": 1
+        },
+        {
+          "title": "saved template preferences hydrate without replacing the page",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-390",
+              "projectName": "webkit-390",
+              "results": [
+                {
+                  "workerIndex": 23,
+                  "parallelIndex": 2,
+                  "status": "passed",
+                  "duration": 9470,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:38:09.922Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3802847159e4c08e4bd6-0f777bf23373232ac8e1",
+          "file": "early-interaction.spec.ts",
+          "line": 3,
+          "column": 1
+        },
+        {
+          "title": "visual-only keyboard resizing clears after focus loss and resume",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-390",
+              "projectName": "webkit-390",
+              "results": [
+                {
+                  "workerIndex": 24,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 1827,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:38:10.804Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3802847159e4c08e4bd6-ca101809c7ca0302e25f",
+          "file": "early-interaction.spec.ts",
+          "line": 36,
+          "column": 1
+        },
+        {
+          "title": "scrolling the server-rendered page before hydration is preserved",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-390",
+              "projectName": "webkit-390",
+              "results": [
+                {
+                  "workerIndex": 24,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 2939,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:38:12.685Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3802847159e4c08e4bd6-d06da2b9f71ea66b9835",
+          "file": "early-interaction.spec.ts",
+          "line": 75,
+          "column": 1
+        },
+        {
+          "title": "menu can resize and customize, then release scroll and focus on navigation",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-390",
+              "projectName": "webkit-390",
+              "results": [
+                {
+                  "workerIndex": 24,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 2332,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:38:15.639Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3802847159e4c08e4bd6-ffa19236725a455af239",
+          "file": "early-interaction.spec.ts",
+          "line": 93,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "load-stability.spec.ts",
+      "file": "load-stability.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "cold startup stays stable with delayed fonts, scripts, images and API data",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-390",
+              "projectName": "chromium-390",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 4648,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:16.016Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "startup-metrics",
+                      "contentType": "application/json",
+                      "body": "ewogICJzYW1wbGVzIjogMjU2LAogICJzaGVsbENMUyI6IDAsCiAgImZvbnQiOiAiaW50ZXIsIFwiaW50ZXIgRmFsbGJhY2tcIiwgc3lzdGVtLXVpLCBzYW5zLXNlcmlmIiwKICAicHJlbG9hZHMiOiAxLAogICJkZWxheWVkIjogewogICAgImZvbnQiOiAxLAogICAgInNjcmlwdCI6IDI1LAogICAgImltYWdlIjogMiwKICAgICJhcGkiOiAxCiAgfQp9"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "4899a9eb4f219183a10c-c2e992831fcdfb3e2c6a",
+          "file": "load-stability.spec.ts",
+          "line": 7,
+          "column": 1
+        },
+        {
+          "title": "a route render failure preserves chrome and offers a working retry",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-390",
+              "projectName": "chromium-390",
+              "results": [
+                {
+                  "workerIndex": 6,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 615,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:16.365Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "4899a9eb4f219183a10c-8405bc0693075aaba9d1",
+          "file": "load-stability.spec.ts",
+          "line": 112,
+          "column": 1
+        },
+        {
+          "title": "stale-chunk recovery reloads once and preserves the deep route",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-390",
+              "projectName": "chromium-390",
+              "results": [
+                {
+                  "workerIndex": 6,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1259,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:16.989Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "4899a9eb4f219183a10c-3f86e0ca3d2085e70a23",
+          "file": "load-stability.spec.ts",
+          "line": 137,
+          "column": 1
+        },
+        {
+          "title": "login and offline documents remain usable outside the workspace shell",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-390",
+              "projectName": "chromium-390",
+              "results": [
+                {
+                  "workerIndex": 6,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 332,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:18.256Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "4899a9eb4f219183a10c-170778c219d848e93c89",
+          "file": "load-stability.spec.ts",
+          "line": 177,
+          "column": 1
+        },
+        {
+          "title": "cold startup stays stable with delayed fonts, scripts, images and API data",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-390",
+              "projectName": "webkit-390",
+              "results": [
+                {
+                  "workerIndex": 24,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 5301,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:38:17.998Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "startup-metrics",
+                      "contentType": "application/json",
+                      "body": "ewogICJzYW1wbGVzIjogMTgwLAogICJzaGVsbENMUyI6IDAsCiAgImZvbnQiOiAiaW50ZXIsIGludGVyIEZhbGxiYWNrLCBzeXN0ZW0tdWksIHNhbnMtc2VyaWYiLAogICJwcmVsb2FkcyI6IDEsCiAgImRlbGF5ZWQiOiB7CiAgICAiZm9udCI6IDEsCiAgICAic2NyaXB0IjogMjUsCiAgICAiaW1hZ2UiOiAyLAogICAgImFwaSI6IDEKICB9Cn0="
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "4899a9eb4f219183a10c-ddc16f1ae4469c87257a",
+          "file": "load-stability.spec.ts",
+          "line": 7,
+          "column": 1
+        },
+        {
+          "title": "a route render failure preserves chrome and offers a working retry",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-390",
+              "projectName": "webkit-390",
+              "results": [
+                {
+                  "workerIndex": 23,
+                  "parallelIndex": 2,
+                  "status": "passed",
+                  "duration": 1398,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:38:19.459Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "4899a9eb4f219183a10c-fb27dd5ba17d5672c76f",
+          "file": "load-stability.spec.ts",
+          "line": 112,
+          "column": 1
+        },
+        {
+          "title": "stale-chunk recovery reloads once and preserves the deep route",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-390",
+              "projectName": "webkit-390",
+              "results": [
+                {
+                  "workerIndex": 23,
+                  "parallelIndex": 2,
+                  "status": "passed",
+                  "duration": 1738,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:38:20.867Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "4899a9eb4f219183a10c-8d571ce335c1a2272bea",
+          "file": "load-stability.spec.ts",
+          "line": 137,
+          "column": 1
+        },
+        {
+          "title": "login and offline documents remain usable outside the workspace shell",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-390",
+              "projectName": "webkit-390",
+              "results": [
+                {
+                  "workerIndex": 25,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 898,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:38:22.641Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "4899a9eb4f219183a10c-5f44a6af58dfe2ef259f",
+          "file": "load-stability.spec.ts",
+          "line": 177,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "overlays.spec.ts",
+      "file": "overlays.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "global search stays fully above a visual-only keyboard",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-390",
+              "projectName": "chromium-390",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 964,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:26.064Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c25aef109a77a58aa34c-37fc5fabef4a92245218",
+          "file": "overlays.spec.ts",
+          "line": 32,
+          "column": 1
+        },
+        {
+          "title": "notebook find panel fits between the header and dock with the keyboard",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-390",
+              "projectName": "chromium-390",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 691,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:27.036Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c25aef109a77a58aa34c-0eca7e860120a683b016",
+          "file": "overlays.spec.ts",
+          "line": 55,
+          "column": 1
+        },
+        {
+          "title": "folder prompt uses the root portal and releases focus when cancelled",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-390",
+              "projectName": "chromium-390",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 972,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:27.737Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c25aef109a77a58aa34c-502181203c947b46df44",
+          "file": "overlays.spec.ts",
+          "line": 81,
+          "column": 1
+        },
+        {
+          "title": "global search stays fully above a visual-only keyboard",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-390",
+              "projectName": "webkit-390",
+              "results": [
+                {
+                  "workerIndex": 25,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 6725,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:38:32.550Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c25aef109a77a58aa34c-ba9f08ee516df3d218b4",
+          "file": "overlays.spec.ts",
+          "line": 32,
+          "column": 1
+        },
+        {
+          "title": "notebook find panel fits between the header and dock with the keyboard",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-390",
+              "projectName": "webkit-390",
+              "results": [
+                {
+                  "workerIndex": 25,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1138,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:38:39.281Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c25aef109a77a58aa34c-fec190cdb32d6b24ee94",
+          "file": "overlays.spec.ts",
+          "line": 55,
+          "column": 1
+        },
+        {
+          "title": "folder prompt uses the root portal and releases focus when cancelled",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit-390",
+              "projectName": "webkit-390",
+              "results": [
+                {
+                  "workerIndex": 25,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1970,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:38:40.427Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c25aef109a77a58aa34c-a1b0176f6088c1a8e558",
+          "file": "overlays.spec.ts",
+          "line": 81,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "pwa-lifecycle.spec.ts",
+      "file": "pwa-lifecycle.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "old to new worker waits for all clients, cleans caches and recovers deep links offline",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-390",
+              "projectName": "chromium-390",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 1633,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:28.724Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "1e4f1411b876666948d2-6e76ff8ee3a6e40ab1de",
+          "file": "pwa-lifecycle.spec.ts",
+          "line": 6,
+          "column": 1
+        },
+        {
+          "title": "production shell headers and immutable hashed assets have distinct cache policies",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-390",
+              "projectName": "chromium-390",
+              "results": [
+                {
+                  "workerIndex": 7,
+                  "parallelIndex": 2,
+                  "status": "passed",
+                  "duration": 345,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:36:30.098Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "1e4f1411b876666948d2-5a840f82f4b3cab42e3c",
+          "file": "pwa-lifecycle.spec.ts",
+          "line": 122,
+          "column": 1
+        },
+        {
+          "title": "old to new worker waits for all clients, cleans caches and recovers deep links offline",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "location": {
+                    "file": "C:\\Users\\AlexRussell\\OneDrive - africactn.com\\Documents\\repositories\\new-framework\\next-app\\tests\\browser\\pwa-lifecycle.spec.ts",
+                    "line": 9,
+                    "column": 50
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "webkit-390",
+              "projectName": "webkit-390",
+              "results": [
+                {
+                  "workerIndex": 25,
+                  "parallelIndex": 0,
+                  "status": "skipped",
+                  "duration": 0,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:38:42.410Z",
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "location": {
+                        "file": "C:\\Users\\AlexRussell\\OneDrive - africactn.com\\Documents\\repositories\\new-framework\\next-app\\tests\\browser\\pwa-lifecycle.spec.ts",
+                        "line": 9,
+                        "column": 50
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "1e4f1411b876666948d2-d67bd04cc7358f9d38e2",
+          "file": "pwa-lifecycle.spec.ts",
+          "line": 6,
+          "column": 1
+        },
+        {
+          "title": "production shell headers and immutable hashed assets have distinct cache policies",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [
+                {
+                  "type": "skip",
+                  "location": {
+                    "file": "C:\\Users\\AlexRussell\\OneDrive - africactn.com\\Documents\\repositories\\new-framework\\next-app\\tests\\browser\\pwa-lifecycle.spec.ts",
+                    "line": 126,
+                    "column": 50
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "webkit-390",
+              "projectName": "webkit-390",
+              "results": [
+                {
+                  "workerIndex": 25,
+                  "parallelIndex": 0,
+                  "status": "skipped",
+                  "duration": 241,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-08T17:38:42.416Z",
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "location": {
+                        "file": "C:\\Users\\AlexRussell\\OneDrive - africactn.com\\Documents\\repositories\\new-framework\\next-app\\tests\\browser\\pwa-lifecycle.spec.ts",
+                        "line": 126,
+                        "column": 50
+                      }
+                    }
+                  ],
+                  "attachments": []
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "1e4f1411b876666948d2-6d565f5408e69ae81184",
+          "file": "pwa-lifecycle.spec.ts",
+          "line": 122,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-08T17:35:40.409Z",
+    "duration": 281018.56700000004,
+    "expected": 76,
+    "skipped": 6,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}
