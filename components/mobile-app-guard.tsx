@@ -12,6 +12,8 @@ export function MobileAppGuard() {
     const coarsePointer = window.matchMedia("(pointer: coarse)")
     let touchStartX = 0
     let touchStartY = 0
+    let touchStartTime = 0
+    let topTapCandidate = false
     let edgeSwipeDistance = 0
     let edgeSwipeTarget: HTMLElement | null = null
 
@@ -38,12 +40,30 @@ export function MobileAppGuard() {
     }
 
     const preventGesture = (event: Event) => event.preventDefault()
+    const scrollCurrentPageToTop = () => {
+      const pageScroller = document.querySelector<HTMLElement>(
+        '[data-slot="sidebar-inset"]'
+      )
+
+      if (pageScroller) {
+        pageScroller.scrollTo({ top: 0, left: 0, behavior: "smooth" })
+        return
+      }
+
+      window.scrollTo({ top: 0, left: 0, behavior: "smooth" })
+      document.scrollingElement?.scrollTo({
+        top: 0,
+        left: 0,
+        behavior: "smooth",
+      })
+    }
     const handleTouchStart = (event: TouchEvent) => {
       if (!coarsePointer.matches) {
         return
       }
 
       if (event.touches.length > 1) {
+        topTapCandidate = false
         edgeSwipeTarget = null
         edgeSwipeDistance = 0
         event.preventDefault()
@@ -52,6 +72,12 @@ export function MobileAppGuard() {
 
       touchStartX = event.touches[0]?.clientX ?? 0
       touchStartY = event.touches[0]?.clientY ?? 0
+      touchStartTime = performance.now()
+      topTapCandidate =
+        touchStartY <= 32 &&
+        !(event.target as Element | null)?.closest(
+          "a, button, input, select, textarea, [role='button']"
+        )
       edgeSwipeDistance = 0
       edgeSwipeTarget = touchStartX <= 28 ? visibleBackButton() : null
     }
@@ -61,6 +87,7 @@ export function MobileAppGuard() {
       }
 
       if (event.touches.length > 1) {
+        topTapCandidate = false
         edgeSwipeTarget = null
         edgeSwipeDistance = 0
         event.preventDefault()
@@ -71,6 +98,10 @@ export function MobileAppGuard() {
       const signedDeltaX = (touch?.clientX ?? 0) - touchStartX
       const deltaX = Math.abs(signedDeltaX)
       const deltaY = Math.abs((touch?.clientY ?? 0) - touchStartY)
+
+      if (deltaX > 8 || deltaY > 8) {
+        topTapCandidate = false
+      }
 
       if (edgeSwipeTarget && deltaY > deltaX && deltaY > 12) {
         edgeSwipeTarget = null
@@ -86,6 +117,11 @@ export function MobileAppGuard() {
       }
     }
     const handleTouchEnd = (event: TouchEvent) => {
+      if (topTapCandidate && performance.now() - touchStartTime < 500) {
+        topTapCandidate = false
+        scrollCurrentPageToTop()
+      }
+
       if (!edgeSwipeTarget) {
         return
       }
@@ -105,6 +141,7 @@ export function MobileAppGuard() {
       target.click()
     }
     const handleTouchCancel = () => {
+      topTapCandidate = false
       edgeSwipeTarget = null
       edgeSwipeDistance = 0
     }

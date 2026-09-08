@@ -5811,8 +5811,9 @@ function JournalEntryPreview({
               </div>
             ) : null}
 
-            <div className="touch-pan-x overflow-x-auto rounded-lg border">
+            <div className="overflow-hidden rounded-lg border">
               <Table
+                containerClassName="touch-pan-x overscroll-x-contain [-webkit-overflow-scrolling:touch]"
                 className={
                   hasDetailedJournal
                     ? "min-w-[60rem] table-fixed text-xs md:w-full md:min-w-0"
@@ -9662,6 +9663,8 @@ export function MonthEndCountryReconciliationView({
         {
           "--sidebar-width": "calc(var(--spacing) * 72)",
           "--header-height": "calc(var(--spacing) * 12)",
+          "--mobile-page-bottom-padding":
+            "calc(10rem + env(safe-area-inset-bottom, 0px))",
         } as React.CSSProperties
       }
     >

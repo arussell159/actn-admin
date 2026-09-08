@@ -72,6 +72,7 @@ import {
 const mobileRootNotesId = "__root_notes__"
 const trashViewId = "__trash__"
 const lastMobileNoteStorageKey = "actn-information-last-mobile-note-v1"
+const lastMobileLocationStorageKey = "actn-information-last-mobile-location-v2"
 const desktopNotebookStateStorageKey = "actn-information-desktop-state-v1"
 
 type EditorSelection = {
@@ -84,6 +85,10 @@ type DesktopNotebookState = {
   collapsedFolderIds: string[]
   selectionByNoteId: Record<string, EditorSelection>
 }
+
+type MobileNotebookLocation =
+  | { type: "node"; nodeId: string }
+  | { type: "view"; view: "folders" | "notes" | "trash" }
 
 type InformationSortOrder =
   | "name-asc"
@@ -194,7 +199,7 @@ function NotebookBreadcrumbs({ items }: { items: NotebookBreadcrumbItem[] }) {
   return (
     <span
       ref={containerRef}
-      className="mx-auto flex w-full max-w-60 min-w-0 items-center justify-center gap-1 overflow-hidden px-2 text-[10px] leading-none font-normal text-muted-foreground/70 md:mx-0 md:max-w-none md:justify-start md:px-0"
+      className="mx-auto flex w-full max-w-60 min-w-0 items-center justify-center gap-1 overflow-hidden px-2 text-[10px] leading-5 font-normal text-muted-foreground/70 md:mx-0 md:max-w-none md:justify-start md:px-0"
       aria-label="Notebook breadcrumb"
     >
       {visibleItems.map((item, visibleIndex) => {
@@ -203,13 +208,13 @@ function NotebookBreadcrumbs({ items }: { items: NotebookBreadcrumbItem[] }) {
         const content = item.onSelect ? (
           <button
             type="button"
-            className="block max-w-full truncate rounded-sm text-[10px] leading-none font-normal text-muted-foreground/70 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+            className="block max-w-full truncate rounded-sm pb-0.5 text-[10px] leading-5 font-normal text-muted-foreground/70 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
             onClick={item.onSelect}
           >
             {item.label}
           </button>
         ) : (
-          <span className="block max-w-full truncate text-[10px] leading-none font-normal text-muted-foreground/70">
+          <span className="block max-w-full truncate pb-0.5 text-[10px] leading-5 font-normal text-muted-foreground/70">
             {item.label}
           </span>
         )
@@ -301,6 +306,13 @@ function isDesktopViewport() {
   )
 }
 
+function isMobileViewport() {
+  return (
+    typeof window !== "undefined" &&
+    window.matchMedia("(max-width: 767px)").matches
+  )
+}
+
 function loadDesktopNotebookState(): DesktopNotebookState | null {
   return readJsonBrowserStorage({
     kind: "localStorage",
@@ -324,6 +336,41 @@ function saveDesktopNotebookState(state: DesktopNotebookState) {
     "localStorage",
     desktopNotebookStateStorageKey,
     JSON.stringify(state)
+  )
+}
+
+function loadMobileNotebookLocation(): MobileNotebookLocation | null {
+  return readJsonBrowserStorage({
+    kind: "localStorage",
+    key: lastMobileLocationStorageKey,
+    fallback: null,
+    validate: (value): value is MobileNotebookLocation => {
+      if (!value || typeof value !== "object") {
+        return false
+      }
+
+      const location = value as Partial<MobileNotebookLocation>
+
+      return (
+        (location.type === "node" && typeof location.nodeId === "string") ||
+        (location.type === "view" &&
+          (location.view === "folders" ||
+            location.view === "notes" ||
+            location.view === "trash"))
+      )
+    },
+  })
+}
+
+function saveMobileNotebookLocation(location: MobileNotebookLocation) {
+  if (typeof window === "undefined" || !isMobileViewport()) {
+    return
+  }
+
+  writeBrowserStorage(
+    "localStorage",
+    lastMobileLocationStorageKey,
+    JSON.stringify(location)
   )
 }
 
@@ -744,13 +791,14 @@ function MobileMoveFolderMenuItems({
         if (childFolders.length) {
           return (
             <DropdownMenuSub key={targetFolder.id}>
-              <DropdownMenuSubTrigger>
+              <DropdownMenuSubTrigger className="min-h-11! gap-2.5! px-3! py-2! text-base! [&_svg:not([class*='size-'])]:size-5!">
                 <FolderIcon />
                 {targetFolder.title}
               </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="min-w-52">
+              <DropdownMenuSubContent className="min-w-52! p-1.5!">
                 {targetFolder.id !== movingFolder.parentId ? (
                   <DropdownMenuItem
+                    className="min-h-11! gap-2.5! px-3! py-2! text-base! [&_svg:not([class*='size-'])]:size-5!"
                     onClick={() => onMove(movingFolder.id, targetFolder.id)}
                   >
                     Move Here
@@ -771,6 +819,7 @@ function MobileMoveFolderMenuItems({
         return targetFolder.id !== movingFolder.parentId ? (
           <DropdownMenuItem
             key={targetFolder.id}
+            className="min-h-11! gap-2.5! px-3! py-2! text-base! [&_svg:not([class*='size-'])]:size-5!"
             onClick={() => onMove(movingFolder.id, targetFolder.id)}
           >
             <FolderIcon />
@@ -1107,14 +1156,20 @@ function MobileNotebookActions({
       >
         <MoreHorizontalIcon />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-44">
+      <DropdownMenuContent align="end" className="min-w-52! p-1.5!">
         {!isNote ? (
           <>
-            <DropdownMenuItem onClick={onCreateNote}>
+            <DropdownMenuItem
+              className="min-h-11! gap-2.5! px-3! py-2! text-base! [&_svg:not([class*='size-'])]:size-5!"
+              onClick={onCreateNote}
+            >
               <FilePlus2Icon />
               Add Note
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={onCreateFolder}>
+            <DropdownMenuItem
+              className="min-h-11! gap-2.5! px-3! py-2! text-base! [&_svg:not([class*='size-'])]:size-5!"
+              onClick={onCreateFolder}
+            >
               <FolderPlusIcon />
               Add Folder
             </DropdownMenuItem>
@@ -1123,7 +1178,10 @@ function MobileNotebookActions({
         {!isNote ? (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={onOpenTrash}>
+            <DropdownMenuItem
+              className="min-h-11! gap-2.5! px-3! py-2! text-base! [&_svg:not([class*='size-'])]:size-5!"
+              onClick={onOpenTrash}
+            >
               <Trash2Icon />
               Trash{trashCount ? ` (${trashCount})` : ""}
             </DropdownMenuItem>
@@ -1131,10 +1189,15 @@ function MobileNotebookActions({
         ) : null}
         {isFolder ? (
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger>Move Folder</DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="min-w-52">
+            <DropdownMenuSubTrigger className="min-h-11! gap-2.5! px-3! py-2! text-base! [&_svg:not([class*='size-'])]:size-5!">
+              Move Folder
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="min-w-52! p-1.5!">
               {activeNode.parentId ? (
-                <DropdownMenuItem onClick={() => onMove(activeNode.id)}>
+                <DropdownMenuItem
+                  className="min-h-11! gap-2.5! px-3! py-2! text-base! [&_svg:not([class*='size-'])]:size-5!"
+                  onClick={() => onMove(activeNode.id)}
+                >
                   Notebook
                 </DropdownMenuItem>
               ) : null}
@@ -1149,6 +1212,7 @@ function MobileNotebookActions({
         ) : null}
         {activeNode ? (
           <DropdownMenuItem
+            className="min-h-11! gap-2.5! px-3! py-2! text-base! [&_svg:not([class*='size-'])]:size-5!"
             variant="destructive"
             onClick={() => onDelete(activeNode.id)}
           >
@@ -1523,6 +1587,12 @@ export function InformationView() {
       const loadedTrash = loadTrashedInformationNotes()
       const requestedNode = searchParams.get("node") ?? undefined
       const requestedView = searchParams.get("view") ?? undefined
+      const requestedMobileView =
+        requestedView === "folders" ||
+        requestedView === "notes" ||
+        requestedView === "trash"
+          ? requestedView
+          : undefined
       const desktopState =
         !requestedNode && !requestedView && isDesktopViewport()
           ? loadDesktopNotebookState()
@@ -1530,15 +1600,30 @@ export function InformationView() {
       const isMobile =
         typeof window !== "undefined" &&
         window.matchMedia("(max-width: 767px)").matches
-      const rememberedNoteId =
+      const rememberedLocation =
         !requestedNode && !requestedView && isMobile
-          ? readBrowserStorage("localStorage", lastMobileNoteStorageKey)
-          : undefined
-      const rememberedNote = rememberedNoteId
+          ? loadMobileNotebookLocation()
+          : null
+      const rememberedNodeId =
+        rememberedLocation?.type === "node"
+          ? rememberedLocation.nodeId
+          : !rememberedLocation && !requestedNode && !requestedView && isMobile
+            ? readBrowserStorage("localStorage", lastMobileNoteStorageKey)
+            : undefined
+      const rememberedNode = rememberedNodeId
         ? loaded.find(
-            (node) => node.id === rememberedNoteId && node.type === "note"
+            (node) => node.id === rememberedNodeId
           )
         : undefined
+      const initialView =
+        requestedMobileView ??
+        (!requestedNode && isMobile
+          ? rememberedLocation?.type === "view"
+            ? rememberedLocation.view
+            : rememberedNode
+              ? undefined
+              : "folders"
+          : undefined)
       const localRequested = requestedNode
         ? nodesRef.current.find((node) => node.id === requestedNode)
         : undefined
@@ -1551,24 +1636,16 @@ export function InformationView() {
             localRequested,
           ]
         : loaded
-      const shouldShowMobileFolders =
-        requestedView === "folders" ||
-        (!requestedNode &&
-          requestedView !== "notes" &&
-          isMobile &&
-          !rememberedNote)
       const desktopRestoredNode = desktopState?.activeId
         ? loaded.find((node) => node.id === desktopState.activeId)
         : undefined
-      const initialNode = shouldShowMobileFolders
+      const initialNode = initialView
         ? undefined
-        : requestedView === "notes"
-          ? undefined
-          : (requested ??
-            rememberedNote ??
-            desktopRestoredNode ??
-            firstNote(loaded) ??
-            loaded[0])
+        : (requested ??
+          rememberedNode ??
+          desktopRestoredNode ??
+          firstNote(loaded) ??
+          loaded[0])
       const requestedRevealFolderIds =
         requestedNode && initialNode && isDesktopViewport()
           ? folderIdsToRevealNode(nextNodes, initialNode.id)
@@ -1608,23 +1685,23 @@ export function InformationView() {
           setSelectionByNoteId(desktopState.selectionByNoteId)
         }
         setActiveNodeId(
-          requestedView === "trash"
+          initialView === "trash"
             ? trashViewId
-            : requestedView === "notes"
+            : initialView === "notes"
               ? mobileRootNotesId
-              : requestedView === "folders"
+              : initialView === "folders"
                 ? undefined
                 : initialNode?.id
         )
         setActiveDrafts(
-          requestedView === "trash"
+          initialView === "trash"
             ? "Trash"
-            : requestedView === "notes"
+            : initialView === "notes"
               ? "Notes"
-              : requestedView === "folders"
+              : initialView === "folders"
                 ? ""
                 : (initialNode?.title ?? ""),
-          requestedView === "folders" ? "" : (initialNode?.content ?? "")
+          initialView ? "" : (initialNode?.content ?? "")
         )
         if (initialNode?.type === "note" && isDesktopViewport()) {
           setEditorRestoreSelectionSignal((signal) => signal + 1)
@@ -1675,16 +1752,20 @@ export function InformationView() {
   }, [activeId, collapsedFolderIds])
 
   React.useEffect(() => {
-    if (
-      activeNode?.type !== "note" ||
-      typeof window === "undefined" ||
-      !window.matchMedia("(max-width: 767px)").matches
-    ) {
+    if (!hasLoadedNotes.current || !isMobileViewport()) {
       return
     }
 
-    writeBrowserStorage("localStorage", lastMobileNoteStorageKey, activeNode.id)
-  }, [activeNode])
+    if (activeId === undefined) {
+      saveMobileNotebookLocation({ type: "view", view: "folders" })
+    } else if (activeId === mobileRootNotesId) {
+      saveMobileNotebookLocation({ type: "view", view: "notes" })
+    } else if (activeId === trashViewId) {
+      saveMobileNotebookLocation({ type: "view", view: "trash" })
+    } else if (activeNode) {
+      saveMobileNotebookLocation({ type: "node", nodeId: activeNode.id })
+    }
+  }, [activeId, activeNode])
   const visibleNodes = React.useMemo(() => {
     const query = noteSearch.trim().toLowerCase()
 
@@ -1851,6 +1932,7 @@ export function InformationView() {
     saveActiveNote()
 
     if (!nodeId) {
+      saveMobileNotebookLocation({ type: "view", view: "folders" })
       setActiveNodeId(undefined)
       setActiveDrafts("", "")
       mobileNoteSelectorRef.current?.removeAttribute("open")
@@ -1864,6 +1946,9 @@ export function InformationView() {
 
     const node = nodes.find((item) => item.id === nodeId)
 
+    if (node) {
+      saveMobileNotebookLocation({ type: "node", nodeId: node.id })
+    }
     setActiveNodeId(node?.id ?? nodeId)
     setActiveDrafts(
       node?.title ?? "",
@@ -1882,6 +1967,7 @@ export function InformationView() {
 
   function selectRootNotes(mode: "push" | "replace" = "push") {
     saveActiveNote()
+    saveMobileNotebookLocation({ type: "view", view: "notes" })
     setActiveNodeId(mobileRootNotesId)
     setActiveDrafts("Notes", "")
     mobileNoteSelectorRef.current?.removeAttribute("open")
@@ -1891,6 +1977,7 @@ export function InformationView() {
 
   function selectTrash(mode: "push" | "replace" = "push") {
     saveActiveNote()
+    saveMobileNotebookLocation({ type: "view", view: "trash" })
     setActiveNodeId(trashViewId)
     setActiveDrafts("Trash", "")
     mobileNoteSelectorRef.current?.removeAttribute("open")
@@ -1952,6 +2039,7 @@ export function InformationView() {
       })
     }
     setNoteSearch("")
+    saveMobileNotebookLocation({ type: "node", nodeId: node.id })
     setActiveNodeId(node.id)
     setActiveDrafts(node.title, node.content ?? "")
     setEditingTreeNodeId(type === "folder" ? node.id : undefined)
@@ -1977,13 +2065,6 @@ export function InformationView() {
 
   function startCreateAtActiveFocus(type: InformationNodeType) {
     startCreate(type, activeCreateParentId())
-  }
-
-  function isMobileViewport() {
-    return (
-      typeof window !== "undefined" &&
-      window.matchMedia("(max-width: 767px)").matches
-    )
   }
 
   function requestCreateFolder(parentId = "") {
@@ -2209,6 +2290,11 @@ export function InformationView() {
 
     persistTrash(nextTrashedNodes)
     persist(nextNodes)
+    if (nextActive) {
+      saveMobileNotebookLocation({ type: "node", nodeId: nextActive.id })
+    } else {
+      saveMobileNotebookLocation({ type: "view", view: "notes" })
+    }
     setActiveNodeId(nextActive?.id)
     setActiveDrafts(nextActive?.title ?? "", nextActive?.content ?? "")
     updateInformationRoute(

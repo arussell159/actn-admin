@@ -1047,11 +1047,29 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     "prepaid-accounts": 1,
     "bank-reconciliation": 2,
   }
-  const orderedTaskGroups = [...template.taskGroups].sort(
-    (first, second) =>
-      (supplementalTaskSummaryOrder[first.id] ?? 100) -
-      (supplementalTaskSummaryOrder[second.id] ?? 100)
-  )
+  const orderedTaskGroups = template.taskGroups
+    .map((group) => ({
+      ...group,
+      tasks: [...group.tasks].sort(
+        (first, second) =>
+          Number(asBool(checked[taskKey(group.id, first.id)])) -
+          Number(asBool(checked[taskKey(group.id, second.id)]))
+      ),
+    }))
+    .sort((first, second) => {
+      const firstIncomplete = first.tasks.filter(
+        (task) => !asBool(checked[taskKey(first.id, task.id)])
+      ).length
+      const secondIncomplete = second.tasks.filter(
+        (task) => !asBool(checked[taskKey(second.id, task.id)])
+      ).length
+
+      return (
+        secondIncomplete - firstIncomplete ||
+        (supplementalTaskSummaryOrder[first.id] ?? 100) -
+          (supplementalTaskSummaryOrder[second.id] ?? 100)
+      )
+    })
   const monthEndSectionItems = [
     { id: "dashboard", label: "Dashboard" },
     { id: "countries", label: countriesModule.tab },
@@ -2025,12 +2043,17 @@ export function MonthEndView({ period }: { period?: string } = {}) {
               onValueChange={setActiveMonthEndSection}
               className="md:hidden"
             >
-              <TabsList className="h-10! w-full">
+              <TabsList className="h-12! w-full touch-manipulation p-0.5!">
                 {monthEndSectionItems.map((item) => (
                   <TabsTrigger
                     key={item.id}
                     value={item.id}
-                    className="min-h-9 px-2 text-sm"
+                    className="min-h-11 touch-manipulation px-3 text-base transition-colors! duration-75! select-none"
+                    onPointerDown={(event) => {
+                      if (event.pointerType === "touch") {
+                        setActiveMonthEndSection(item.id)
+                      }
+                    }}
                   >
                     {item.label}
                   </TabsTrigger>
@@ -2488,20 +2511,21 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                           actionDoneCount === actionTaskCount
                         const hasActionTargets =
                           canCheckAll || canUncheckAll || Boolean(rowNote)
-                        const isRowComplete =
-                          !isParentRow &&
-                          requiredTasks.length > 0 &&
-                          doneCount === requiredTasks.length
+                        const isRowComplete = isParentRow
+                          ? actionTaskCount > 0 &&
+                            actionDoneCount === actionTaskCount
+                          : requiredTasks.length > 0 &&
+                            doneCount === requiredTasks.length
 
                         return (
                           <div
                             key={row.id}
                             className={
                               "grid gap-3 rounded-lg border bg-background p-3 " +
-                              (isParentRow
-                                ? "bg-muted/40"
-                                : isRowComplete
-                                  ? "border-emerald-300 bg-emerald-100 text-emerald-950 dark:border-emerald-700 dark:bg-emerald-900/35 dark:text-emerald-50"
+                              (isRowComplete
+                                ? "border-emerald-300 bg-emerald-100 text-emerald-950 dark:border-emerald-700 dark:bg-emerald-900/35 dark:text-emerald-50"
+                                : isParentRow
+                                  ? "bg-muted/40"
                                   : "")
                             }
                           >
@@ -2760,19 +2784,20 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                           const hasActionTargets =
                             !isClosed &&
                             (canCheckAll || canUncheckAll || Boolean(rowNote))
-                          const isRowComplete =
-                            !isParentRow &&
-                            requiredTasks.length > 0 &&
-                            doneCount === requiredTasks.length
+                          const isRowComplete = isParentRow
+                            ? actionTaskCount > 0 &&
+                              actionDoneCount === actionTaskCount
+                            : requiredTasks.length > 0 &&
+                              doneCount === requiredTasks.length
 
                           return (
                             <TableRow
                               key={row.id}
                               className={
-                                isParentRow
-                                  ? "bg-muted/40"
-                                  : isRowComplete
-                                    ? "bg-emerald-100 hover:bg-emerald-100/80 dark:bg-emerald-900/35 dark:hover:bg-emerald-900/45"
+                                isRowComplete
+                                  ? "bg-emerald-100 hover:bg-emerald-100/80 dark:bg-emerald-900/35 dark:hover:bg-emerald-900/45"
+                                  : isParentRow
+                                    ? "bg-muted/40"
                                     : undefined
                               }
                             >
