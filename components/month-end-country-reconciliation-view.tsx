@@ -4712,11 +4712,7 @@ function CountryReportUploadStep({
   )
 }
 
-function DashboardMatchedTable({
-  records,
-}: {
-  records: ReturnType<typeof reconcileRecords>["matched"]
-}) {
+function DashboardMatchedTable({ records }: { records: MatchedDisplayRow[] }) {
   return (
     <div className="h-full min-h-0 touch-pan-x overflow-auto md:overflow-x-hidden md:overflow-y-auto">
       <Table
@@ -4733,60 +4729,76 @@ function DashboardMatchedTable({
         </TableHeader>
         <TableBody>
           {records.length ? (
-            records.map((match) => (
-              <TableRow key={match.id} className="h-14">
-                <TableCell className="align-top">
-                  <div className="grid gap-1 text-muted-foreground">
-                    <span className="break-words text-foreground">
-                      {match.countryRecord.reference ||
-                        match.countryRecord.invoiceNumber ||
-                        "-"}
-                    </span>
-                    <span className="whitespace-nowrap md:whitespace-normal">
-                      BL: {match.countryRecord.billOfLadingNumber || "-"}
-                    </span>
-                    <span className="whitespace-nowrap md:whitespace-normal">
-                      CTN: {match.countryRecord.ctnNumber || "-"}
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell className="align-top">
-                  <div className="grid gap-1 text-muted-foreground">
-                    <span className="break-words text-foreground">
-                      {match.masterRecord.salesOrderNumber || "-"}
-                    </span>
-                    <span className="whitespace-nowrap md:whitespace-normal">
-                      BL: {match.masterRecord.billOfLadingNumber || "-"}
-                    </span>
-                    <span className="whitespace-nowrap md:whitespace-normal">
-                      CTN: {match.masterRecord.ctnNumber || "-"}
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell className="align-top">
-                  <div className="grid gap-1">
-                    <span className="font-medium">
-                      {match.matchedOn?.label || "-"}
-                    </span>
-                    {match.matchedOn?.value ? (
-                      <span className="break-words text-muted-foreground">
-                        {match.matchedOn.value}
+            records.map((row) => {
+              const countryRecord = row.countryRecord
+              const masterRecord =
+                row.kind === "matched" ? row.masterRecord : undefined
+              const matchedBy =
+                row.kind === "matched"
+                  ? row.matchedOn
+                  : {
+                      label: row.resolvedRow.reason,
+                      value: row.resolvedRow.note,
+                    }
+
+              return (
+                <TableRow key={row.id} className="h-14">
+                  <TableCell className="align-top">
+                    <div className="grid gap-1 text-muted-foreground">
+                      <span className="break-words text-foreground">
+                        {countryRecord.reference ||
+                          countryRecord.invoiceNumber ||
+                          "-"}
                       </span>
-                    ) : null}
-                  </div>
-                </TableCell>
-                <TableCell className="text-right align-top tabular-nums">
-                  <div className="grid gap-1">
-                    <span>
-                      Country: {formatAmount(match.countryRecord.amount)}
-                    </span>
-                    <span className="text-muted-foreground">
-                      NS: {formatAmount(match.masterRecord.amount)}
-                    </span>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))
+                      <span className="whitespace-nowrap md:whitespace-normal">
+                        BL: {countryRecord.billOfLadingNumber || "-"}
+                      </span>
+                      <span className="whitespace-nowrap md:whitespace-normal">
+                        CTN: {countryRecord.ctnNumber || "-"}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="align-top">
+                    {masterRecord ? (
+                      <div className="grid gap-1 text-muted-foreground">
+                        <span className="break-words text-foreground">
+                          {masterRecord.salesOrderNumber || "-"}
+                        </span>
+                        <span className="whitespace-nowrap md:whitespace-normal">
+                          BL: {masterRecord.billOfLadingNumber || "-"}
+                        </span>
+                        <span className="whitespace-nowrap md:whitespace-normal">
+                          CTN: {masterRecord.ctnNumber || "-"}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="align-top">
+                    <div className="grid gap-1">
+                      <span className="font-medium">
+                        {matchedBy?.label || "-"}
+                      </span>
+                      {matchedBy?.value ? (
+                        <span className="break-words text-muted-foreground">
+                          {matchedBy.value}
+                        </span>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right align-top tabular-nums">
+                    <div className="grid gap-1">
+                      <span>Country: {formatAmount(countryRecord.amount)}</span>
+                      <span className="text-muted-foreground">
+                        NS:{" "}
+                        {masterRecord ? formatAmount(masterRecord.amount) : "-"}
+                      </span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )
+            })
           ) : (
             <TableRow>
               <TableCell
@@ -5062,22 +5074,32 @@ function downloadDashboardCsv({
   URL.revokeObjectURL(url)
 }
 
-function createDashboardMatchedCsv(
-  records: ReturnType<typeof reconcileRecords>["matched"]
-) {
-  const rows = records.map(({ masterRecord, countryRecord, matchedOn }) => [
-    countryRecord.countryName,
-    countryRecord.invoiceNumber || countryRecord.reference,
-    countryRecord.billOfLadingNumber,
-    countryRecord.ctnNumber,
-    masterRecord.salesOrderNumber,
-    masterRecord.billOfLadingNumber,
-    masterRecord.ctnNumber,
-    matchedOn?.label ?? "",
-    matchedOn?.value ?? "",
-    formatAmount(countryRecord.amount),
-    formatAmount(masterRecord.amount),
-  ])
+function createDashboardMatchedCsv(records: MatchedDisplayRow[]) {
+  const rows = records.map((record) => {
+    const masterRecord =
+      record.kind === "matched" ? record.masterRecord : undefined
+    const matchedBy =
+      record.kind === "matched"
+        ? record.matchedOn
+        : {
+            label: record.resolvedRow.reason,
+            value: record.resolvedRow.note,
+          }
+
+    return [
+      record.countryRecord.countryName,
+      record.countryRecord.invoiceNumber || record.countryRecord.reference,
+      record.countryRecord.billOfLadingNumber,
+      record.countryRecord.ctnNumber,
+      masterRecord?.salesOrderNumber,
+      masterRecord?.billOfLadingNumber,
+      masterRecord?.ctnNumber,
+      matchedBy?.label ?? "",
+      matchedBy?.value ?? "",
+      formatAmount(record.countryRecord.amount),
+      masterRecord ? formatAmount(masterRecord.amount) : "",
+    ]
+  })
 
   return [
     [
@@ -5222,30 +5244,48 @@ function CountryProcessMobileTabs({
   dashboardHref: string
 }) {
   const router = useRouter()
+  const [displayView, setDisplayView] = React.useState(activeView)
   const hrefByView = {
     reconciliation: reconciliationHref,
     journal: journalHref,
     dashboard: dashboardHref,
   }
+  const steps = [
+    { value: "reconciliation" as const, label: "Recon" },
+    { value: "journal" as const, label: "Journal" },
+    { value: "dashboard" as const, label: "Dashboard" },
+  ]
+
+  React.useEffect(() => {
+    setDisplayView(activeView)
+  }, [activeView])
 
   return (
     <Tabs
-      value={activeView}
-      onValueChange={(value) =>
-        router.push(hrefByView[value as keyof typeof hrefByView])
-      }
+      value={displayView}
+      onValueChange={(value) => {
+        const nextView = value as keyof typeof hrefByView
+
+        setDisplayView(nextView)
+        router.push(hrefByView[nextView])
+      }}
       className="w-full"
     >
-      <TabsList className="h-10! w-full">
-        <TabsTrigger value="reconciliation" className="min-h-9 px-2 text-sm">
-          Recon
-        </TabsTrigger>
-        <TabsTrigger value="journal" className="min-h-9 px-2 text-sm">
-          Journal
-        </TabsTrigger>
-        <TabsTrigger value="dashboard" className="min-h-9 px-2 text-sm">
-          Dashboard
-        </TabsTrigger>
+      <TabsList className="h-12! w-full touch-manipulation p-0.5!">
+        {steps.map((step) => (
+          <TabsTrigger
+            key={step.value}
+            value={step.value}
+            className="min-h-11 touch-manipulation px-3 text-base transition-colors! duration-75! select-none"
+            onPointerDown={(event) => {
+              if (event.pointerType === "touch") {
+                setDisplayView(step.value)
+              }
+            }}
+          >
+            {step.label}
+          </TabsTrigger>
+        ))}
       </TabsList>
     </Tabs>
   )
@@ -5254,17 +5294,21 @@ function CountryProcessMobileTabs({
 function CountryReconciliationDashboard({
   countryName,
   masterRecords,
+  countryRecords,
   reconciliation,
   rolledInternalIds,
   leftInvoiceRecordIds,
+  resolvedCountryReportRows,
   activeSection,
   onActiveSectionChange,
 }: {
   countryName: string
   masterRecords: MonthEndMasterRecord[]
+  countryRecords: MonthEndCountryReportRecord[]
   reconciliation: ReturnType<typeof reconcileRecords>
   rolledInternalIds: string[]
   leftInvoiceRecordIds: string[]
+  resolvedCountryReportRows: ResolvedCountryReportRow[]
   activeSection: CountryDashboardSection
   onActiveSectionChange: (
     section: CountryDashboardSection
@@ -5277,6 +5321,35 @@ function CountryReconciliationDashboard({
   const reconciledMasterIds = new Set(
     reconciliation.matched.map(({ masterRecord }) => masterRecord.id)
   )
+  const matchedCountryRecordIds = new Set(
+    reconciliation.matched.map(({ countryRecord }) => countryRecord.id)
+  )
+  const resolvedCountryReportRowById = new Map(
+    resolvedCountryReportRows.map((row) => [row.id, row])
+  )
+  const clearedRows: MatchedDisplayRow[] = countryRecords.flatMap(
+    (countryRecord) => {
+      const resolvedRow = resolvedCountryReportRowById.get(countryRecord.id)
+
+      return resolvedRow && !matchedCountryRecordIds.has(countryRecord.id)
+        ? [
+            {
+              id: `cleared__${countryRecord.id}`,
+              kind: "cleared" as const,
+              countryRecord,
+              resolvedRow,
+            },
+          ]
+        : []
+    }
+  )
+  const matchedDashboardRecords: MatchedDisplayRow[] = [
+    ...reconciliation.matched.map((match) => ({
+      ...match,
+      kind: "matched" as const,
+    })),
+    ...clearedRows,
+  ]
   const rolledInternalIdSet = new Set(rolledInternalIds)
   const leftInvoiceRecordIdSet = new Set(leftInvoiceRecordIds)
   const autoRolledRecordIdSet = reconciliation.autoRolledMasterIds
@@ -5309,14 +5382,13 @@ function CountryReconciliationDashboard({
     value: CountryDashboardSection
     label: string
     count: number
-    records:
-      MonthEndMasterRecord[] | ReturnType<typeof reconcileRecords>["matched"]
+    records: MonthEndMasterRecord[] | MatchedDisplayRow[]
   }[] = [
     {
       value: "matched",
       label: "Matched",
-      count: reconciliation.matched.length,
-      records: reconciliation.matched,
+      count: matchedDashboardRecords.length,
+      records: matchedDashboardRecords,
     },
     {
       value: "left",
@@ -5334,42 +5406,40 @@ function CountryReconciliationDashboard({
 
   const normalizedSearchQuery = normalizeMatchKey(searchQuery)
   const matchesDashboardSearch = (
-    record:
-      | MonthEndMasterRecord
-      | MonthEndCountryReportRecord
-      | ReturnType<typeof reconcileRecords>["matched"][number]
+    record: MonthEndMasterRecord | MatchedDisplayRow
   ) => {
     if (!normalizedSearchQuery) {
       return true
     }
 
     const values =
-      "masterRecord" in record
-        ? [
-            record.masterRecord.salesOrderNumber,
-            record.masterRecord.billOfLadingNumber,
-            record.masterRecord.ctnNumber,
-            record.masterRecord.sourceInternalId,
-            record.countryRecord.invoiceNumber,
-            record.countryRecord.reference,
-            record.countryRecord.billOfLadingNumber,
-            record.countryRecord.ctnNumber,
-          ]
-        : "salesOrderNumber" in record
+      "kind" in record
+        ? record.kind === "matched"
           ? [
-              record.salesOrderNumber,
-              record.billOfLadingNumber,
-              record.ctnNumber,
-              record.sourceInternalId,
-              record.countryName,
+              record.masterRecord.salesOrderNumber,
+              record.masterRecord.billOfLadingNumber,
+              record.masterRecord.ctnNumber,
+              record.masterRecord.sourceInternalId,
+              record.countryRecord.invoiceNumber,
+              record.countryRecord.reference,
+              record.countryRecord.billOfLadingNumber,
+              record.countryRecord.ctnNumber,
             ]
           : [
-              record.invoiceNumber,
-              record.reference,
-              record.billOfLadingNumber,
-              record.ctnNumber,
-              record.countryName,
+              record.countryRecord.invoiceNumber,
+              record.countryRecord.reference,
+              record.countryRecord.billOfLadingNumber,
+              record.countryRecord.ctnNumber,
+              record.resolvedRow.reason,
+              record.resolvedRow.note,
             ]
+        : [
+            record.salesOrderNumber,
+            record.billOfLadingNumber,
+            record.ctnNumber,
+            record.sourceInternalId,
+            record.countryName,
+          ]
 
     return values.some((value) =>
       normalizeMatchKey(value).includes(normalizedSearchQuery)
@@ -5388,9 +5458,7 @@ function CountryReconciliationDashboard({
   const activeSectionCsv =
     activeDashboardSection.value === "matched"
       ? createDashboardMatchedCsv(
-          activeDashboardSection.records as ReturnType<
-            typeof reconcileRecords
-          >["matched"]
+          activeDashboardSection.records as MatchedDisplayRow[]
         )
       : createDashboardMasterCsv(
           activeDashboardSection.records as MonthEndMasterRecord[]
@@ -5425,7 +5493,14 @@ function CountryReconciliationDashboard({
           selectedFilter={activeDashboardSection.value}
           filterOptions={filteredDashboardSections.map((section) => ({
             id: section.value,
-            label: section.label,
+            label:
+              section.value === "left"
+                ? "Left in Current Month"
+                : section.value === "rolled"
+                  ? "Rolled to Next Month"
+                  : section.label,
+            mobileLabel: section.label,
+            count: section.count,
           }))}
           mobileFiltersFullWidth
           hideActionOnMobile
@@ -5462,11 +5537,7 @@ function CountryReconciliationDashboard({
             />
           ) : activeDashboardSection.value === "matched" ? (
             <DashboardMatchedTable
-              records={
-                activeDashboardSection.records as ReturnType<
-                  typeof reconcileRecords
-                >["matched"]
-              }
+              records={activeDashboardSection.records as MatchedDisplayRow[]}
             />
           ) : (
             <DashboardMasterTable
@@ -9744,9 +9815,11 @@ export function MonthEndCountryReconciliationView({
                 countryDisplayName || country?.name || "Unknown country"
               }
               masterRecords={records}
+              countryRecords={countryReportRecords}
               reconciliation={displayedReconciliation}
               rolledInternalIds={rolledInternalIds}
               leftInvoiceRecordIds={leftInvoiceRecordIds}
+              resolvedCountryReportRows={resolvedCountryReportRows}
               activeSection={activeDashboardSection}
               onActiveSectionChange={saveCountryDashboardSection}
             />

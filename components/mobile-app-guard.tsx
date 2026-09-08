@@ -1,10 +1,9 @@
 "use client"
 
 import * as React from "react"
-import { SmartphoneIcon } from "lucide-react"
 
 type LockableScreenOrientation = ScreenOrientation & {
-  lock?: (orientation: "portrait") => Promise<void>
+  lock?: (orientation: "portrait-primary") => Promise<void>
 }
 
 export function MobileAppGuard() {
@@ -33,21 +32,41 @@ export function MobileAppGuard() {
       }
 
       const orientation = screen.orientation as LockableScreenOrientation
-      void orientation.lock?.("portrait").catch(() => {
-        // Browser tabs may reject orientation locking. The CSS guard below
-        // keeps the app unavailable in landscape when that happens.
+      void orientation.lock?.("portrait-primary").catch(() => {
+        // Regular browser tabs can reject orientation locking. Installed
+        // apps also declare portrait-primary in the web app manifest.
       })
     }
 
     const preventGesture = (event: Event) => event.preventDefault()
     const scrollCurrentPageToTop = () => {
-      const pageScroller = document.querySelector<HTMLElement>(
-        '[data-slot="sidebar-inset"]'
-      )
+      const scrollableElements = Array.from(
+        document.querySelectorAll<HTMLElement>("*")
+      ).filter((element) => {
+        if (
+          element.scrollTop <= 0 ||
+          element.scrollHeight <= element.clientHeight
+        ) {
+          return false
+        }
 
-      if (pageScroller) {
-        pageScroller.scrollTo({ top: 0, left: 0, behavior: "smooth" })
-        return
+        const bounds = element.getBoundingClientRect()
+
+        if (
+          bounds.width <= 0 ||
+          bounds.height <= 0 ||
+          bounds.bottom <= 0 ||
+          bounds.top >= window.innerHeight
+        ) {
+          return false
+        }
+
+        const overflowY = window.getComputedStyle(element).overflowY
+        return overflowY === "auto" || overflowY === "scroll"
+      })
+
+      for (const element of scrollableElements) {
+        element.scrollTo({ top: 0, left: 0, behavior: "smooth" })
       }
 
       window.scrollTo({ top: 0, left: 0, behavior: "smooth" })
@@ -73,8 +92,9 @@ export function MobileAppGuard() {
       touchStartX = event.touches[0]?.clientX ?? 0
       touchStartY = event.touches[0]?.clientY ?? 0
       touchStartTime = performance.now()
+      const topEdge = (window.visualViewport?.offsetTop ?? 0) + 44
       topTapCandidate =
-        touchStartY <= 32 &&
+        touchStartY <= topEdge &&
         !(event.target as Element | null)?.closest(
           "a, button, input, select, textarea, [role='button']"
         )
@@ -119,6 +139,7 @@ export function MobileAppGuard() {
     const handleTouchEnd = (event: TouchEvent) => {
       if (topTapCandidate && performance.now() - touchStartTime < 500) {
         topTapCandidate = false
+        event.preventDefault()
         scrollCurrentPageToTop()
       }
 
@@ -147,6 +168,11 @@ export function MobileAppGuard() {
     }
 
     lockPortrait()
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        lockPortrait()
+      }
+    }
     document.addEventListener("gesturestart", preventGesture, {
       passive: false,
     })
@@ -169,6 +195,7 @@ export function MobileAppGuard() {
       passive: false,
     })
     screen.orientation?.addEventListener("change", lockPortrait)
+    document.addEventListener("visibilitychange", handleVisibilityChange)
 
     return () => {
       document.removeEventListener("gesturestart", preventGesture)
@@ -179,18 +206,9 @@ export function MobileAppGuard() {
       document.removeEventListener("touchend", handleTouchEnd)
       document.removeEventListener("touchcancel", handleTouchCancel)
       screen.orientation?.removeEventListener("change", lockPortrait)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
     }
   }, [])
 
-  return (
-    <div className="mobile-landscape-guard" role="alert" aria-live="assertive">
-      <SmartphoneIcon className="size-10" aria-hidden="true" />
-      <div className="grid gap-1 text-center">
-        <p className="font-semibold">Portrait mode required</p>
-        <p className="text-sm text-muted-foreground">
-          Rotate your device to continue.
-        </p>
-      </div>
-    </div>
-  )
+  return null
 }

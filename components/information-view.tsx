@@ -199,7 +199,7 @@ function NotebookBreadcrumbs({ items }: { items: NotebookBreadcrumbItem[] }) {
   return (
     <span
       ref={containerRef}
-      className="mx-auto flex w-full max-w-60 min-w-0 items-center justify-center gap-1 overflow-hidden px-2 text-[10px] leading-5 font-normal text-muted-foreground/70 md:mx-0 md:max-w-none md:justify-start md:px-0"
+      className="mx-auto flex w-full max-w-60 min-w-0 items-center justify-center gap-1 overflow-hidden px-2 text-[10px] leading-5 font-normal text-muted-foreground/70 md:mx-0 md:max-w-none md:justify-start md:px-0 md:text-xs"
       aria-label="Notebook breadcrumb"
     >
       {visibleItems.map((item, visibleIndex) => {
@@ -208,13 +208,13 @@ function NotebookBreadcrumbs({ items }: { items: NotebookBreadcrumbItem[] }) {
         const content = item.onSelect ? (
           <button
             type="button"
-            className="block max-w-full truncate rounded-sm pb-0.5 text-[10px] leading-5 font-normal text-muted-foreground/70 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+            className="block max-w-full truncate rounded-sm pb-0.5 text-[10px] leading-5 font-normal text-muted-foreground/70 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 md:text-xs"
             onClick={item.onSelect}
           >
             {item.label}
           </button>
         ) : (
-          <span className="block max-w-full truncate pb-0.5 text-[10px] leading-5 font-normal text-muted-foreground/70">
+          <span className="block max-w-full truncate pb-0.5 text-[10px] leading-5 font-normal text-muted-foreground/70 md:text-xs">
             {item.label}
           </span>
         )
@@ -724,15 +724,17 @@ function MobileFoldersScreen({
             <button
               key={folder.id}
               type="button"
-              className="relative flex min-h-14 w-full items-center gap-3 px-4 text-left transition-colors active:bg-muted"
+              className="relative flex min-h-16 w-full items-center gap-3 px-4 text-left transition-colors active:bg-muted"
               onClick={() => onOpenFolder(folder.id)}
             >
-              <FolderIcon className="size-5 shrink-0 text-yellow-500" />
-              <span className="min-w-0 flex-1 font-medium">{folder.title}</span>
-              <span className="text-muted-foreground">{count}</span>
-              <ChevronRightIcon className="size-5 shrink-0 text-muted-foreground" />
+              <FolderIcon className="size-6 shrink-0 text-yellow-500" />
+              <span className="min-w-0 flex-1 text-lg font-medium">
+                {folder.title}
+              </span>
+              <span className="text-lg text-muted-foreground">{count}</span>
+              <ChevronRightIcon className="size-6 shrink-0 text-muted-foreground" />
               {index < rootFolders.length - 1 ? (
-                <span className="absolute right-0 left-12 h-px translate-y-7 bg-border/60" />
+                <span className="absolute right-0 left-13 h-px translate-y-8 bg-border/60" />
               ) : null}
             </button>
           )
@@ -740,13 +742,15 @@ function MobileFoldersScreen({
         {rootNotes.length ? (
           <button
             type="button"
-            className="flex min-h-14 w-full items-center gap-3 px-4 text-left transition-colors active:bg-muted"
+            className="flex min-h-16 w-full items-center gap-3 px-4 text-left transition-colors active:bg-muted"
             onClick={onOpenRootNotes}
           >
-            <FileTextIcon className="size-5 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 font-medium">Notes</span>
-            <span className="text-muted-foreground">{rootNotes.length}</span>
-            <ChevronRightIcon className="size-5 shrink-0 text-muted-foreground" />
+            <FileTextIcon className="size-6 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 text-lg font-medium">Notes</span>
+            <span className="text-lg text-muted-foreground">
+              {rootNotes.length}
+            </span>
+            <ChevronRightIcon className="size-6 shrink-0 text-muted-foreground" />
           </button>
         ) : null}
       </div>
@@ -866,17 +870,17 @@ function MobileFolderNotesScreen({
               <button
                 key={childFolder.id}
                 type="button"
-                className="relative flex min-h-14 w-full items-center gap-3 px-4 text-left transition-colors active:bg-muted"
+                className="relative flex min-h-16 w-full items-center gap-3 px-4 text-left transition-colors active:bg-muted"
                 onClick={() => onOpenNote(childFolder.id)}
               >
-                <FolderIcon className="size-5 shrink-0 text-yellow-500" />
-                <span className="min-w-0 flex-1 font-medium">
+                <FolderIcon className="size-6 shrink-0 text-yellow-500" />
+                <span className="min-w-0 flex-1 text-lg font-medium">
                   {childFolder.title}
                 </span>
-                <span className="text-muted-foreground">{count}</span>
-                <ChevronRightIcon className="size-5 shrink-0 text-muted-foreground" />
+                <span className="text-lg text-muted-foreground">{count}</span>
+                <ChevronRightIcon className="size-6 shrink-0 text-muted-foreground" />
                 {index < childFolders.length - 1 ? (
-                  <span className="absolute right-0 left-12 h-px translate-y-7 bg-border/60" />
+                  <span className="absolute right-0 left-13 h-px translate-y-8 bg-border/60" />
                 ) : null}
               </button>
             )
@@ -887,17 +891,17 @@ function MobileFolderNotesScreen({
         {notes.map((note) => (
           <div
             key={note.id}
-            className="flex min-h-16 w-full max-w-full min-w-0 items-center gap-2 overflow-hidden rounded-2xl bg-background px-5 py-3"
+            className="flex min-h-20 w-full max-w-full min-w-0 items-center gap-2 overflow-hidden rounded-2xl bg-background px-5 py-4"
           >
             <button
               type="button"
               className="min-w-0 flex-1 overflow-hidden text-left transition-colors active:bg-muted"
               onClick={() => onOpenNote(note.id)}
             >
-              <span className="block max-w-full truncate font-semibold">
+              <span className="block max-w-full truncate text-lg font-semibold">
                 {note.title}
               </span>
-              <span className="mt-1 block max-w-full truncate text-sm text-muted-foreground">
+              <span className="mt-1 block max-w-full truncate text-[17px] leading-snug text-muted-foreground">
                 {formatShortEditedDate(note.updatedAt)}{" "}
                 {notePreview(note.content)}
               </span>
@@ -1288,7 +1292,7 @@ function NoteTree({
   }
 
   return (
-    <div className="grid gap-2 lg:gap-1">
+    <div className="notebook-tree grid gap-2 lg:gap-1">
       {children.map((node) => {
         const isFolder = node.type === "folder"
         const isCollapsed = collapsedFolderIds.has(node.id)
@@ -1397,7 +1401,7 @@ function NoteTree({
               )}
               <Button
                 variant="ghost"
-                className="h-10 min-w-0 flex-1 justify-start px-2 text-[15px] hover:bg-transparent lg:h-7 lg:rounded-sm lg:px-1.5 lg:text-[13px] lg:font-normal"
+                className="h-10 min-w-0 flex-1 justify-start px-2 text-[15px] hover:bg-transparent lg:h-7 lg:rounded-sm lg:px-1.5 lg:text-sm lg:font-normal"
                 onClick={() => {
                   onSelect(node.id)
                 }}
@@ -1561,6 +1565,7 @@ export function InformationView() {
     {}
   )
   const mobileNoteSelectorRef = React.useRef<HTMLDetailsElement | null>(null)
+  const notebookShellRef = React.useRef<HTMLDivElement | null>(null)
   const hasInitializedCollapsedFolders = React.useRef(false)
   const hasLoadedNotes = React.useRef(false)
   const [pendingDesktopNodeFocusId, setPendingDesktopNodeFocusId] =
@@ -1611,9 +1616,7 @@ export function InformationView() {
             ? readBrowserStorage("localStorage", lastMobileNoteStorageKey)
             : undefined
       const rememberedNode = rememberedNodeId
-        ? loaded.find(
-            (node) => node.id === rememberedNodeId
-          )
+        ? loaded.find((node) => node.id === rememberedNodeId)
         : undefined
       const initialView =
         requestedMobileView ??
@@ -1738,6 +1741,54 @@ export function InformationView() {
   }, [])
 
   const activeNode = nodes.find((node) => node.id === activeId)
+
+  React.useEffect(() => {
+    const shell = notebookShellRef.current
+
+    if (!shell || activeNode?.type !== "note") {
+      return
+    }
+
+    const activeShell = shell
+    const mobileQuery = window.matchMedia("(max-width: 767px)")
+    const visualViewport = window.visualViewport
+
+    function syncMobileEditorViewport() {
+      if (!mobileQuery.matches) {
+        activeShell.style.removeProperty("--mobile-note-viewport-height")
+        activeShell.style.removeProperty("--mobile-note-viewport-top")
+        return
+      }
+
+      activeShell.style.setProperty(
+        "--mobile-note-viewport-height",
+        `${visualViewport?.height ?? window.innerHeight}px`
+      )
+      activeShell.style.setProperty(
+        "--mobile-note-viewport-top",
+        `${visualViewport?.offsetTop ?? 0}px`
+      )
+
+      activeShell
+        .querySelector<HTMLElement>('[data-slot="sidebar-inset"]')
+        ?.scrollTo({ top: 0, left: 0 })
+    }
+
+    syncMobileEditorViewport()
+    window.addEventListener("resize", syncMobileEditorViewport)
+    visualViewport?.addEventListener("resize", syncMobileEditorViewport)
+    visualViewport?.addEventListener("scroll", syncMobileEditorViewport)
+    mobileQuery.addEventListener("change", syncMobileEditorViewport)
+
+    return () => {
+      window.removeEventListener("resize", syncMobileEditorViewport)
+      visualViewport?.removeEventListener("resize", syncMobileEditorViewport)
+      visualViewport?.removeEventListener("scroll", syncMobileEditorViewport)
+      mobileQuery.removeEventListener("change", syncMobileEditorViewport)
+      activeShell.style.removeProperty("--mobile-note-viewport-height")
+      activeShell.style.removeProperty("--mobile-note-viewport-top")
+    }
+  }, [activeNode?.type])
 
   React.useEffect(() => {
     if (!hasLoadedNotes.current) {
@@ -2512,6 +2563,8 @@ export function InformationView() {
 
   return (
     <SidebarProvider
+      ref={notebookShellRef}
+      data-mobile-note-editor={activeNode?.type === "note" ? "true" : undefined}
       className={cn(
         "min-h-[calc(100dvh+env(safe-area-inset-top,0px)+env(safe-area-inset-bottom,0px))] md:min-h-svh md:bg-sidebar",
         activeNode?.type === "note" ? "bg-background" : "bg-muted/60"
@@ -2527,13 +2580,17 @@ export function InformationView() {
       <SidebarInset
         className={cn(
           "min-h-[calc(100dvh+env(safe-area-inset-top,0px)+env(safe-area-inset-bottom,0px))] md:min-h-0 md:bg-background",
-          activeNode?.type === "note" ? "bg-background" : "bg-muted/60"
+          activeNode?.type === "note"
+            ? "bg-background lg:h-[calc(100svh-1rem)] lg:overflow-hidden"
+            : "bg-muted/60"
         )}
       >
         <main
           className={cn(
             "flex min-h-[calc(100dvh+env(safe-area-inset-top,0px)+env(safe-area-inset-bottom,0px))] flex-1 flex-col md:min-h-[calc(100svh-1rem)] md:bg-background",
-            activeNode?.type === "note" ? "bg-background" : "bg-muted/60"
+            activeNode?.type === "note"
+              ? "bg-background lg:h-full lg:min-h-0 lg:overflow-hidden"
+              : "bg-muted/60"
           )}
         >
           <SiteHeader
@@ -2579,12 +2636,17 @@ export function InformationView() {
             />
           ) : null}
           <div className="flex min-h-0 flex-1 px-0 py-0 sm:px-4 sm:py-4 lg:px-6">
-            <Card className="min-h-0 flex-1 rounded-none bg-transparent py-0 shadow-none ring-0 sm:rounded-lg sm:bg-card sm:shadow-sm sm:ring-1 md:overflow-visible md:rounded-none md:bg-transparent md:shadow-none md:ring-0">
+            <Card
+              className={cn(
+                "min-h-0 flex-1 rounded-none bg-transparent py-0 shadow-none ring-0 sm:rounded-lg sm:bg-card sm:shadow-sm sm:ring-1 md:overflow-visible md:rounded-none md:bg-transparent md:shadow-none md:ring-0",
+                activeNode?.type === "note" && "lg:overflow-hidden"
+              )}
+            >
               {isNotebookLoading ? (
                 <NotebookSkeleton />
               ) : (
                 <CardContent className="grid min-h-0 flex-1 gap-0 p-0 lg:grid-cols-[20rem_minmax(0,1fr)]">
-                  <aside className="hidden min-h-0 flex-col border-b p-5 lg:flex lg:border-r lg:border-b-0">
+                  <aside className="notebook-tree hidden min-h-0 flex-col border-b p-5 lg:flex lg:border-r lg:border-b-0 lg:text-sm">
                     <div className="mb-3 flex items-center justify-center gap-1 text-muted-foreground">
                       <Button
                         variant="ghost"

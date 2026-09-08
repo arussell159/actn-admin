@@ -99,7 +99,11 @@ export function CountryTableFilters({
                 ) : (
                   option.label
                 )}
-                {option.count === undefined ? null : ` ${option.count}`}
+                {option.count === undefined ? null : (
+                  <span className="ml-1.5 hidden min-w-5 rounded-full bg-muted-foreground/15 px-1.5 py-0.5 text-xs leading-none tabular-nums md:inline-flex md:justify-center">
+                    {option.count}
+                  </span>
+                )}
               </button>
             )
           })}

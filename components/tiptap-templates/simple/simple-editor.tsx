@@ -1,12 +1,7 @@
 "use client"
 
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react"
-import type { Content } from "@tiptap/core"
+import { useCallback, useEffect, useRef, useState } from "react"
+import type { Content, Editor } from "@tiptap/core"
 import { EditorContent, EditorContext, useEditor } from "@tiptap/react"
 
 // --- Tiptap Core Extensions ---
@@ -50,10 +45,7 @@ import {
   ColorHighlightPopover,
   ColorHighlightPopoverButton,
 } from "@/components/tiptap-ui/color-highlight-popover"
-import {
-  LinkPopover,
-  LinkButton,
-} from "@/components/tiptap-ui/link-popover"
+import { LinkPopover, LinkButton } from "@/components/tiptap-ui/link-popover"
 import { MarkButton } from "@/components/tiptap-ui/mark-button"
 import { TextAlignButton } from "@/components/tiptap-ui/text-align-button"
 import { UndoRedoButton } from "@/components/tiptap-ui/undo-redo-button"
@@ -202,7 +194,49 @@ export function SimpleEditor({
   const isMobile = useIsBreakpoint()
   const [isSearchAndReplaceOpen, setIsSearchAndReplaceOpen] = useState(false)
   const toolbarRef = useRef<HTMLDivElement>(null)
+  const editorScrollRef = useRef<HTMLDivElement>(null)
+  const caretScrollFrameRef = useRef<number | undefined>(undefined)
   const searchAndReplaceButtonRef = useRef<HTMLButtonElement>(null)
+
+  const keepMobileCaretVisible = useCallback(
+    (currentEditor: Editor) => {
+      if (!isMobile) {
+        return
+      }
+
+      if (caretScrollFrameRef.current) {
+        window.cancelAnimationFrame(caretScrollFrameRef.current)
+      }
+
+      caretScrollFrameRef.current = window.requestAnimationFrame(() => {
+        caretScrollFrameRef.current = undefined
+
+        const scrollContainer = editorScrollRef.current
+
+        if (!scrollContainer || currentEditor.isDestroyed) {
+          return
+        }
+
+        const caret = currentEditor.view.coordsAtPos(
+          currentEditor.state.selection.head
+        )
+        const container = scrollContainer.getBoundingClientRect()
+        const visualViewport = window.visualViewport
+        const viewportTop = visualViewport?.offsetTop ?? 0
+        const viewportBottom =
+          viewportTop + (visualViewport?.height ?? window.innerHeight)
+        const visibleTop = Math.max(container.top, viewportTop) + 16
+        const visibleBottom = Math.min(container.bottom, viewportBottom) - 24
+
+        if (caret.bottom > visibleBottom) {
+          scrollContainer.scrollTop += caret.bottom - visibleBottom
+        } else if (caret.top < visibleTop) {
+          scrollContainer.scrollTop -= visibleTop - caret.top
+        }
+      })
+    },
+    [isMobile]
+  )
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -255,12 +289,22 @@ export function SimpleEditor({
     },
     onUpdate: ({ editor }) => {
       onChange?.(JSON.stringify(editor.getJSON()))
+      keepMobileCaretVisible(editor)
     },
     onSelectionUpdate: ({ editor }) => {
       const { from, to } = editor.state.selection
       onSelectionChange?.({ from, to })
+      keepMobileCaretVisible(editor)
     },
   })
+
+  useEffect(() => {
+    return () => {
+      if (caretScrollFrameRef.current) {
+        window.cancelAnimationFrame(caretScrollFrameRef.current)
+      }
+    }
+  }, [])
 
   const openSearchAndReplace = useCallback(() => {
     setIsSearchAndReplaceOpen(true)
@@ -342,6 +386,7 @@ export function SimpleEditor({
         />
 
         <EditorContent
+          ref={editorScrollRef}
           editor={editor}
           role="presentation"
           className="simple-editor-content"
