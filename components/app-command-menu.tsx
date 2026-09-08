@@ -26,8 +26,7 @@ import {
 import { getMonthEndTitle, listMonthEndRecords } from "@/lib/month-end-db"
 import { monthEndCountryHref } from "@/lib/month-end-country-route"
 import { getMonthEndTemplate } from "@/lib/month-end-template"
-
-export const openAppCommandMenuEvent = "app-command-menu:open"
+import { openAppCommandMenuEvent } from "@/lib/app-command-menu"
 
 type AppCommandItem = {
   id: string
@@ -100,9 +99,9 @@ function filterCommandItems(items: AppCommandItem[], query: string) {
     .map(({ item }) => item)
 }
 
-export function AppCommandMenu() {
+export function AppCommandMenu({ initiallyOpen = false }: { initiallyOpen?: boolean }) {
   const router = useRouter()
-  const [open, setOpen] = React.useState(false)
+  const [open, setOpen] = React.useState(initiallyOpen)
   const [commandSearch, setCommandSearch] = React.useState("")
   const [notebookItems, setNotebookItems] = React.useState<AppCommandItem[]>([])
   const [monthEndCountryItems, setMonthEndCountryItems] = React.useState<

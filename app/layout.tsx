@@ -1,6 +1,6 @@
 import "./globals.css"
 import { PwaRegister } from "@/components/pwa-register"
-import { AppCommandMenu } from "@/components/app-command-menu"
+import { AppCommandMenuLoader } from "@/components/app-command-menu-loader"
 import { AuthSessionGuard } from "@/components/auth-session-guard"
 import { MobileAppGuard } from "@/components/mobile-app-guard"
 import { RouteScrollReset } from "@/components/route-scroll-reset"
@@ -89,7 +89,7 @@ export default function RootLayout({
             <React.Suspense fallback={null}>
               <RouteScrollReset />
             </React.Suspense>
-            <AppCommandMenu />
+            <AppCommandMenuLoader />
             {children}
           </TooltipProvider>
         </ThemeProvider>

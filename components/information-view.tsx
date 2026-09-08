@@ -54,6 +54,7 @@ import {
   createInformationId,
   getInformationNotes,
   informationUpdatedEvent,
+  loadInformationNotes,
   loadTrashedInformationNotes,
   saveInformationNotes,
   saveTrashedInformationNotes,
@@ -1574,6 +1575,19 @@ export function InformationView() {
 
     async function loadNotes() {
       setIsNotebookLoading(true)
+      const cachedTrash = loadTrashedInformationNotes()
+      const cachedTrashIds = new Set(cachedTrash.map((node) => node.id))
+      const cachedNodes = loadInformationNotes().filter(
+        (node) => !cachedTrashIds.has(node.id)
+      )
+
+      if (cachedNodes.length && isMounted) {
+        nodesRef.current = cachedNodes
+        setNodes(cachedNodes)
+        setTrashedNodes(cachedTrash)
+        setIsNotebookLoading(false)
+      }
+
       const loadedNodes = await getInformationNotes()
       const loadedTrash = loadTrashedInformationNotes()
       const trashedIds = new Set(loadedTrash.map((node) => node.id))

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server"
+import { after } from "next/server"
 
-import { getZohoDeskDashboardBundle } from "@/lib/zoho-desk"
+import {
+  getZohoDeskDashboardSnapshot,
+  refreshZohoDeskDashboardBundle,
+} from "@/lib/zoho-desk"
 import {
   getZohoDeskPlaceholderDashboardMetrics,
   listZohoDeskPlaceholderTickets,
@@ -27,7 +31,17 @@ export async function GET(request: Request) {
       })
     }
 
-    return NextResponse.json(await getZohoDeskDashboardBundle(limit))
+    const snapshot = await getZohoDeskDashboardSnapshot(limit)
+
+    if (snapshot) {
+      if (!snapshot.isFresh) {
+        after(() => refreshZohoDeskDashboardBundle(limit))
+      }
+
+      return NextResponse.json(snapshot.data)
+    }
+
+    return NextResponse.json(await refreshZohoDeskDashboardBundle(limit))
   } catch (error) {
     const message =
       error instanceof Error
@@ -52,4 +66,3 @@ export async function GET(request: Request) {
     })
   }
 }
-

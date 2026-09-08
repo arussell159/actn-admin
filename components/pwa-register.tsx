@@ -2,7 +2,7 @@
 
 import * as React from "react"
 
-import { appCachePrefix, serviceWorkerCacheName } from "@/lib/pwa-recovery"
+import { appCachePrefix } from "@/lib/pwa-recovery"
 
 const controllerReloadKey = "actn-admin:last-controller-reload"
 const controllerReloadCooldownMs = 60_000
@@ -110,7 +110,6 @@ export function PwaRegister() {
 
         registration = activeRegistration
         activeRegistration.waiting?.postMessage({ type: "SKIP_WAITING" })
-        updateRegistration()
       })
       .catch((error) => {
         console.warn("[ACTN PWA] Service worker registration failed", {
@@ -118,20 +117,6 @@ export function PwaRegister() {
           online: navigator.onLine,
         })
       })
-
-    void window.caches
-      ?.keys()
-      .then((keys) =>
-        Promise.all(
-          keys
-            .filter(
-              (key) =>
-                key.startsWith(appCachePrefix) && key !== serviceWorkerCacheName
-            )
-            .map((key) => window.caches.delete(key))
-        )
-      )
-      .catch(() => undefined)
 
     return () => {
       isMounted = false

@@ -5,7 +5,7 @@ import Image from "next/image"
 import { usePathname } from "next/navigation"
 
 import { AppLink } from "@/components/app-link"
-import { openAppCommandMenuEvent } from "@/components/app-command-menu"
+import { openAppCommandMenuEvent } from "@/lib/app-command-menu"
 import { NavDocuments } from "@/components/nav-documents"
 import { NavUser } from "@/components/nav-user"
 import {
@@ -108,6 +108,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   }, [pathname])
 
   React.useEffect(() => {
+    if (window.matchMedia("(max-width: 767px)").matches) {
+      return
+    }
+
     async function syncPinnedItems() {
       const notes = await getInformationNotes()
 
@@ -129,6 +133,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   }, [])
 
   React.useEffect(() => {
+    if (window.matchMedia("(max-width: 767px)").matches) {
+      return
+    }
+
     async function syncMonthEndItems() {
       try {
         const records = await listMonthEndRecords()

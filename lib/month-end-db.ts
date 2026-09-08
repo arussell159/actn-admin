@@ -107,7 +107,7 @@ function isLocalhostBrowser() {
   )
 }
 
-function getLocalRecords() {
+export function loadMonthEndRecords() {
   if (typeof window === "undefined") {
     return []
   }
@@ -157,7 +157,7 @@ function saveLocalRecords(records: MonthEndRecord[]) {
 }
 
 function saveLocalRecord(record: MonthEndRecord) {
-  const records = getLocalRecords()
+  const records = loadMonthEndRecords()
   const existingIndex = records.findIndex((item) => item.id === record.id)
   const nextRecords =
     existingIndex >= 0
@@ -173,7 +173,7 @@ function saveLocalRecord(record: MonthEndRecord) {
 
 function deleteLocalRecord(period: string) {
   saveLocalRecords(
-    getLocalRecords().filter((record) => record.period !== period)
+    loadMonthEndRecords().filter((record) => record.period !== period)
   )
 }
 
@@ -219,7 +219,7 @@ export async function getMonthEndRecord(period = getDefaultPeriod()) {
     return data ? toRecord(data) : undefined
   } catch (error) {
     if (isLocalhostBrowser()) {
-      return getLocalRecords().find((record) => record.period === period)
+      return loadMonthEndRecords().find((record) => record.period === period)
     }
 
     throw error
@@ -236,6 +236,8 @@ export async function saveMonthEndRecord(record: MonthEndRecord) {
     if (error) {
       throw error
     }
+
+    saveLocalRecord(record)
   } catch (error) {
     if (isLocalhostBrowser()) {
       saveLocalRecord(record)
@@ -257,6 +259,8 @@ export async function deleteMonthEndRecord(period: string) {
     if (error) {
       throw error
     }
+
+    deleteLocalRecord(period)
   } catch (error) {
     if (isLocalhostBrowser()) {
       deleteLocalRecord(period)
@@ -284,20 +288,24 @@ export async function listMonthEndRecords() {
     )
 
     if (!isLocalhostBrowser()) {
+      saveLocalRecords(remoteRecords)
       return remoteRecords
     }
 
+    const localRecords = loadMonthEndRecords()
     const remoteIds = new Set(remoteRecords.map((record) => record.id))
-    const localOnlyRecords = getLocalRecords().filter(
+    const localOnlyRecords = localRecords.filter(
       (record) => !remoteIds.has(record.id)
     )
-
-    return [...remoteRecords, ...localOnlyRecords].sort((first, second) =>
-      second.period.localeCompare(first.period)
+    const mergedRecords = [...remoteRecords, ...localOnlyRecords].sort(
+      (first, second) => second.period.localeCompare(first.period)
     )
+
+    saveLocalRecords(mergedRecords)
+    return mergedRecords
   } catch (error) {
     if (isLocalhostBrowser()) {
-      return getLocalRecords()
+      return loadMonthEndRecords()
     }
 
     throw error

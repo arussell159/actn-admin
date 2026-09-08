@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
 import {
   ArrowLeftIcon,
@@ -20,7 +21,6 @@ import {
   UploadIcon,
   XIcon,
 } from "lucide-react"
-import { Bar, BarChart, Pie, PieChart, XAxis, YAxis } from "recharts"
 
 import { AppLink } from "@/components/app-link"
 import { AppSidebar } from "@/components/app-sidebar"
@@ -38,12 +38,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from "@/components/ui/chart"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   DropdownMenu,
@@ -74,6 +68,7 @@ import {
   exchangeRateKey,
   ensureMonthEndRecord,
   formatPeriod,
+  loadMonthEndRecords,
   listMonthEndRecords,
   saveMonthEndRecord,
   type MonthEndValue,
@@ -566,27 +561,22 @@ function MonthEndCountryHeatMap({
   )
 }
 
-const workflowChartConfig = {
-  progress: {
-    label: "Progress",
-    color: "var(--chart-1)",
-  },
-} satisfies ChartConfig
+function MonthEndDashboardChartsSkeleton() {
+  return (
+    <section className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(19rem,0.75fr)]">
+      <Skeleton className="h-[376px] rounded-xl" />
+      <Skeleton className="h-[376px] rounded-xl" />
+    </section>
+  )
+}
 
-const countryStatusChartConfig = {
-  complete: {
-    label: "Complete",
-    color: "var(--primary)",
-  },
-  inProgress: {
-    label: "In Progress",
-    color: "color-mix(in oklch, var(--primary) 55%, var(--background))",
-  },
-  notStarted: {
-    label: "Not Started",
-    color: "color-mix(in oklch, var(--primary) 25%, var(--background))",
-  },
-} satisfies ChartConfig
+const MonthEndDashboardCharts = dynamic(
+  () =>
+    import("@/components/month-end-dashboard-charts").then(
+      (module) => module.MonthEndDashboardCharts
+    ),
+  { ssr: false, loading: () => <MonthEndDashboardChartsSkeleton /> }
+)
 
 function MonthEndSectionNavigation({
   items,
@@ -837,6 +827,18 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     async function loadRecord() {
       if (!initialReturnRecord) {
         setHasLoaded(false)
+
+        const cachedRecords = loadMonthEndRecords()
+        const cachedRecord = period
+          ? cachedRecords.find((monthEnd) => monthEnd.period === period)
+          : cachedRecords.find((monthEnd) => monthEnd.status === "Open")
+
+        if (cachedRecord && isMounted) {
+          recordRef.current = cachedRecord
+          setRecord(cachedRecord)
+          setChecked(cachedRecord.checked)
+          setHasLoaded(true)
+        }
       }
 
       try {
@@ -2138,108 +2140,10 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                   </div>
                 ) : null}
 
-                <section className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(19rem,0.75fr)]">
-                  <Card className="shadow-sm">
-                    <CardHeader>
-                      <CardTitle>Workflow Progress</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <ChartContainer
-                        config={workflowChartConfig}
-                        className="h-[280px] w-full"
-                      >
-                        <BarChart
-                          accessibilityLayer
-                          data={workflowChartData}
-                          layout="vertical"
-                          margin={{ left: 12, right: 8 }}
-                        >
-                          <XAxis
-                            type="number"
-                            dataKey="progress"
-                            domain={[0, 100]}
-                            hide
-                          />
-                          <YAxis
-                            dataKey="stage"
-                            type="category"
-                            axisLine={false}
-                            tickLine={false}
-                            tickMargin={10}
-                            width={112}
-                          />
-                          <ChartTooltip
-                            cursor={false}
-                            content={
-                              <ChartTooltipContent
-                                hideLabel
-                                formatter={(_value, _name, item) => (
-                                  <div className="flex flex-1 items-center justify-between gap-4">
-                                    <span className="text-muted-foreground">
-                                      Completed
-                                    </span>
-                                    <span className="font-mono font-medium text-foreground tabular-nums">
-                                      {item.payload.completed}/
-                                      {item.payload.total}
-                                    </span>
-                                  </div>
-                                )}
-                              />
-                            }
-                          />
-                          <Bar
-                            dataKey="progress"
-                            fill="var(--color-progress)"
-                            radius={5}
-                          />
-                        </BarChart>
-                      </ChartContainer>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="shadow-sm">
-                    <CardHeader>
-                      <CardTitle>Country Status</CardTitle>
-                    </CardHeader>
-                    <CardContent className="grid gap-4">
-                      <ChartContainer
-                        config={countryStatusChartConfig}
-                        className="mx-auto h-[190px] w-full max-w-[260px]"
-                      >
-                        <PieChart accessibilityLayer>
-                          <ChartTooltip
-                            cursor={false}
-                            content={<ChartTooltipContent hideLabel />}
-                          />
-                          <Pie
-                            data={countryStatusChartData}
-                            dataKey="value"
-                            nameKey="status"
-                          />
-                        </PieChart>
-                      </ChartContainer>
-                      <div className="grid gap-2 text-sm">
-                        {countryStatusChartData.map((item) => (
-                          <div
-                            key={item.status}
-                            className="flex items-center justify-between gap-3"
-                          >
-                            <span className="flex items-center gap-2 text-muted-foreground">
-                              <span
-                                className="size-2.5 rounded-full"
-                                style={{ backgroundColor: item.fill }}
-                              />
-                              {item.label}
-                            </span>
-                            <span className="font-medium tabular-nums">
-                              {item.value}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </section>
+                <MonthEndDashboardCharts
+                  workflowData={workflowChartData}
+                  countryStatusData={countryStatusChartData}
+                />
 
                 <section className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(20rem,0.75fr)]">
                   <Card className="gap-0 overflow-hidden py-0 shadow-sm">

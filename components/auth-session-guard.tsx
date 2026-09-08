@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { usePathname, useRouter } from "next/navigation"
+import { useRouter } from "next/navigation"
 
 import {
   clearAuthSessionStart,
@@ -13,20 +13,19 @@ import {
 import { createClient } from "@/lib/client"
 
 export function AuthSessionGuard() {
-  const pathname = usePathname()
   const router = useRouter()
 
   React.useEffect(() => {
-    if (pathname === "/login") {
-      return
-    }
-
     let isMounted = true
     let isChecking = false
     const supabase = createClient()
 
     async function enforceTimeout() {
-      if (isChecking || document.visibilityState === "hidden") {
+      if (
+        isChecking ||
+        document.visibilityState === "hidden" ||
+        window.location.pathname === "/login"
+      ) {
         return
       }
 
@@ -81,7 +80,7 @@ export function AuthSessionGuard() {
       window.removeEventListener("online", handleResume)
       document.removeEventListener("visibilitychange", handleResume)
     }
-  }, [pathname, router])
+  }, [router])
 
   return null
 }

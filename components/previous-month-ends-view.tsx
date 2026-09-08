@@ -38,6 +38,7 @@ import {
 import {
   deleteMonthEndRecord,
   getMonthEndTitle,
+  loadMonthEndRecords,
   listMonthEndRecords,
   type MonthEndRecord,
 } from "@/lib/month-end-db"
@@ -53,6 +54,14 @@ export function PreviousMonthEndsView() {
 
     async function loadRecords() {
       setIsLoading(true)
+
+      const cachedRecords = loadMonthEndRecords().filter(
+        (record) => record.status === "Closed"
+      )
+      if (cachedRecords.length && isMounted) {
+        setRecords(cachedRecords)
+        setIsLoading(false)
+      }
 
       try {
         const monthEndRecords = await listMonthEndRecords()

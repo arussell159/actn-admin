@@ -2,17 +2,11 @@
 
 import * as React from "react"
 import { DatabaseIcon, MailIcon, MapIcon } from "lucide-react"
-import { Bar, ComposedChart, CartesianGrid, Line, XAxis, YAxis } from "recharts"
+import dynamic from "next/dynamic"
 
 import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
 import { useIsMobile } from "@/hooks/use-mobile"
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from "@/components/ui/chart"
 import {
   Card,
   CardAction,
@@ -42,6 +36,10 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { simpleMapAfricaPaths } from "@/lib/simplemap-africa-paths"
 import { cn } from "@/lib/utils"
 import { fetchJsonWithTimeout } from "@/lib/network"
+import {
+  readBrowserStorage,
+  writeBrowserStorage,
+} from "@/lib/browser-storage"
 
 type ZohoTicket = {
   id: string
@@ -111,7 +109,68 @@ const chartConfig = {
     label: "Outgoing",
     color: "#22a347",
   },
-} satisfies ChartConfig
+}
+
+const dashboardCacheKey = "actn-dashboard-zoho-v1"
+const dashboardCacheMaxAgeMs = 24 * 60 * 60_000
+let dashboardRequestPromise: Promise<ZohoDashboardBundleResponse> | null = null
+
+function requestDashboardBundle() {
+  if (!dashboardRequestPromise) {
+    dashboardRequestPromise = fetchJsonWithTimeout<ZohoDashboardBundleResponse>(
+      "/api/zoho-desk/dashboard?limit=400",
+      { cache: "no-store" },
+      12_000
+    ).finally(() => {
+      dashboardRequestPromise = null
+    })
+  }
+
+  return dashboardRequestPromise
+}
+
+function readCachedDashboardBundle() {
+  try {
+    const value = readBrowserStorage("localStorage", dashboardCacheKey)
+    const cached = value
+      ? (JSON.parse(value) as {
+          savedAt?: number
+          data?: ZohoDashboardBundleResponse
+        })
+      : null
+
+    if (
+      !cached?.data ||
+      !cached.savedAt ||
+      Date.now() - cached.savedAt > dashboardCacheMaxAgeMs ||
+      !Array.isArray(cached.data.tickets) ||
+      !Array.isArray(cached.data.todayTickets) ||
+      !Array.isArray(cached.data.metrics?.chartData)
+    ) {
+      return null
+    }
+
+    return cached.data
+  } catch {
+    return null
+  }
+}
+
+function cacheDashboardBundle(data: ZohoDashboardBundleResponse) {
+  writeBrowserStorage(
+    "localStorage",
+    dashboardCacheKey,
+    JSON.stringify({ savedAt: Date.now(), data })
+  )
+}
+
+const DashboardTicketVolumeChart = dynamic(
+  () =>
+    import("@/components/dashboard-ticket-volume-chart").then(
+      (module) => module.DashboardTicketVolumeChart
+    ),
+  { ssr: false, loading: () => <TicketVolumeSkeleton /> }
+)
 
 const ticketVolumeLegend = [
   {
@@ -409,25 +468,16 @@ export function DashboardView() {
   )
   const [isCountryMapOpen, setIsCountryMapOpen] = React.useState(false)
   const [selectedCountryId, setSelectedCountryId] = React.useState("")
-  const syncRequestRef = React.useRef<{
-    controller: AbortController
-    id: number
-  }>(undefined)
+  const [visibleTicketCount, setVisibleTicketCount] = React.useState(30)
+  const syncRequestIdRef = React.useRef(0)
   const lastSuccessfulSyncRef = React.useRef(0)
 
   const syncZohoDesk = React.useCallback(async () => {
-    syncRequestRef.current?.controller.abort()
-    const controller = new AbortController()
-    const requestId = (syncRequestRef.current?.id ?? 0) + 1
-    syncRequestRef.current = { controller, id: requestId }
+    const requestId = ++syncRequestIdRef.current
     setIsSyncingZoho(true)
 
     try {
-      const dashboard = await fetchJsonWithTimeout<ZohoDashboardBundleResponse>(
-        "/api/zoho-desk/dashboard?limit=400",
-        { cache: "no-store", signal: controller.signal },
-        20_000
-      )
+      const dashboard = await requestDashboardBundle()
 
       if (
         !Array.isArray(dashboard.tickets) ||
@@ -438,7 +488,7 @@ export function DashboardView() {
         throw new Error("Zoho Desk returned an invalid dashboard response.")
       }
 
-      if (syncRequestRef.current?.id !== requestId) {
+      if (syncRequestIdRef.current !== requestId) {
         return
       }
 
@@ -453,12 +503,10 @@ export function DashboardView() {
         message: dashboard.message,
       })
       setZohoMetrics(dashboard.metrics)
+      cacheDashboardBundle(dashboard)
       lastSuccessfulSyncRef.current = Date.now()
     } catch (error) {
-      if (
-        controller.signal.aborted ||
-        syncRequestRef.current?.id !== requestId
-      ) {
+      if (syncRequestIdRef.current !== requestId) {
         return
       }
 
@@ -486,13 +534,25 @@ export function DashboardView() {
           error instanceof Error ? error.message : "Could not reach Zoho Desk.",
       })
     } finally {
-      if (syncRequestRef.current?.id === requestId) {
+      if (syncRequestIdRef.current === requestId) {
         setIsSyncingZoho(false)
       }
     }
   }, [])
 
   React.useEffect(() => {
+    const cached = readCachedDashboardBundle()
+
+    if (cached) {
+      setZohoData({ ok: cached.ok, tickets: cached.tickets, message: cached.message })
+      setZohoTodayData({
+        ok: cached.ok,
+        tickets: cached.todayTickets,
+        message: cached.message,
+      })
+      setZohoMetrics(cached.metrics)
+    }
+
     void syncZohoDesk()
 
     const refreshAfterResume = () => {
@@ -509,7 +569,7 @@ export function DashboardView() {
     document.addEventListener("visibilitychange", refreshAfterResume)
 
     return () => {
-      syncRequestRef.current?.controller.abort()
+      syncRequestIdRef.current += 1
       window.removeEventListener("online", refreshAfterResume)
       document.removeEventListener("visibilitychange", refreshAfterResume)
     }
@@ -522,6 +582,11 @@ export function DashboardView() {
   }, [isMobile])
 
   const tickets = React.useMemo(() => zohoData?.tickets ?? [], [zohoData])
+  const visibleTickets = React.useMemo(
+    () => tickets.slice(0, visibleTicketCount),
+    [tickets, visibleTicketCount]
+  )
+  const hasMoreTickets = visibleTicketCount < tickets.length
   const todayCreatedTickets = React.useMemo(
     () => zohoTodayData?.tickets ?? [],
     [zohoTodayData]
@@ -927,85 +992,9 @@ export function DashboardView() {
                       {isInitialZohoLoad ? (
                         <TicketVolumeSkeleton />
                       ) : (
-                        <ChartContainer
-                          config={chartConfig}
-                          className="aspect-auto h-[250px] w-full [&_.recharts-bar-rectangle]:cursor-pointer"
-                          initialDimension={{ width: 900, height: 250 }}
-                        >
-                          <ComposedChart
-                            data={filteredHourlyTicketData}
-                            margin={{ left: 4, right: 12 }}
-                            accessibilityLayer
-                          >
-                            <CartesianGrid vertical={false} />
-                            <XAxis
-                              dataKey="hour"
-                              tickLine={false}
-                              axisLine={false}
-                              tickMargin={8}
-                              minTickGap={32}
-                            />
-                            <YAxis
-                              tickLine={false}
-                              axisLine={false}
-                              tickMargin={8}
-                              width={36}
-                            />
-                            <ChartTooltip
-                              cursor={false}
-                              content={
-                                <ChartTooltipContent
-                                  formatter={(value, name, item) => (
-                                    <>
-                                      <div
-                                        className="size-2.5 shrink-0 rounded-[2px]"
-                                        style={{
-                                          backgroundColor:
-                                            item.color ?? "currentColor",
-                                        }}
-                                      />
-                                      <span className="text-muted-foreground">
-                                        {chartConfig[
-                                          name as keyof typeof chartConfig
-                                        ]?.label ?? name}
-                                      </span>
-                                      <span className="ml-auto font-mono font-medium text-foreground tabular-nums">
-                                        {Math.abs(
-                                          Number(value)
-                                        ).toLocaleString()}
-                                      </span>
-                                    </>
-                                  )}
-                                  indicator="dot"
-                                />
-                              }
-                            />
-                            <Bar
-                              dataKey="closedTickets"
-                              fill={chartConfig.closedTickets.color}
-                              fillOpacity={0.8}
-                              activeBar={{
-                                fill: "#2fc85a",
-                                fillOpacity: 0.18,
-                                stroke: "#16a34a",
-                                strokeOpacity: 1,
-                                strokeWidth: 2,
-                                filter:
-                                  "drop-shadow(0 0 6px rgba(34, 163, 71, 0.45))",
-                              }}
-                              radius={[4, 4, 0, 0]}
-                              maxBarSize={32}
-                            />
-                            <Line
-                              dataKey="newTickets"
-                              type="natural"
-                              stroke={chartConfig.newTickets.color}
-                              strokeWidth={3}
-                              dot={false}
-                              activeDot={{ r: 5 }}
-                            />
-                          </ComposedChart>
-                        </ChartContainer>
+                        <DashboardTicketVolumeChart
+                          data={filteredHourlyTicketData}
+                        />
                       )}
                     </CardContent>
                   </Card>
@@ -1052,8 +1041,9 @@ export function DashboardView() {
                     {isInitialZohoLoad ? (
                       <MobileTicketSkeleton />
                     ) : tickets.length ? (
-                      tickets.map((ticket) => {
-                        return (
+                      <>
+                        {visibleTickets.map((ticket) => {
+                          return (
                           <article
                             key={ticket.id || ticket.ticketNumber}
                             className="overflow-hidden rounded-[min(var(--radius-4xl),24px)] border bg-background shadow-sm"
@@ -1103,9 +1093,21 @@ export function DashboardView() {
                                 </span>
                               </div>
                             </div>
-                          </article>
-                        )
-                      })
+                            </article>
+                          )
+                        })}
+                        {hasMoreTickets ? (
+                          <button
+                            type="button"
+                            className="min-h-11 rounded-xl border bg-background px-4 text-sm font-medium"
+                            onClick={() =>
+                              setVisibleTicketCount((count) => count + 30)
+                            }
+                          >
+                            Load more tickets
+                          </button>
+                        ) : null}
+                      </>
                     ) : (
                       <div className="rounded-[min(var(--radius-4xl),24px)] border bg-background px-3 py-8 text-center text-sm text-muted-foreground shadow-sm">
                         {zohoData?.message ?? "Checking Zoho Desk..."}
@@ -1144,7 +1146,8 @@ export function DashboardView() {
                           {isInitialZohoLoad ? (
                             <DesktopTicketTableSkeleton />
                           ) : tickets.length ? (
-                            tickets.map((ticket) => {
+                            <>
+                              {visibleTickets.map((ticket) => {
                               return (
                                 <TableRow
                                   key={ticket.id || ticket.ticketNumber}
@@ -1189,8 +1192,26 @@ export function DashboardView() {
                                     </span>
                                   </TableCell>
                                 </TableRow>
-                              )
-                            })
+                                )
+                              })}
+                              {hasMoreTickets ? (
+                                <TableRow>
+                                  <TableCell colSpan={5} className="text-center">
+                                    <button
+                                      type="button"
+                                      className="min-h-9 rounded-md border px-4 text-sm font-medium"
+                                      onClick={() =>
+                                        setVisibleTicketCount(
+                                          (count) => count + 50
+                                        )
+                                      }
+                                    >
+                                      Load more tickets
+                                    </button>
+                                  </TableCell>
+                                </TableRow>
+                              ) : null}
+                            </>
                           ) : (
                             <TableRow>
                               <TableCell

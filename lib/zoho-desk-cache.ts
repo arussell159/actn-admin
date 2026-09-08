@@ -17,6 +17,15 @@ function cacheId(key: string) {
 }
 
 export async function readZohoDeskCache<T>(key: string, maxAgeMs: number) {
+  const entry = await readZohoDeskCacheEntry<T>(key, maxAgeMs)
+
+  return entry?.value ?? null
+}
+
+export async function readZohoDeskCacheEntry<T>(
+  key: string,
+  maxAgeMs: number
+) {
   if (!hasSupabaseConfig()) {
     return null
   }
@@ -39,7 +48,7 @@ export async function readZohoDeskCache<T>(key: string, maxAgeMs: number) {
       return null
     }
 
-    return data.value
+    return { value: data.value, updatedAt }
   } catch {
     return null
   }
@@ -63,4 +72,3 @@ export async function writeZohoDeskCache<T>(key: string, value: T) {
     )
   } catch {}
 }
-
