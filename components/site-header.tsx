@@ -18,7 +18,7 @@ import { createClient } from "@/lib/client"
 import { ArrowLeftIcon, CircleUserRoundIcon, LogOutIcon } from "lucide-react"
 
 export const siteHeaderGlassButtonClassName =
-  "relative isolate size-10 overflow-hidden rounded-full border-white/50 bg-background/65 shadow-[0_8px_24px_rgba(15,23,42,0.14),inset_0_1px_0_rgba(255,255,255,0.8),inset_0_-1px_0_rgba(15,23,42,0.05)] backdrop-blur-2xl before:absolute before:inset-0 before:-z-10 before:bg-[linear-gradient(135deg,rgba(255,255,255,0.5),rgba(255,255,255,0.08)_42%,rgba(15,23,42,0.04))] hover:bg-background/75 supports-backdrop-filter:bg-background/50 dark:border-white/15 dark:bg-background/40 dark:shadow-[0_8px_24px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.12)] dark:hover:bg-background/55"
+  "relative isolate size-10! shrink-0 overflow-hidden rounded-full p-0! [&_svg]:size-4.5! active:translate-y-0 border-white/50 bg-background/65 shadow-[0_8px_24px_rgba(15,23,42,0.14),inset_0_1px_0_rgba(255,255,255,0.8),inset_0_-1px_0_rgba(15,23,42,0.05)] backdrop-blur-2xl before:absolute before:inset-0 before:-z-10 before:bg-[linear-gradient(135deg,rgba(255,255,255,0.5),rgba(255,255,255,0.08)_42%,rgba(15,23,42,0.04))] hover:bg-background/75 supports-backdrop-filter:bg-background/50 dark:border-white/15 dark:bg-background/40 dark:shadow-[0_8px_24px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.12)] dark:hover:bg-background/55"
 
 export function SiteHeaderBackButton({
   label = "Back",
@@ -59,11 +59,17 @@ function MobileProfileMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="grid size-10 place-items-center rounded-full text-foreground transition-colors active:bg-muted"
+        render={
+          <Button
+            variant="outline"
+            size="icon-lg"
+            className={siteHeaderGlassButtonClassName}
+          />
+        }
         aria-label="Open profile menu"
         title="Profile"
       >
-        <CircleUserRoundIcon className="size-6" />
+        <CircleUserRoundIcon />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={8} className="min-w-40">
         <DropdownMenuItem onClick={signOut}>

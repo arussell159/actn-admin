@@ -13,6 +13,7 @@ const applicationDocumentRoutes = [
 ]
 
 const nextConfig: NextConfig = {
+  devIndicators: false,
   async headers() {
     return [
       ...applicationDocumentRoutes.map((source) => ({
@@ -55,7 +56,10 @@ const nextConfig: NextConfig = {
         source: "/(.*)",
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "X-Frame-Options", value: "DENY" },
+          // VS Code Mobile Preview embeds the local dev server in an iframe.
+          ...(process.env.NODE_ENV === "development"
+            ? []
+            : [{ key: "X-Frame-Options", value: "DENY" }]),
           {
             key: "Referrer-Policy",
             value: "strict-origin-when-cross-origin",

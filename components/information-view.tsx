@@ -651,21 +651,24 @@ function MobileFolderTitlePrompt({
   onCancel: () => void
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background pt-[env(safe-area-inset-top,0px)] md:hidden">
-      <header className="grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center px-4">
+    <div className="fixed inset-0 z-50 flex flex-col bg-background md:hidden">
+      <header className="grid h-[calc(2.5rem+env(safe-area-inset-top,0px))] shrink-0 grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-center px-4 pt-[env(safe-area-inset-top,0px)]">
         <Button
-          variant="ghost"
-          size="icon-sm"
-          className="justify-self-start rounded-full bg-background shadow-sm"
+          variant="outline"
+          size="icon-lg"
+          className={siteHeaderGlassButtonClassName}
           aria-label="Cancel folder"
           onClick={onCancel}
         >
           <XIcon />
         </Button>
-        <div className="text-sm font-semibold text-foreground">New Folder</div>
+        <div className="text-center text-base font-semibold text-foreground">
+          New Folder
+        </div>
         <Button
-          size="icon-sm"
-          className="justify-self-end rounded-full bg-yellow-400 text-yellow-950 shadow-sm hover:bg-yellow-300 disabled:opacity-40"
+          variant="outline"
+          size="icon-lg"
+          className={siteHeaderGlassButtonClassName}
           aria-label="Create folder"
           disabled={!value.trim()}
           onClick={onConfirm}
@@ -1399,37 +1402,35 @@ function NoteTree({
                   aria-hidden="true"
                 />
               )}
-              <Button
-                variant="ghost"
-                className="h-10 min-w-0 flex-1 justify-start px-2 text-[15px] hover:bg-transparent lg:h-7 lg:rounded-sm lg:px-1.5 lg:text-sm lg:font-normal"
-                onClick={() => {
-                  onSelect(node.id)
-                }}
-                tabIndex={-1}
-              >
-                {editingNodeId === node.id ? (
-                  <Input
-                    value={titleDraft}
-                    onClick={(event) => event.stopPropagation()}
-                    onFocus={(event) => event.currentTarget.select()}
-                    onChange={(event) => onTitleDraftChange(event.target.value)}
-                    onBlur={() => onCommitTitle(node.id)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        onCommitTitle(node.id)
-                      }
-
-                      if (event.key === "Escape") {
-                        onCancelTitleEdit()
-                      }
-                    }}
-                    className="h-7 min-w-0 flex-1 px-2 text-sm"
-                    autoFocus
-                  />
-                ) : (
+              {editingNodeId === node.id ? (
+                <Input
+                  aria-label="Folder title"
+                  placeholder="Folder name"
+                  value={titleDraft}
+                  onClick={(event) => event.stopPropagation()}
+                  onFocus={(event) => event.currentTarget.select()}
+                  onChange={(event) => onTitleDraftChange(event.target.value)}
+                  onBlur={() => onCommitTitle(node.id)}
+                  onKeyDown={(event) => {
+                    event.stopPropagation()
+                    if (event.key === "Enter") onCommitTitle(node.id)
+                    if (event.key === "Escape") onCancelTitleEdit()
+                  }}
+                  className="h-7 min-w-0 flex-1 px-2 text-sm"
+                  autoFocus
+                />
+              ) : (
+                <Button
+                  variant="ghost"
+                  className="h-10 min-w-0 flex-1 justify-start px-2 text-[15px] hover:bg-transparent lg:h-7 lg:rounded-sm lg:px-1.5 lg:text-sm lg:font-normal"
+                  onClick={() => {
+                    onSelect(node.id)
+                  }}
+                  tabIndex={-1}
+                >
                   <span className="truncate">{node.title}</span>
-                )}
-              </Button>
+                </Button>
+              )}
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
@@ -1588,8 +1589,10 @@ export function InformationView() {
 
     async function loadNotes() {
       setIsNotebookLoading(true)
-      const loaded = await getInformationNotes()
+      const loadedNodes = await getInformationNotes()
       const loadedTrash = loadTrashedInformationNotes()
+      const trashedIds = new Set(loadedTrash.map((node) => node.id))
+      const loaded = loadedNodes.filter((node) => !trashedIds.has(node.id))
       const requestedNode = searchParams.get("node") ?? undefined
       const requestedView = searchParams.get("view") ?? undefined
       const requestedMobileView =
@@ -1769,9 +1772,41 @@ export function InformationView() {
         `${visualViewport?.offsetTop ?? 0}px`
       )
 
-      activeShell
-        .querySelector<HTMLElement>('[data-slot="sidebar-inset"]')
-        ?.scrollTo({ top: 0, left: 0 })
+      // Reuse this existing keyboard resize handler; preserve normal scrolling.
+      const selection = window.getSelection()
+      const scroller = activeShell.querySelector<HTMLElement>(
+        ".simple-editor-content"
+      )
+      if (
+        scroller &&
+        selection?.rangeCount &&
+        scroller.contains(document.activeElement)
+      ) {
+        const range = selection.getRangeAt(0).cloneRange()
+        window.requestAnimationFrame(() => {
+          if (
+            !scroller.isConnected ||
+            !scroller.contains(document.activeElement)
+          )
+            return
+          const selectionBounds = range.getBoundingClientRect()
+          const caret = selectionBounds.height
+            ? selectionBounds
+            : range.startContainer.parentElement?.getBoundingClientRect()
+          if (!caret) return
+          const bounds = scroller.getBoundingClientRect()
+          const top = Math.max(bounds.top, visualViewport?.offsetTop ?? 0) + 16
+          const bottom =
+            Math.min(
+              bounds.bottom,
+              (visualViewport?.offsetTop ?? 0) +
+                (visualViewport?.height ?? window.innerHeight)
+            ) - 24
+          if (caret.height && caret.bottom > bottom)
+            scroller.scrollTop += caret.bottom - bottom
+          else if (caret.top < top) scroller.scrollTop -= top - caret.top
+        })
+      }
     }
 
     syncMobileEditorViewport()
@@ -2443,7 +2478,12 @@ export function InformationView() {
         return
       }
 
-      setNodes(await getInformationNotes())
+      const loaded = await getInformationNotes()
+      // A stale response must not put locally deleted folders back in the tree.
+      const trashedIds = new Set(
+        loadTrashedInformationNotes().map((node) => node.id)
+      )
+      setNodes(loaded.filter((node) => !trashedIds.has(node.id)))
     }
 
     window.addEventListener(informationUpdatedEvent, refresh)
