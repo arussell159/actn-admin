@@ -567,8 +567,8 @@ function MonthEndCountryHeatMap({
 }
 
 const workflowChartConfig = {
-  completed: {
-    label: "Completed",
+  progress: {
+    label: "Progress",
     color: "var(--chart-1)",
   },
 } satisfies ChartConfig
@@ -1160,20 +1160,27 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     {
       stage: "Invoices",
       completed: completedInvoiceRows,
+      total: invoiceRequiredRows.length,
     },
     {
       stage: "Recon",
       completed: completedReconciliationRows,
+      total: reconciliationRows.length,
     },
     {
       stage: "Journals",
       completed: completedJournalRows,
+      total: journalRows.length,
     },
     {
       stage: "Tasks",
       completed: supplementalTaskDone,
+      total: supplementalTaskTotal,
     },
-  ]
+  ].map((item) => ({
+    ...item,
+    progress: item.total ? (item.completed / item.total) * 100 : 0,
+  }))
   const countryStatusChartData = [
     {
       status: "complete",
@@ -2124,7 +2131,12 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                           layout="vertical"
                           margin={{ left: 12, right: 8 }}
                         >
-                          <XAxis type="number" dataKey="completed" hide />
+                          <XAxis
+                            type="number"
+                            dataKey="progress"
+                            domain={[0, 100]}
+                            hide
+                          />
                           <YAxis
                             dataKey="stage"
                             type="category"
@@ -2135,11 +2147,26 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                           />
                           <ChartTooltip
                             cursor={false}
-                            content={<ChartTooltipContent hideLabel />}
+                            content={
+                              <ChartTooltipContent
+                                hideLabel
+                                formatter={(_value, _name, item) => (
+                                  <div className="flex flex-1 items-center justify-between gap-4">
+                                    <span className="text-muted-foreground">
+                                      Completed
+                                    </span>
+                                    <span className="font-mono font-medium text-foreground tabular-nums">
+                                      {item.payload.completed}/
+                                      {item.payload.total}
+                                    </span>
+                                  </div>
+                                )}
+                              />
+                            }
                           />
                           <Bar
-                            dataKey="completed"
-                            fill="var(--color-completed)"
+                            dataKey="progress"
+                            fill="var(--color-progress)"
                             radius={5}
                           />
                         </BarChart>
