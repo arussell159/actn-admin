@@ -105,7 +105,7 @@ export function SiteHeader({
     <>
       <header
         className={cn(
-          "fixed inset-x-0 top-0 z-40 flex h-[calc(2.5rem+env(safe-area-inset-top,0px))] shrink-0 items-center gap-2 bg-transparent pt-[env(safe-area-inset-top,0px)] md:relative md:z-auto md:h-auto md:min-h-(--header-height) md:flex-col md:items-stretch md:bg-background md:pt-0 group-has-data-[collapsible=icon]/sidebar-wrapper:md:min-h-(--header-height)",
+          "sticky top-0 z-40 flex h-[calc(2.5rem+env(safe-area-inset-top,0px))] shrink-0 items-center gap-2 bg-transparent pt-[env(safe-area-inset-top,0px)] md:relative md:z-auto md:h-auto md:min-h-(--header-height) md:flex-col md:items-stretch md:bg-background md:pt-0 group-has-data-[collapsible=icon]/sidebar-wrapper:md:min-h-(--header-height)",
           bottomContent ? "md:border-b-0" : "md:border-b"
         )}
       >

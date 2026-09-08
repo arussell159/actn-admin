@@ -2594,7 +2594,7 @@ export function InformationView() {
       ref={notebookShellRef}
       data-mobile-note-editor={activeNode?.type === "note" ? "true" : undefined}
       className={cn(
-        "min-h-0 md:min-h-svh md:bg-sidebar",
+        "min-h-[calc(100dvh+env(safe-area-inset-top,0px)+env(safe-area-inset-bottom,0px))] md:min-h-svh md:bg-sidebar",
         activeNode?.type === "note" ? "bg-background" : "bg-muted/60"
       )}
       style={
@@ -2607,7 +2607,7 @@ export function InformationView() {
       <AppSidebar variant="inset" />
       <SidebarInset
         className={cn(
-          "min-h-0 md:bg-background",
+          "min-h-[calc(100dvh+env(safe-area-inset-top,0px)+env(safe-area-inset-bottom,0px))] md:min-h-0 md:bg-background",
           activeNode?.type === "note"
             ? "bg-background lg:h-[calc(100svh-1rem)] lg:overflow-hidden"
             : "bg-muted/60"
@@ -2615,7 +2615,7 @@ export function InformationView() {
       >
         <main
           className={cn(
-            "flex min-h-0 flex-1 flex-col md:min-h-[calc(100svh-1rem)] md:bg-background",
+            "flex min-h-[calc(100dvh+env(safe-area-inset-top,0px)+env(safe-area-inset-bottom,0px))] flex-1 flex-col md:min-h-[calc(100svh-1rem)] md:bg-background",
             activeNode?.type === "note"
               ? "bg-background lg:h-full lg:min-h-0 lg:overflow-hidden"
               : "bg-muted/60"
