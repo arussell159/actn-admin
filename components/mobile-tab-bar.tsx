@@ -9,10 +9,13 @@ import {
   CalendarClockIcon,
   CalculatorIcon,
   LayoutDashboardIcon,
+  ListChecksIcon,
   HistoryIcon,
   MenuIcon,
   PlusIcon,
   Settings2Icon,
+  ScanTextIcon,
+  SparklesIcon,
 } from "lucide-react"
 
 import { AppLink } from "@/components/app-link"
@@ -39,6 +42,7 @@ import {
   writeBrowserStorage,
 } from "@/lib/browser-storage"
 import { cn } from "@/lib/utils"
+import { bscCountryModules } from "@/lib/bsc-country-modules"
 
 const MobileNavCustomizer = dynamic(
   () =>
@@ -93,6 +97,26 @@ const allModuleItems = [
     icon: Settings2Icon,
     match: ["/template-builder"],
   },
+  ...bscCountryModules.flatMap((module) => [
+    {
+      label: `${module.country} New Request`,
+      href: `${module.basePath}/new`,
+      icon: ScanTextIcon,
+      match: [`${module.basePath}/new`],
+    },
+    {
+      label: `${module.country} Requests`,
+      href: `${module.basePath}/requests`,
+      icon: ListChecksIcon,
+      match: [`${module.basePath}/requests`],
+    },
+    {
+      label: `${module.country} AI Rules`,
+      href: `${module.basePath}/rules`,
+      icon: SparklesIcon,
+      match: [`${module.basePath}/rules`],
+    },
+  ]),
 ]
 
 const defaultDockHrefs = [

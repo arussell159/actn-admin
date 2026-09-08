@@ -34,15 +34,20 @@ import {
   BookOpenTextIcon,
   CalendarClockIcon,
   CalculatorIcon,
+  ChevronRightIcon,
   FileTextIcon,
   FolderIcon,
   HistoryIcon,
   LayoutDashboardIcon,
+  ListChecksIcon,
   MoreHorizontalIcon,
   PinOffIcon,
   PlusIcon,
+  ScanTextIcon,
   SearchIcon,
   Settings2Icon,
+  ShipWheelIcon,
+  SparklesIcon,
 } from "lucide-react"
 import {
   getPinnedInformationNodes,
@@ -51,6 +56,7 @@ import {
   saveInformationNotes,
 } from "@/lib/information-notes"
 import { listMonthEndRecords } from "@/lib/month-end-db"
+import { bscCountryModules } from "@/lib/bsc-country-modules"
 
 const data = {
   user: {
@@ -74,6 +80,16 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const [hasOpenMonthEnd, setHasOpenMonthEnd] = React.useState(true)
   const [activeQuery, setActiveQuery] = React.useState("")
   const activeRoute = pathname === "/" ? "/dashboard" : pathname
+  const [openBscModules, setOpenBscModules] = React.useState<
+    Record<string, boolean>
+  >(() =>
+    Object.fromEntries(
+      bscCountryModules.map((module) => [
+        module.id,
+        activeRoute.startsWith(module.basePath),
+      ])
+    )
+  )
   const monthEndItems = [
     hasOpenMonthEnd
       ? {
@@ -277,6 +293,61 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </SidebarMenuSub>
               ) : null}
             </SidebarMenuItem>
+            {bscCountryModules.map((module) => (
+              <SidebarMenuItem key={module.id}>
+                <SidebarMenuButton
+                  isActive={activeRoute.startsWith(module.basePath)}
+                  aria-expanded={openBscModules[module.id] === true}
+                  onClick={() =>
+                    setOpenBscModules((current) => ({
+                      ...current,
+                      [module.id]: !current[module.id],
+                    }))
+                  }
+                >
+                  <ShipWheelIcon />
+                  <span>{module.label}</span>
+                  <ChevronRightIcon
+                    className={`ml-auto transition-transform ${
+                      openBscModules[module.id] ? "rotate-90" : ""
+                    }`}
+                  />
+                </SidebarMenuButton>
+                {openBscModules[module.id] ? (
+                  <SidebarMenuSub>
+                    <SidebarMenuSubItem>
+                      <SidebarMenuSubButton
+                        isActive={isActiveUrl(`${module.basePath}/new`)}
+                        render={<AppLink href={`${module.basePath}/new`} />}
+                      >
+                        <ScanTextIcon />
+                        <span>New Request</span>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                    <SidebarMenuSubItem>
+                      <SidebarMenuSubButton
+                        isActive={isActiveUrl(`${module.basePath}/requests`)}
+                        render={
+                          <AppLink href={`${module.basePath}/requests`} />
+                        }
+                      >
+                        <ListChecksIcon />
+                        <span>Requests</span>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                    <SidebarMenuSubItem>
+                      <SidebarMenuSubButton
+                        isActive={isActiveUrl(`${module.basePath}/rules`)}
+                        render={<AppLink href={`${module.basePath}/rules`} />}
+                      >
+                        <SparklesIcon />
+                        <span>AI Rules</span>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  </SidebarMenuSub>
+                ) : null}
+              </SidebarMenuItem>
+            ))}
           </SidebarMenu>
         </SidebarGroup>
         <SidebarGroup>
