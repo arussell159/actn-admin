@@ -95,7 +95,7 @@ The report and machine-readable results are `outputs/mobile-stability/report/ind
 
 ## Deployment and physical-device verification
 
-Set a unique `DEPLOYMENT_VERSION` for each release when the host does not provide `VERCEL_GIT_COMMIT_SHA` or `GITHUB_SHA`. All instances serving the same release must use the same value. Preserve previous immutable hashed assets for active clients and use atomic/compatible deployments; application-side recovery cannot guarantee an arbitrary CDN or rolling server configuration serves compatible versions. Confirm the host preserves the worker's no-store headers and revalidates navigation responses.
+Set a unique `DEPLOYMENT_VERSION` for each release when the host does not provide `VERCEL_GIT_COMMIT_SHA` or `GITHUB_SHA`. Next.js limits `deploymentId` to 32 characters. The config preserves shorter values and derives a stable 32-character SHA-256 prefix from longer values, including Vercel's full commit SHA. All instances serving the same release must use the same source value. Preserve previous immutable hashed assets for active clients and use atomic/compatible deployments; application-side recovery cannot guarantee an arbitrary CDN or rolling server configuration serves compatible versions. Confirm the host preserves the worker's no-store headers and revalidates navigation responses.
 
 Automatic recovery permits one reload per tab/session and preserves the current URL with a recovery marker. If it fails again, route error UI offers retry/manual repair. Manual repair only unregisters this application's worker and deletes its public fallback caches; it preserves user data in local storage. Normal updates wait for existing clients to close, so an editing session is not reloaded just because an update arrives.
 
