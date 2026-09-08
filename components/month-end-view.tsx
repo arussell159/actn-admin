@@ -1,5 +1,7 @@
 "use client"
 
+import { getAppScrollY, restoreAppScroll } from "@/lib/app-scroll"
+
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import {
@@ -23,7 +25,6 @@ import {
 import { Bar, BarChart, Pie, PieChart, XAxis, YAxis } from "recharts"
 
 import { AppLink } from "@/components/app-link"
-import { AppSidebar } from "@/components/app-sidebar"
 import { CountryTableFilters } from "@/components/country-table-filters"
 import { HeaderActionMenuTrigger } from "@/components/header-action-menu-trigger"
 import { MonthEndDashboardSkeleton } from "@/components/page-skeletons"
@@ -59,7 +60,6 @@ import {
   NavigationMenuItem,
   NavigationMenuList,
 } from "@/components/ui/navigation-menu"
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Table,
@@ -222,33 +222,6 @@ function countryRecordHref(
   checked?: Record<string, unknown>
 ) {
   return monthEndCountryHref({ period, countryId, row, checked })
-}
-
-function getMonthEndScrollY() {
-  if (typeof window === "undefined") {
-    return 0
-  }
-
-  const sidebarInset = document.querySelector<HTMLElement>(
-    "[data-slot='sidebar-inset']"
-  )
-  const documentScrollY = document.scrollingElement?.scrollTop ?? window.scrollY
-
-  return Math.max(window.scrollY, documentScrollY, sidebarInset?.scrollTop ?? 0)
-}
-
-function restoreMonthEndScrollY(scrollY: number) {
-  window.scrollTo({ top: scrollY, left: 0, behavior: "instant" })
-  document.scrollingElement?.scrollTo({
-    top: scrollY,
-    left: 0,
-    behavior: "instant",
-  })
-  document
-    .querySelectorAll<HTMLElement>("[data-slot='sidebar-inset']")
-    .forEach((element) => {
-      element.scrollTo({ top: scrollY, left: 0, behavior: "instant" })
-    })
 }
 
 function asBool(value: unknown) {
@@ -751,8 +724,6 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     React.useState("")
   const [highlightedDashboardCountryId, setHighlightedDashboardCountryId] =
     React.useState("")
-  const [countryDetailViewportHeight, setCountryDetailViewportHeight] =
-    React.useState<number>()
   const [countrySearchQuery, setCountrySearchQuery] = React.useState(
     initialReturnPoint?.countrySearchQuery ?? ""
   )
@@ -779,38 +750,6 @@ export function MonthEndView({ period }: { period?: string } = {}) {
   const pendingReturnScrollYRef = React.useRef<number | null>(
     initialReturnPoint?.scrollY ?? null
   )
-
-  React.useEffect(() => {
-    if (activeDashboardMetric !== "countries") {
-      setCountryDetailViewportHeight(undefined)
-      return
-    }
-
-    const updateHeight = () => {
-      const visibleCountryDetail = Array.from(
-        document.querySelectorAll<HTMLElement>("[data-country-detail]")
-      ).find((element) => element.getClientRects().length > 0)
-      const cardTop = visibleCountryDetail?.getBoundingClientRect().top
-
-      if (cardTop === undefined) {
-        return
-      }
-
-      setCountryDetailViewportHeight(
-        Math.max(320, Math.floor(window.innerHeight - cardTop - 16))
-      )
-    }
-    const frame = window.requestAnimationFrame(updateHeight)
-
-    window.addEventListener("resize", updateHeight)
-    window.visualViewport?.addEventListener("resize", updateHeight)
-
-    return () => {
-      window.cancelAnimationFrame(frame)
-      window.removeEventListener("resize", updateHeight)
-      window.visualViewport?.removeEventListener("resize", updateHeight)
-    }
-  }, [activeDashboardMetric])
 
   React.useEffect(() => {
     let isMounted = true
@@ -989,7 +928,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
       activeSection: activeMonthEndSection,
       countrySearchQuery,
       countryTableFilter,
-      scrollY: getMonthEndScrollY(),
+      scrollY: getAppScrollY(),
     })
     if (recordRef.current) {
       saveMonthEndReturnRecord(recordRef.current)
@@ -1003,7 +942,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
 
     const scrollY = pendingReturnScrollYRef.current
     pendingReturnScrollYRef.current = null
-    restoreMonthEndScrollY(scrollY)
+    return restoreAppScroll(scrollY)
   }, [hasLoaded])
 
   const checkableRows = template.countries.filter(
@@ -1668,11 +1607,6 @@ export function MonthEndView({ period }: { period?: string } = {}) {
       <Card
         data-country-detail={metric === "countries" ? "" : undefined}
         className="gap-0 overflow-hidden py-0 shadow-sm"
-        style={
-          metric === "countries" && countryDetailViewportHeight
-            ? { height: countryDetailViewportHeight }
-            : undefined
-        }
       >
         {!hideHeader ? (
           <CardHeader className="border-b py-4">
@@ -1876,993 +1810,985 @@ export function MonthEndView({ period }: { period?: string } = {}) {
 
   if (loadError && !record) {
     return (
-      <SidebarProvider
-        style={
-          {
-            "--sidebar-width": "calc(var(--spacing) * 72)",
-            "--header-height": "calc(var(--spacing) * 12)",
-          } as React.CSSProperties
-        }
-      >
-        <AppSidebar variant="inset" />
-        <SidebarInset>
-          <main className="flex min-h-svh flex-col bg-background">
-            <SiteHeader title="Month End" />
-            <div className="grid max-w-xl gap-4 p-4 lg:p-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Could not load month end</CardTitle>
-                  <CardDescription>
-                    Check your connection and try again. The app will also retry
-                    when your device reconnects.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Button
-                    onClick={() => setLoadRetryNonce((current) => current + 1)}
-                  >
-                    Try again
-                  </Button>
-                </CardContent>
-              </Card>
-            </div>
-          </main>
-        </SidebarInset>
-      </SidebarProvider>
+      <main className="app-page bg-background">
+        <SiteHeader title="Month End" />
+        <div className="grid max-w-xl gap-4 p-4 lg:p-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Could not load month end</CardTitle>
+              <CardDescription>
+                Check your connection and try again. The app will also retry
+                when your device reconnects.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                onClick={() => setLoadRetryNonce((current) => current + 1)}
+              >
+                Try again
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </main>
     )
   }
 
   if (!period && hasLoaded && !record) {
     return (
-      <SidebarProvider
-        style={
-          {
-            "--sidebar-width": "calc(var(--spacing) * 72)",
-            "--header-height": "calc(var(--spacing) * 12)",
-          } as React.CSSProperties
-        }
-      >
-        <AppSidebar variant="inset" />
-        <SidebarInset>
-          <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
-            <SiteHeader title="Create Month End" />
-            <div className="grid gap-4 px-4 py-4 lg:px-6">
-              <Button
-                className="w-fit"
-                render={<AppLink href="/month-end/new" />}
-              >
-                Create Month End
-              </Button>
-            </div>
-          </main>
-        </SidebarInset>
-      </SidebarProvider>
+      <main className="app-page bg-background">
+        <SiteHeader title="Create Month End" />
+        <div className="grid gap-4 px-4 py-4 lg:px-6">
+          <Button className="w-fit" render={<AppLink href="/month-end/new" />}>
+            Create Month End
+          </Button>
+        </div>
+      </main>
     )
   }
 
   if (!hasLoaded) {
     return (
-      <SidebarProvider
-        style={
-          {
-            "--sidebar-width": "calc(var(--spacing) * 72)",
-            "--header-height": "calc(var(--spacing) * 12)",
-            "--mobile-page-bottom-padding":
-              "calc(8rem + env(safe-area-inset-bottom, 0px))",
-          } as React.CSSProperties
-        }
-      >
-        <AppSidebar variant="inset" />
-        <SidebarInset>
-          <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
-            <SiteHeader
-              titleContent={<Skeleton className="h-5 w-32 rounded-md" />}
-            />
-            <div className="@container/month-end flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
-              <Skeleton className="h-10 w-full rounded-lg md:hidden" />
-              <MonthEndDashboardSkeleton />
-            </div>
-          </main>
-        </SidebarInset>
-      </SidebarProvider>
+      <main className="app-page bg-background">
+        <SiteHeader
+          titleContent={<Skeleton className="h-5 w-32 rounded-md" />}
+        />
+        <div className="@container/month-end flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
+          <Skeleton className="h-10 w-full rounded-lg md:hidden" />
+          <MonthEndDashboardSkeleton />
+        </div>
+      </main>
     )
   }
 
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-          "--mobile-page-bottom-padding":
-            "calc(8rem + env(safe-area-inset-bottom, 0px))",
-        } as React.CSSProperties
-      }
-    >
-      <AppSidebar variant="inset" />
-      <SidebarInset>
-        <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
-          <SiteHeader
-            title={record ? formatPeriod(record.period) : "Month End"}
-            mobileLeadingContent={
-              shouldShowPreviousBackButton ? (
-                <SiteHeaderBackButton
-                  label="Back to previous months"
-                  href="/previous-month-ends"
-                />
-              ) : undefined
-            }
-            actions={monthStatusAction}
-            bottomContent={
-              <MonthEndSectionNavigation
-                items={monthEndSectionItems}
-                activeSection={activeMonthEndSection}
-                onActiveSectionChange={setActiveMonthEndSection}
-              />
-            }
+    <main className="app-page bg-background">
+      <SiteHeader
+        title={record ? formatPeriod(record.period) : "Month End"}
+        mobileLeadingContent={
+          shouldShowPreviousBackButton ? (
+            <SiteHeaderBackButton
+              label="Back to previous months"
+              href="/previous-month-ends"
+            />
+          ) : undefined
+        }
+        actions={monthStatusAction}
+        bottomContent={
+          <MonthEndSectionNavigation
+            items={monthEndSectionItems}
+            activeSection={activeMonthEndSection}
+            onActiveSectionChange={setActiveMonthEndSection}
           />
-          <div className="@container/month-end flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
-            {shouldShowPreviousBackButton ? (
-              <section className="hidden flex-col gap-3 md:flex md:flex-row md:items-center md:justify-between">
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  className="w-fit"
-                  aria-label="Back to previous months"
-                  render={<AppLink href="/previous-month-ends" />}
-                >
-                  <ArrowLeftIcon />
-                </Button>
-              </section>
-            ) : null}
-
-            {masterUploadMessage ? (
-              <p className="text-sm text-muted-foreground">
-                {masterUploadMessage}
-              </p>
-            ) : null}
-
-            {recordSaveError ? (
-              <div
-                role="alert"
-                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm"
-              >
-                <span>{recordSaveError}</span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSaveRetryNonce((current) => current + 1)}
-                >
-                  Retry sync
-                </Button>
-              </div>
-            ) : null}
-
-            <Tabs
-              value={activeMonthEndSection}
-              onValueChange={setActiveMonthEndSection}
-              className="md:hidden"
+        }
+      />
+      <div className="@container/month-end flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
+        {shouldShowPreviousBackButton ? (
+          <section className="hidden flex-col gap-3 md:flex md:flex-row md:items-center md:justify-between">
+            <Button
+              variant="outline"
+              size="icon-sm"
+              className="w-fit"
+              aria-label="Back to previous months"
+              render={<AppLink href="/previous-month-ends" />}
             >
-              <TabsList className="h-12! w-full touch-manipulation p-0.5!">
-                {monthEndSectionItems.map((item) => (
-                  <TabsTrigger
-                    key={item.id}
-                    value={item.id}
-                    className="min-h-11 touch-manipulation px-3 text-base transition-colors! duration-75! select-none"
-                    onPointerDown={(event) => {
-                      if (event.pointerType === "touch") {
-                        setActiveMonthEndSection(item.id)
-                      }
-                    }}
-                  >
-                    {item.label}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
+              <ArrowLeftIcon />
+            </Button>
+          </section>
+        ) : null}
 
-            {activeMonthEndSection === "dashboard" ? (
-              <div className="grid gap-6">
-                <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                  <MonthEndMetricCard
-                    title="Overall Progress"
-                    value={`${completion}%`}
-                    icon={CheckCircle2Icon}
-                    progress={completion}
-                  />
-                  <MonthEndMetricCard
-                    title="Countries Complete"
-                    value={`${completedCountryCount}/${checkableRows.length}`}
-                    icon={Building2Icon}
-                    isActive={activeDashboardMetric === "countries"}
-                    expandedContent={renderDashboardMetricDetail(
-                      "countries",
-                      true
-                    )}
-                    onActivate={() =>
-                      setActiveDashboardMetric((current) =>
-                        current === "countries" ? null : "countries"
-                      )
-                    }
-                  />
-                  {activeDashboardMetric === "countries" ? (
-                    <div className="col-span-full hidden md:block xl:hidden">
-                      {renderDashboardMetricDetail("countries")}
-                    </div>
-                  ) : null}
-                  <MonthEndMetricCard
-                    title="Invoices Complete"
-                    value={`${completedInvoiceRows}/${invoiceRequiredRows.length}`}
-                    icon={FileTextIcon}
-                    isActive={activeDashboardMetric === "invoices"}
-                    expandedContent={renderDashboardMetricDetail(
-                      "invoices",
-                      true
-                    )}
-                    onActivate={() =>
-                      setActiveDashboardMetric((current) =>
-                        current === "invoices" ? null : "invoices"
-                      )
-                    }
-                  />
-                  {activeDashboardMetric === "invoices" ? (
-                    <div className="col-span-full hidden md:block xl:hidden">
-                      {renderDashboardMetricDetail("invoices")}
-                    </div>
-                  ) : null}
-                  <MonthEndMetricCard
-                    title="Tasks"
-                    value={`${supplementalTaskDone}/${supplementalTaskTotal}`}
-                    icon={ListTodoIcon}
-                    isActive={activeDashboardMetric === "shared-tasks"}
-                    expandedContent={renderDashboardMetricDetail(
-                      "shared-tasks",
-                      true
-                    )}
-                    onActivate={() =>
-                      setActiveDashboardMetric((current) =>
-                        current === "shared-tasks" ? null : "shared-tasks"
-                      )
-                    }
-                  />
-                  {activeDashboardMetric === "shared-tasks" ? (
-                    <div className="col-span-full hidden md:block xl:hidden">
-                      {renderDashboardMetricDetail("shared-tasks")}
-                    </div>
-                  ) : null}
-                </section>
+        {masterUploadMessage ? (
+          <p className="text-sm text-muted-foreground">{masterUploadMessage}</p>
+        ) : null}
 
-                {activeDashboardMetric ? (
-                  <div className="hidden xl:block">
-                    {renderDashboardMetricDetail(activeDashboardMetric)}
-                  </div>
-                ) : null}
+        {recordSaveError ? (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm"
+          >
+            <span>{recordSaveError}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSaveRetryNonce((current) => current + 1)}
+            >
+              Retry sync
+            </Button>
+          </div>
+        ) : null}
 
-                <section className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(19rem,0.75fr)]">
-                  <Card className="shadow-sm">
-                    <CardHeader>
-                      <CardTitle>Workflow Progress</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <ChartContainer
-                        config={workflowChartConfig}
-                        className="h-[280px] w-full"
-                      >
-                        <BarChart
-                          accessibilityLayer
-                          data={workflowChartData}
-                          layout="vertical"
-                          margin={{ left: 12, right: 8 }}
-                        >
-                          <XAxis
-                            type="number"
-                            dataKey="progress"
-                            domain={[0, 100]}
-                            hide
-                          />
-                          <YAxis
-                            dataKey="stage"
-                            type="category"
-                            axisLine={false}
-                            tickLine={false}
-                            tickMargin={10}
-                            width={112}
-                          />
-                          <ChartTooltip
-                            cursor={false}
-                            content={
-                              <ChartTooltipContent
-                                hideLabel
-                                formatter={(_value, _name, item) => (
-                                  <div className="flex flex-1 items-center justify-between gap-4">
-                                    <span className="text-muted-foreground">
-                                      Completed
-                                    </span>
-                                    <span className="font-mono font-medium text-foreground tabular-nums">
-                                      {item.payload.completed}/
-                                      {item.payload.total}
-                                    </span>
-                                  </div>
-                                )}
-                              />
-                            }
-                          />
-                          <Bar
-                            dataKey="progress"
-                            fill="var(--color-progress)"
-                            radius={5}
-                          />
-                        </BarChart>
-                      </ChartContainer>
-                    </CardContent>
-                  </Card>
+        <Tabs
+          value={activeMonthEndSection}
+          onValueChange={setActiveMonthEndSection}
+          className="md:hidden"
+        >
+          <TabsList className="h-12! w-full touch-manipulation p-0.5!">
+            {monthEndSectionItems.map((item) => (
+              <TabsTrigger
+                key={item.id}
+                value={item.id}
+                className="min-h-11 touch-manipulation px-3 text-base transition-colors! duration-75! select-none"
+                onPointerDown={(event) => {
+                  if (event.pointerType === "touch") {
+                    setActiveMonthEndSection(item.id)
+                  }
+                }}
+              >
+                {item.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
 
-                  <Card className="shadow-sm">
-                    <CardHeader>
-                      <CardTitle>Country Status</CardTitle>
-                    </CardHeader>
-                    <CardContent className="grid gap-4">
-                      <ChartContainer
-                        config={countryStatusChartConfig}
-                        className="mx-auto h-[190px] w-full max-w-[260px]"
-                      >
-                        <PieChart accessibilityLayer>
-                          <ChartTooltip
-                            cursor={false}
-                            content={<ChartTooltipContent hideLabel />}
-                          />
-                          <Pie
-                            data={countryStatusChartData}
-                            dataKey="value"
-                            nameKey="status"
-                          />
-                        </PieChart>
-                      </ChartContainer>
-                      <div className="grid gap-2 text-sm">
-                        {countryStatusChartData.map((item) => (
-                          <div
-                            key={item.status}
-                            className="flex items-center justify-between gap-3"
-                          >
-                            <span className="flex items-center gap-2 text-muted-foreground">
-                              <span
-                                className="size-2.5 rounded-full"
-                                style={{ backgroundColor: item.fill }}
-                              />
-                              {item.label}
-                            </span>
-                            <span className="font-medium tabular-nums">
-                              {item.value}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </section>
+        {activeMonthEndSection === "dashboard" ? (
+          <div className="grid gap-6">
+            <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <MonthEndMetricCard
+                title="Overall Progress"
+                value={`${completion}%`}
+                icon={CheckCircle2Icon}
+                progress={completion}
+              />
+              <MonthEndMetricCard
+                title="Countries Complete"
+                value={`${completedCountryCount}/${checkableRows.length}`}
+                icon={Building2Icon}
+                isActive={activeDashboardMetric === "countries"}
+                expandedContent={renderDashboardMetricDetail("countries", true)}
+                onActivate={() =>
+                  setActiveDashboardMetric((current) =>
+                    current === "countries" ? null : "countries"
+                  )
+                }
+              />
+              {activeDashboardMetric === "countries" ? (
+                <div className="col-span-full hidden md:block xl:hidden">
+                  {renderDashboardMetricDetail("countries")}
+                </div>
+              ) : null}
+              <MonthEndMetricCard
+                title="Invoices Complete"
+                value={`${completedInvoiceRows}/${invoiceRequiredRows.length}`}
+                icon={FileTextIcon}
+                isActive={activeDashboardMetric === "invoices"}
+                expandedContent={renderDashboardMetricDetail("invoices", true)}
+                onActivate={() =>
+                  setActiveDashboardMetric((current) =>
+                    current === "invoices" ? null : "invoices"
+                  )
+                }
+              />
+              {activeDashboardMetric === "invoices" ? (
+                <div className="col-span-full hidden md:block xl:hidden">
+                  {renderDashboardMetricDetail("invoices")}
+                </div>
+              ) : null}
+              <MonthEndMetricCard
+                title="Tasks"
+                value={`${supplementalTaskDone}/${supplementalTaskTotal}`}
+                icon={ListTodoIcon}
+                isActive={activeDashboardMetric === "shared-tasks"}
+                expandedContent={renderDashboardMetricDetail(
+                  "shared-tasks",
+                  true
+                )}
+                onActivate={() =>
+                  setActiveDashboardMetric((current) =>
+                    current === "shared-tasks" ? null : "shared-tasks"
+                  )
+                }
+              />
+              {activeDashboardMetric === "shared-tasks" ? (
+                <div className="col-span-full hidden md:block xl:hidden">
+                  {renderDashboardMetricDetail("shared-tasks")}
+                </div>
+              ) : null}
+            </section>
 
-                <section className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(20rem,0.75fr)]">
-                  <Card className="gap-0 overflow-hidden py-0 shadow-sm">
-                    <CardHeader className="flex flex-row items-center justify-between gap-3 border-b py-5">
-                      <div>
-                        <CardTitle>Country Progress</CardTitle>
-                        <CardDescription>
-                          Completed tasks and the next required step for each
-                          country
-                        </CardDescription>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => showCountryWork()}
-                      >
-                        View all
-                        <ArrowRightIcon data-icon="inline-end" />
-                      </Button>
-                    </CardHeader>
-                    <CardContent className="p-0">
-                      <Table>
-                        <TableHeader className="bg-muted/50">
-                          <TableRow>
-                            <TableHead className="pl-6">Country</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead className="hidden sm:table-cell">
-                              Next Step
-                            </TableHead>
-                            <TableHead className="pr-6 text-right">
-                              Progress
-                            </TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {countryDashboardRows.map((item) => {
-                            const isComplete =
-                              item.total > 0 && item.done === item.total
-                            const isInProgress = item.done > 0 && !isComplete
-
-                            return (
-                              <TableRow key={item.row.id}>
-                                <TableCell className="pl-6 font-medium">
-                                  <AppLink
-                                    className="hover:underline"
-                                    href={countryRecordHref(
-                                      activePeriod,
-                                      item.row.id,
-                                      item.row,
-                                      checked
-                                    )}
-                                    onClick={() =>
-                                      saveCurrentMonthEndReturnPoint(
-                                        item.row.id
-                                      )
-                                    }
-                                  >
-                                    {item.row.name}
-                                  </AppLink>
-                                </TableCell>
-                                <TableCell>
-                                  <Badge
-                                    variant={
-                                      isComplete ? "secondary" : "outline"
-                                    }
-                                  >
-                                    {isComplete
-                                      ? "Complete"
-                                      : isInProgress
-                                        ? "In progress"
-                                        : "Not started"}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="hidden max-w-52 truncate text-muted-foreground sm:table-cell">
-                                  {item.nextTask?.label ?? "—"}
-                                </TableCell>
-                                <TableCell className="pr-6 text-right tabular-nums">
-                                  {item.done}/{item.total}
-                                </TableCell>
-                              </TableRow>
-                            )
-                          })}
-                        </TableBody>
-                      </Table>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="shadow-sm">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <NotebookPenIcon className="size-4" />
-                        Handoff Notes
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="grid gap-4">
-                      <Textarea
-                        value={dashboardHandoffDraft}
-                        disabled={isClosed}
-                        rows={5}
-                        className="min-h-28 resize-y"
-                        placeholder="Add an update or blocker..."
-                        onChange={(event) =>
-                          setDashboardHandoffDraft(event.target.value)
-                        }
-                        onKeyDown={(event) => {
-                          if (
-                            (event.ctrlKey || event.metaKey) &&
-                            event.key === "Enter"
-                          ) {
-                            event.preventDefault()
-                            saveDashboardHandoffNote()
-                          }
-                        }}
-                      />
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-xs text-muted-foreground">
-                          {isClosed ? "Read only" : "Ctrl + Enter to save"}
-                        </span>
-                        <Button
-                          size="sm"
-                          disabled={
-                            isClosed ||
-                            isSavingDashboardHandoff ||
-                            !dashboardHandoffDraft.trim()
-                          }
-                          onClick={saveDashboardHandoffNote}
-                        >
-                          {isSavingDashboardHandoff ? "Saving..." : "Save"}
-                        </Button>
-                      </div>
-                      {dashboardHandoffSaveError ? (
-                        <p className="text-xs text-destructive">
-                          {dashboardHandoffSaveError}
-                        </p>
-                      ) : null}
-                      {dashboardNotes.length ? (
-                        <div className="grid gap-4">
-                          {dashboardNotes.map((item) => (
-                            <div key={item.id} className="flex gap-3">
-                              <MessageSquareTextIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                              <div className="min-w-0 flex-1">
-                                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                                  {item.row ? (
-                                    <AppLink
-                                      className="text-sm font-medium hover:underline"
-                                      href={countryRecordHref(
-                                        activePeriod,
-                                        item.row.id,
-                                        item.row,
-                                        checked
-                                      )}
-                                      onClick={() =>
-                                        saveCurrentMonthEndReturnPoint(
-                                          item.row.id
-                                        )
-                                      }
-                                    >
-                                      {item.label}
-                                    </AppLink>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      className="text-sm font-medium hover:underline disabled:no-underline"
-                                      disabled={isClosed}
-                                      onClick={() =>
-                                        setDashboardHandoffDraft(item.note)
-                                      }
-                                    >
-                                      {item.label}
-                                    </button>
-                                  )}
-                                  <time
-                                    className="text-xs text-muted-foreground"
-                                    dateTime={item.updatedAt}
-                                  >
-                                    {formatNoteTimestamp(item.updatedAt)}
-                                  </time>
-                                </div>
-                                <p className="mt-1 text-sm whitespace-pre-wrap text-muted-foreground">
-                                  {item.note}
-                                </p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">
-                          No notes yet.
-                        </p>
-                      )}
-                    </CardContent>
-                  </Card>
-                </section>
+            {activeDashboardMetric ? (
+              <div className="hidden xl:block">
+                {renderDashboardMetricDetail(activeDashboardMetric)}
               </div>
             ) : null}
 
-            {activeMonthEndSection === "countries" ? (
-              <div className="grid min-h-0 gap-4">
-                <CountryTableFilters
-                  searchQuery={countrySearchQuery}
-                  searchPlaceholder="Search countries..."
-                  searchAriaLabel="Search countries"
-                  selectedFilter={countryTableFilter}
-                  filterOptions={countryTableFilterOptions}
-                  mobileFiltersFullWidth
-                  hideActionOnMobile
-                  action={
-                    <Button
-                      size="lg"
-                      disabled={!canDownloadRollInvoices}
-                      onClick={downloadRollInvoicesCsv}
+            <section className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(19rem,0.75fr)]">
+              <Card className="shadow-sm">
+                <CardHeader>
+                  <CardTitle>Workflow Progress</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ChartContainer
+                    config={workflowChartConfig}
+                    className="h-[280px] w-full"
+                  >
+                    <BarChart
+                      accessibilityLayer
+                      data={workflowChartData}
+                      layout="vertical"
+                      margin={{ left: 12, right: 8 }}
                     >
-                      <DownloadIcon />
-                      Roll Invoices CSV ({approvedRollInternalIds.length})
-                    </Button>
-                  }
-                  onSearchQueryChange={setCountrySearchQuery}
-                  onSelectedFilterChange={(value) =>
-                    setCountryTableFilter(value as CountryTableFilterId)
-                  }
-                />
-                <Card className="rounded-none bg-transparent py-0 shadow-none ring-0 md:overflow-hidden md:rounded-lg md:bg-card md:py-(--card-spacing) md:shadow-sm md:ring-1">
-                  <CardContent className="grid gap-3 px-0 md:block md:overflow-x-auto">
-                    <div className="grid gap-3 md:hidden">
-                      {filteredCountryRows.map(({ row, rowIndex }) => {
-                        const isParentRow = row.checkable === false
-                        const isFrabemarParentRow = row.id === "frabemar"
-                        const requiredTasks = getRequiredTasks(row)
-                        const childRows = isParentRow
-                          ? template.countries
-                              .slice(
-                                rowIndex + 1,
-                                findChildInsertIndex(template, rowIndex)
-                              )
-                              .filter(
-                                (childRow) => childRow.checkable !== false
-                              )
-                          : []
-                        const doneCount = isParentRow
-                          ? 0
-                          : requiredTasks.filter((task) =>
-                              asBool(checked[taskKey(row.id, task.id)])
-                            ).length
-                        const rowNote = asString(checked[noteKey(row.id)])
-                        const exchangeRate = asNumber(
-                          checked[exchangeRateKey(row.id)]
-                        )
-                        const exchangeRateDisplay = asString(
-                          checked[exchangeRateDisplayKey(row.id)]
-                        )
-                        const isEditingNote = editingNoteRowId === row.id
-                        const actionRows = isParentRow ? childRows : [row]
-                        const actionTaskCount = actionRows.reduce(
-                          (sum, actionRow) =>
-                            sum + getRequiredTasks(actionRow).length,
-                          0
-                        )
-                        const actionDoneCount = actionRows.reduce(
-                          (sum, actionRow) =>
-                            sum +
-                            getRequiredTasks(actionRow).filter((task) =>
-                              asBool(checked[taskKey(actionRow.id, task.id)])
-                            ).length,
-                          0
-                        )
-                        const canCheckAll = actionDoneCount < actionTaskCount
-                        const canUncheckAll =
-                          actionTaskCount > 0 &&
-                          actionDoneCount === actionTaskCount
-                        const hasActionTargets =
-                          canCheckAll || canUncheckAll || Boolean(rowNote)
-                        const isRowComplete = isParentRow
-                          ? actionTaskCount > 0 &&
-                            actionDoneCount === actionTaskCount
-                          : requiredTasks.length > 0 &&
-                            doneCount === requiredTasks.length
-
-                        return (
-                          <div
-                            key={row.id}
-                            className={
-                              "grid gap-3 rounded-lg border bg-background p-3 " +
-                              (isRowComplete
-                                ? "border-emerald-300 bg-emerald-100 text-emerald-950 dark:border-emerald-700 dark:bg-emerald-900/35 dark:text-emerald-50"
-                                : isParentRow
-                                  ? "bg-muted/40"
-                                  : "")
-                            }
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div
-                                className={
-                                  isParentRow
-                                    ? "min-w-0 font-semibold"
-                                    : "min-w-0 font-medium"
-                                }
-                                style={{
-                                  paddingLeft: `${row.indent * 1}rem`,
-                                }}
-                              >
-                                {isParentRow && !isFrabemarParentRow ? (
-                                  <div className="truncate">{row.name}</div>
-                                ) : (
-                                  <AppLink
-                                    href={countryRecordHref(
-                                      activePeriod,
-                                      row.id,
-                                      row,
-                                      checked
-                                    )}
-                                    className="block truncate underline-offset-4 hover:underline"
-                                    onClick={() =>
-                                      saveCurrentMonthEndReturnPoint(row.id)
-                                    }
-                                  >
-                                    {row.name}
-                                  </AppLink>
-                                )}
-                                {!isParentRow ? (
-                                  <div className="mt-1 text-xs text-muted-foreground">
-                                    {doneCount}/{requiredTasks.length} complete
-                                    {exchangeRate !== undefined
-                                      ? ` · Rate ${
-                                          exchangeRateDisplay ||
-                                          formatExchangeRate(exchangeRate)
-                                        }`
-                                      : ""}
-                                  </div>
-                                ) : null}
-                              </div>
-                              {hasActionTargets && !isClosed ? (
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger
-                                    render={
-                                      <Button
-                                        variant="ghost"
-                                        size="icon-sm"
-                                        aria-label={`Actions for ${row.name}`}
-                                      />
-                                    }
-                                  >
-                                    <MoreHorizontalIcon />
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent
-                                    align="end"
-                                    className="min-w-40"
-                                  >
-                                    {canCheckAll ? (
-                                      <DropdownMenuItem
-                                        onClick={() =>
-                                          updateRowTasks(row, rowIndex, true)
-                                        }
-                                      >
-                                        <CheckCircle2Icon />
-                                        Check All
-                                      </DropdownMenuItem>
-                                    ) : null}
-                                    {canUncheckAll ? (
-                                      <DropdownMenuItem
-                                        onClick={() =>
-                                          updateRowTasks(row, rowIndex, false)
-                                        }
-                                      >
-                                        <XIcon />
-                                        Uncheck All
-                                      </DropdownMenuItem>
-                                    ) : null}
-                                    {rowNote ? (
-                                      <DropdownMenuItem
-                                        variant="destructive"
-                                        onClick={() => deleteNote(row.id)}
-                                      >
-                                        <Trash2Icon />
-                                        Delete Comment
-                                      </DropdownMenuItem>
-                                    ) : null}
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              ) : null}
-                            </div>
-
-                            {isParentRow ? null : (
-                              <div className="grid gap-3">
-                                <div className="grid gap-2">
-                                  {requiredTasks.map((task) => {
-                                    const key = taskKey(row.id, task.id)
-                                    const Icon = workflowTaskIcons[task.id]
-
-                                    return (
-                                      <label
-                                        key={task.id}
-                                        className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border bg-background px-3 py-2 text-sm font-medium"
-                                      >
-                                        <Checkbox
-                                          checked={asBool(checked[key])}
-                                          disabled={isClosed}
-                                          onCheckedChange={(value) =>
-                                            updateTask(key, value === true)
-                                          }
-                                        />
-                                        <Icon className="size-4 text-muted-foreground" />
-                                        <span>{task.label}</span>
-                                      </label>
-                                    )
-                                  })}
-                                </div>
-
-                                {isEditingNote ? (
-                                  <div className="grid gap-2">
-                                    <Input
-                                      value={noteDraft}
-                                      onChange={(event) =>
-                                        setNoteDraft(event.target.value)
-                                      }
-                                      onKeyDown={(event) => {
-                                        if (event.key === "Enter") {
-                                          saveNote(row.id)
-                                        }
-
-                                        if (event.key === "Escape") {
-                                          cancelEditNote()
-                                        }
-                                      }}
-                                      className="h-9 text-foreground"
-                                      autoFocus
-                                    />
-                                    <ButtonGroup className="justify-end">
-                                      <Button
-                                        size="sm"
-                                        onClick={() => saveNote(row.id)}
-                                      >
-                                        <CheckIcon />
-                                        Save
-                                      </Button>
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={cancelEditNote}
-                                      >
-                                        <XIcon />
-                                        Cancel
-                                      </Button>
-                                    </ButtonGroup>
-                                  </div>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    disabled={isClosed}
-                                    className="min-h-10 rounded-lg border bg-background px-3 py-2 text-left text-sm text-muted-foreground disabled:cursor-default disabled:opacity-100"
-                                    onClick={() => startEditNote(row.id)}
-                                    aria-label={`Edit notes for ${row.name}`}
-                                  >
-                                    {rowNote}
-                                  </button>
-                                )}
+                      <XAxis
+                        type="number"
+                        dataKey="progress"
+                        domain={[0, 100]}
+                        hide
+                      />
+                      <YAxis
+                        dataKey="stage"
+                        type="category"
+                        axisLine={false}
+                        tickLine={false}
+                        tickMargin={10}
+                        width={112}
+                      />
+                      <ChartTooltip
+                        cursor={false}
+                        content={
+                          <ChartTooltipContent
+                            hideLabel
+                            formatter={(_value, _name, item) => (
+                              <div className="flex flex-1 items-center justify-between gap-4">
+                                <span className="text-muted-foreground">
+                                  Completed
+                                </span>
+                                <span className="font-mono font-medium text-foreground tabular-nums">
+                                  {item.payload.completed}/{item.payload.total}
+                                </span>
                               </div>
                             )}
-                          </div>
-                        )
-                      })}
-                      {filteredCountryRows.length === 0 ? (
-                        <div className="rounded-lg border bg-background px-3 py-8 text-center text-sm text-muted-foreground">
-                          No countries match these filters.
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <Table className="hidden min-w-[900px] table-auto md:table">
-                      <colgroup>
-                        <col className="w-0" />
-                        <col className="min-w-56" />
-                        <col className="w-32" />
-                        <col className="w-28" />
-                        <col className="w-36" />
-                        <col className="w-28" />
-                        <col className="w-12" />
-                      </colgroup>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="pr-8 pl-[calc(var(--card-spacing)+0.5rem)]">
-                            Country
-                          </TableHead>
-                          <TableHead className="pl-4">Notes</TableHead>
-                          <TableHead>Exchange Rate</TableHead>
-                          <TableHead>Invoice</TableHead>
-                          <TableHead>Reconciliation</TableHead>
-                          <TableHead>Journal</TableHead>
-                          <TableHead
-                            className="pr-[calc(var(--card-spacing)+0.5rem)]"
-                            aria-label="Actions"
                           />
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {filteredCountryRows.map(({ row, rowIndex }) => {
-                          const isParentRow = row.checkable === false
-                          const isFrabemarParentRow = row.id === "frabemar"
-                          const requiredTasks = getRequiredTasks(row)
-                          const childRows = isParentRow
-                            ? template.countries
-                                .slice(
-                                  rowIndex + 1,
-                                  findChildInsertIndex(template, rowIndex)
-                                )
-                                .filter(
-                                  (childRow) => childRow.checkable !== false
-                                )
-                            : []
-                          const doneCount = isParentRow
-                            ? 0
-                            : requiredTasks.filter((task) =>
-                                asBool(checked[taskKey(row.id, task.id)])
-                              ).length
-                          const rowNote = asString(checked[noteKey(row.id)])
-                          const exchangeRate = asNumber(
-                            checked[exchangeRateKey(row.id)]
-                          )
-                          const exchangeRateDisplay = asString(
-                            checked[exchangeRateDisplayKey(row.id)]
-                          )
-                          const isEditingNote = editingNoteRowId === row.id
-                          const isEditingExchangeRate =
-                            editingExchangeRateRowId === row.id
-                          const actionRows = isParentRow ? childRows : [row]
-                          const actionTaskCount = actionRows.reduce(
-                            (sum, actionRow) =>
-                              sum + getRequiredTasks(actionRow).length,
-                            0
-                          )
-                          const actionDoneCount = actionRows.reduce(
-                            (sum, actionRow) =>
-                              sum +
-                              getRequiredTasks(actionRow).filter((task) =>
-                                asBool(checked[taskKey(actionRow.id, task.id)])
-                              ).length,
-                            0
-                          )
-                          const canCheckAll = actionDoneCount < actionTaskCount
-                          const canUncheckAll =
-                            actionTaskCount > 0 &&
-                            actionDoneCount === actionTaskCount
-                          const hasActionTargets =
-                            !isClosed &&
-                            (canCheckAll || canUncheckAll || Boolean(rowNote))
-                          const isRowComplete = isParentRow
-                            ? actionTaskCount > 0 &&
-                              actionDoneCount === actionTaskCount
-                            : requiredTasks.length > 0 &&
-                              doneCount === requiredTasks.length
+                        }
+                      />
+                      <Bar
+                        dataKey="progress"
+                        fill="var(--color-progress)"
+                        radius={5}
+                      />
+                    </BarChart>
+                  </ChartContainer>
+                </CardContent>
+              </Card>
 
-                          return (
-                            <TableRow
-                              key={row.id}
-                              className={
-                                isRowComplete
-                                  ? "bg-emerald-100 hover:bg-emerald-100/80 dark:bg-emerald-900/35 dark:hover:bg-emerald-900/45"
-                                  : isParentRow
-                                    ? "bg-muted/40"
-                                    : undefined
-                              }
-                            >
-                              <TableCell
-                                className={
-                                  isParentRow
-                                    ? "pr-8 pl-[calc(var(--card-spacing)+0.5rem)] font-semibold whitespace-nowrap"
-                                    : "pr-8 pl-[calc(var(--card-spacing)+0.5rem)] font-medium whitespace-nowrap"
+              <Card className="shadow-sm">
+                <CardHeader>
+                  <CardTitle>Country Status</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-4">
+                  <ChartContainer
+                    config={countryStatusChartConfig}
+                    className="mx-auto h-[190px] w-full max-w-[260px]"
+                  >
+                    <PieChart accessibilityLayer>
+                      <ChartTooltip
+                        cursor={false}
+                        content={<ChartTooltipContent hideLabel />}
+                      />
+                      <Pie
+                        data={countryStatusChartData}
+                        dataKey="value"
+                        nameKey="status"
+                      />
+                    </PieChart>
+                  </ChartContainer>
+                  <div className="grid gap-2 text-sm">
+                    {countryStatusChartData.map((item) => (
+                      <div
+                        key={item.status}
+                        className="flex items-center justify-between gap-3"
+                      >
+                        <span className="flex items-center gap-2 text-muted-foreground">
+                          <span
+                            className="size-2.5 rounded-full"
+                            style={{ backgroundColor: item.fill }}
+                          />
+                          {item.label}
+                        </span>
+                        <span className="font-medium tabular-nums">
+                          {item.value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </section>
+
+            <section className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(20rem,0.75fr)]">
+              <Card className="gap-0 overflow-hidden py-0 shadow-sm">
+                <CardHeader className="flex flex-row items-center justify-between gap-3 border-b py-5">
+                  <div>
+                    <CardTitle>Country Progress</CardTitle>
+                    <CardDescription>
+                      Completed tasks and the next required step for each
+                      country
+                    </CardDescription>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => showCountryWork()}
+                  >
+                    View all
+                    <ArrowRightIcon data-icon="inline-end" />
+                  </Button>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader className="bg-muted/50">
+                      <TableRow>
+                        <TableHead className="pl-6">Country</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="hidden sm:table-cell">
+                          Next Step
+                        </TableHead>
+                        <TableHead className="pr-6 text-right">
+                          Progress
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {countryDashboardRows.map((item) => {
+                        const isComplete =
+                          item.total > 0 && item.done === item.total
+                        const isInProgress = item.done > 0 && !isComplete
+
+                        return (
+                          <TableRow key={item.row.id}>
+                            <TableCell className="pl-6 font-medium">
+                              <AppLink
+                                className="hover:underline"
+                                href={countryRecordHref(
+                                  activePeriod,
+                                  item.row.id,
+                                  item.row,
+                                  checked
+                                )}
+                                onClick={() =>
+                                  saveCurrentMonthEndReturnPoint(item.row.id)
                                 }
                               >
-                                {isParentRow && !isFrabemarParentRow ? (
-                                  <span
-                                    className="block"
-                                    style={{
-                                      marginLeft: `${row.indent * 1.75}rem`,
-                                    }}
-                                  >
-                                    {row.name}
-                                  </span>
-                                ) : (
-                                  <AppLink
-                                    href={countryRecordHref(
-                                      activePeriod,
-                                      row.id,
-                                      row,
-                                      checked
-                                    )}
-                                    className="block underline-offset-4 hover:underline"
-                                    onClick={() =>
-                                      saveCurrentMonthEndReturnPoint(row.id)
-                                    }
-                                    style={{
-                                      marginLeft: `${row.indent * 1.75}rem`,
-                                    }}
-                                  >
-                                    {row.name}
-                                  </AppLink>
+                                {item.row.name}
+                              </AppLink>
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={isComplete ? "secondary" : "outline"}
+                              >
+                                {isComplete
+                                  ? "Complete"
+                                  : isInProgress
+                                    ? "In progress"
+                                    : "Not started"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="hidden max-w-52 truncate text-muted-foreground sm:table-cell">
+                              {item.nextTask?.label ?? "—"}
+                            </TableCell>
+                            <TableCell className="pr-6 text-right tabular-nums">
+                              {item.done}/{item.total}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-sm">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <NotebookPenIcon className="size-4" />
+                    Handoff Notes
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-4">
+                  <Textarea
+                    value={dashboardHandoffDraft}
+                    disabled={isClosed}
+                    rows={5}
+                    className="min-h-28 resize-y"
+                    placeholder="Add an update or blocker..."
+                    onChange={(event) =>
+                      setDashboardHandoffDraft(event.target.value)
+                    }
+                    onKeyDown={(event) => {
+                      if (
+                        (event.ctrlKey || event.metaKey) &&
+                        event.key === "Enter"
+                      ) {
+                        event.preventDefault()
+                        saveDashboardHandoffNote()
+                      }
+                    }}
+                  />
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs text-muted-foreground">
+                      {isClosed ? "Read only" : "Ctrl + Enter to save"}
+                    </span>
+                    <Button
+                      size="sm"
+                      disabled={
+                        isClosed ||
+                        isSavingDashboardHandoff ||
+                        !dashboardHandoffDraft.trim()
+                      }
+                      onClick={saveDashboardHandoffNote}
+                    >
+                      {isSavingDashboardHandoff ? "Saving..." : "Save"}
+                    </Button>
+                  </div>
+                  {dashboardHandoffSaveError ? (
+                    <p className="text-xs text-destructive">
+                      {dashboardHandoffSaveError}
+                    </p>
+                  ) : null}
+                  {dashboardNotes.length ? (
+                    <div className="grid gap-4">
+                      {dashboardNotes.map((item) => (
+                        <div key={item.id} className="flex gap-3">
+                          <MessageSquareTextIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                              {item.row ? (
+                                <AppLink
+                                  className="text-sm font-medium hover:underline"
+                                  href={countryRecordHref(
+                                    activePeriod,
+                                    item.row.id,
+                                    item.row,
+                                    checked
+                                  )}
+                                  onClick={() =>
+                                    saveCurrentMonthEndReturnPoint(item.row.id)
+                                  }
+                                >
+                                  {item.label}
+                                </AppLink>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="text-sm font-medium hover:underline disabled:no-underline"
+                                  disabled={isClosed}
+                                  onClick={() =>
+                                    setDashboardHandoffDraft(item.note)
+                                  }
+                                >
+                                  {item.label}
+                                </button>
+                              )}
+                              <time
+                                className="text-xs text-muted-foreground"
+                                dateTime={item.updatedAt}
+                              >
+                                {formatNoteTimestamp(item.updatedAt)}
+                              </time>
+                            </div>
+                            <p className="mt-1 text-sm whitespace-pre-wrap text-muted-foreground">
+                              {item.note}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      No notes yet.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </section>
+          </div>
+        ) : null}
+
+        {activeMonthEndSection === "countries" ? (
+          <div className="grid min-h-0 gap-4">
+            <CountryTableFilters
+              searchQuery={countrySearchQuery}
+              searchPlaceholder="Search countries..."
+              searchAriaLabel="Search countries"
+              selectedFilter={countryTableFilter}
+              filterOptions={countryTableFilterOptions}
+              mobileFiltersFullWidth
+              hideActionOnMobile
+              action={
+                <Button
+                  size="lg"
+                  disabled={!canDownloadRollInvoices}
+                  onClick={downloadRollInvoicesCsv}
+                >
+                  <DownloadIcon />
+                  Roll Invoices CSV ({approvedRollInternalIds.length})
+                </Button>
+              }
+              onSearchQueryChange={setCountrySearchQuery}
+              onSelectedFilterChange={(value) =>
+                setCountryTableFilter(value as CountryTableFilterId)
+              }
+            />
+            <Card className="rounded-none bg-transparent py-0 shadow-none ring-0 md:overflow-hidden md:rounded-lg md:bg-card md:py-(--card-spacing) md:shadow-sm md:ring-1">
+              <CardContent className="grid gap-3 px-0 md:block md:overflow-x-auto">
+                <div className="grid gap-3 md:hidden">
+                  {filteredCountryRows.map(({ row, rowIndex }) => {
+                    const isParentRow = row.checkable === false
+                    const isFrabemarParentRow = row.id === "frabemar"
+                    const requiredTasks = getRequiredTasks(row)
+                    const childRows = isParentRow
+                      ? template.countries
+                          .slice(
+                            rowIndex + 1,
+                            findChildInsertIndex(template, rowIndex)
+                          )
+                          .filter((childRow) => childRow.checkable !== false)
+                      : []
+                    const doneCount = isParentRow
+                      ? 0
+                      : requiredTasks.filter((task) =>
+                          asBool(checked[taskKey(row.id, task.id)])
+                        ).length
+                    const rowNote = asString(checked[noteKey(row.id)])
+                    const exchangeRate = asNumber(
+                      checked[exchangeRateKey(row.id)]
+                    )
+                    const exchangeRateDisplay = asString(
+                      checked[exchangeRateDisplayKey(row.id)]
+                    )
+                    const isEditingNote = editingNoteRowId === row.id
+                    const actionRows = isParentRow ? childRows : [row]
+                    const actionTaskCount = actionRows.reduce(
+                      (sum, actionRow) =>
+                        sum + getRequiredTasks(actionRow).length,
+                      0
+                    )
+                    const actionDoneCount = actionRows.reduce(
+                      (sum, actionRow) =>
+                        sum +
+                        getRequiredTasks(actionRow).filter((task) =>
+                          asBool(checked[taskKey(actionRow.id, task.id)])
+                        ).length,
+                      0
+                    )
+                    const canCheckAll = actionDoneCount < actionTaskCount
+                    const canUncheckAll =
+                      actionTaskCount > 0 && actionDoneCount === actionTaskCount
+                    const hasActionTargets =
+                      canCheckAll || canUncheckAll || Boolean(rowNote)
+                    const isRowComplete = isParentRow
+                      ? actionTaskCount > 0 &&
+                        actionDoneCount === actionTaskCount
+                      : requiredTasks.length > 0 &&
+                        doneCount === requiredTasks.length
+
+                    return (
+                      <div
+                        key={row.id}
+                        className={
+                          "grid gap-3 rounded-lg border bg-background p-3 " +
+                          (isRowComplete
+                            ? "border-emerald-300 bg-emerald-100 text-emerald-950 dark:border-emerald-700 dark:bg-emerald-900/35 dark:text-emerald-50"
+                            : isParentRow
+                              ? "bg-muted/40"
+                              : "")
+                        }
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div
+                            className={
+                              isParentRow
+                                ? "min-w-0 font-semibold"
+                                : "min-w-0 font-medium"
+                            }
+                            style={{
+                              paddingLeft: `${row.indent * 1}rem`,
+                            }}
+                          >
+                            {isParentRow && !isFrabemarParentRow ? (
+                              <div className="truncate">{row.name}</div>
+                            ) : (
+                              <AppLink
+                                href={countryRecordHref(
+                                  activePeriod,
+                                  row.id,
+                                  row,
+                                  checked
                                 )}
-                              </TableCell>
-                              <TableCell className="pl-4 text-muted-foreground">
-                                {isEditingNote ? (
+                                className="block truncate underline-offset-4 hover:underline"
+                                onClick={() =>
+                                  saveCurrentMonthEndReturnPoint(row.id)
+                                }
+                              >
+                                {row.name}
+                              </AppLink>
+                            )}
+                            {!isParentRow ? (
+                              <div className="mt-1 text-xs text-muted-foreground">
+                                {doneCount}/{requiredTasks.length} complete
+                                {exchangeRate !== undefined
+                                  ? ` · Rate ${
+                                      exchangeRateDisplay ||
+                                      formatExchangeRate(exchangeRate)
+                                    }`
+                                  : ""}
+                              </div>
+                            ) : null}
+                          </div>
+                          {hasActionTargets && !isClosed ? (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger
+                                render={
+                                  <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    aria-label={`Actions for ${row.name}`}
+                                  />
+                                }
+                              >
+                                <MoreHorizontalIcon />
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent
+                                align="end"
+                                className="min-w-40"
+                              >
+                                {canCheckAll ? (
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      updateRowTasks(row, rowIndex, true)
+                                    }
+                                  >
+                                    <CheckCircle2Icon />
+                                    Check All
+                                  </DropdownMenuItem>
+                                ) : null}
+                                {canUncheckAll ? (
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      updateRowTasks(row, rowIndex, false)
+                                    }
+                                  >
+                                    <XIcon />
+                                    Uncheck All
+                                  </DropdownMenuItem>
+                                ) : null}
+                                {rowNote ? (
+                                  <DropdownMenuItem
+                                    variant="destructive"
+                                    onClick={() => deleteNote(row.id)}
+                                  >
+                                    <Trash2Icon />
+                                    Delete Comment
+                                  </DropdownMenuItem>
+                                ) : null}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          ) : null}
+                        </div>
+
+                        {isParentRow ? null : (
+                          <div className="grid gap-3">
+                            <div className="grid gap-2">
+                              {requiredTasks.map((task) => {
+                                const key = taskKey(row.id, task.id)
+                                const Icon = workflowTaskIcons[task.id]
+
+                                return (
+                                  <label
+                                    key={task.id}
+                                    className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border bg-background px-3 py-2 text-sm font-medium"
+                                  >
+                                    <Checkbox
+                                      checked={asBool(checked[key])}
+                                      disabled={isClosed}
+                                      onCheckedChange={(value) =>
+                                        updateTask(key, value === true)
+                                      }
+                                    />
+                                    <Icon className="size-4 text-muted-foreground" />
+                                    <span>{task.label}</span>
+                                  </label>
+                                )
+                              })}
+                            </div>
+
+                            {isEditingNote ? (
+                              <div className="grid gap-2">
+                                <Input
+                                  value={noteDraft}
+                                  onChange={(event) =>
+                                    setNoteDraft(event.target.value)
+                                  }
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter") {
+                                      saveNote(row.id)
+                                    }
+
+                                    if (event.key === "Escape") {
+                                      cancelEditNote()
+                                    }
+                                  }}
+                                  className="h-9 text-foreground"
+                                  autoFocus
+                                />
+                                <ButtonGroup className="justify-end">
+                                  <Button
+                                    size="sm"
+                                    onClick={() => saveNote(row.id)}
+                                  >
+                                    <CheckIcon />
+                                    Save
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={cancelEditNote}
+                                  >
+                                    <XIcon />
+                                    Cancel
+                                  </Button>
+                                </ButtonGroup>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={isClosed}
+                                className="min-h-10 rounded-lg border bg-background px-3 py-2 text-left text-sm text-muted-foreground disabled:cursor-default disabled:opacity-100"
+                                onClick={() => startEditNote(row.id)}
+                                aria-label={`Edit notes for ${row.name}`}
+                              >
+                                {rowNote}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                  {filteredCountryRows.length === 0 ? (
+                    <div className="rounded-lg border bg-background px-3 py-8 text-center text-sm text-muted-foreground">
+                      No countries match these filters.
+                    </div>
+                  ) : null}
+                </div>
+
+                <Table className="hidden min-w-[900px] table-auto md:table">
+                  <colgroup>
+                    <col className="w-0" />
+                    <col className="min-w-56" />
+                    <col className="w-32" />
+                    <col className="w-28" />
+                    <col className="w-36" />
+                    <col className="w-28" />
+                    <col className="w-12" />
+                  </colgroup>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="pr-8 pl-[calc(var(--card-spacing)+0.5rem)]">
+                        Country
+                      </TableHead>
+                      <TableHead className="pl-4">Notes</TableHead>
+                      <TableHead>Exchange Rate</TableHead>
+                      <TableHead>Invoice</TableHead>
+                      <TableHead>Reconciliation</TableHead>
+                      <TableHead>Journal</TableHead>
+                      <TableHead
+                        className="pr-[calc(var(--card-spacing)+0.5rem)]"
+                        aria-label="Actions"
+                      />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredCountryRows.map(({ row, rowIndex }) => {
+                      const isParentRow = row.checkable === false
+                      const isFrabemarParentRow = row.id === "frabemar"
+                      const requiredTasks = getRequiredTasks(row)
+                      const childRows = isParentRow
+                        ? template.countries
+                            .slice(
+                              rowIndex + 1,
+                              findChildInsertIndex(template, rowIndex)
+                            )
+                            .filter((childRow) => childRow.checkable !== false)
+                        : []
+                      const doneCount = isParentRow
+                        ? 0
+                        : requiredTasks.filter((task) =>
+                            asBool(checked[taskKey(row.id, task.id)])
+                          ).length
+                      const rowNote = asString(checked[noteKey(row.id)])
+                      const exchangeRate = asNumber(
+                        checked[exchangeRateKey(row.id)]
+                      )
+                      const exchangeRateDisplay = asString(
+                        checked[exchangeRateDisplayKey(row.id)]
+                      )
+                      const isEditingNote = editingNoteRowId === row.id
+                      const isEditingExchangeRate =
+                        editingExchangeRateRowId === row.id
+                      const actionRows = isParentRow ? childRows : [row]
+                      const actionTaskCount = actionRows.reduce(
+                        (sum, actionRow) =>
+                          sum + getRequiredTasks(actionRow).length,
+                        0
+                      )
+                      const actionDoneCount = actionRows.reduce(
+                        (sum, actionRow) =>
+                          sum +
+                          getRequiredTasks(actionRow).filter((task) =>
+                            asBool(checked[taskKey(actionRow.id, task.id)])
+                          ).length,
+                        0
+                      )
+                      const canCheckAll = actionDoneCount < actionTaskCount
+                      const canUncheckAll =
+                        actionTaskCount > 0 &&
+                        actionDoneCount === actionTaskCount
+                      const hasActionTargets =
+                        !isClosed &&
+                        (canCheckAll || canUncheckAll || Boolean(rowNote))
+                      const isRowComplete = isParentRow
+                        ? actionTaskCount > 0 &&
+                          actionDoneCount === actionTaskCount
+                        : requiredTasks.length > 0 &&
+                          doneCount === requiredTasks.length
+
+                      return (
+                        <TableRow
+                          key={row.id}
+                          className={
+                            isRowComplete
+                              ? "bg-emerald-100 hover:bg-emerald-100/80 dark:bg-emerald-900/35 dark:hover:bg-emerald-900/45"
+                              : isParentRow
+                                ? "bg-muted/40"
+                                : undefined
+                          }
+                        >
+                          <TableCell
+                            className={
+                              isParentRow
+                                ? "pr-8 pl-[calc(var(--card-spacing)+0.5rem)] font-semibold whitespace-nowrap"
+                                : "pr-8 pl-[calc(var(--card-spacing)+0.5rem)] font-medium whitespace-nowrap"
+                            }
+                          >
+                            {isParentRow && !isFrabemarParentRow ? (
+                              <span
+                                className="block"
+                                style={{
+                                  marginLeft: `${row.indent * 1.75}rem`,
+                                }}
+                              >
+                                {row.name}
+                              </span>
+                            ) : (
+                              <AppLink
+                                href={countryRecordHref(
+                                  activePeriod,
+                                  row.id,
+                                  row,
+                                  checked
+                                )}
+                                className="block underline-offset-4 hover:underline"
+                                onClick={() =>
+                                  saveCurrentMonthEndReturnPoint(row.id)
+                                }
+                                style={{
+                                  marginLeft: `${row.indent * 1.75}rem`,
+                                }}
+                              >
+                                {row.name}
+                              </AppLink>
+                            )}
+                          </TableCell>
+                          <TableCell className="pl-4 text-muted-foreground">
+                            {isEditingNote ? (
+                              <div className="flex min-h-8 items-center gap-2">
+                                <Input
+                                  value={noteDraft}
+                                  onChange={(event) =>
+                                    setNoteDraft(event.target.value)
+                                  }
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter") {
+                                      saveNote(row.id)
+                                    }
+
+                                    if (event.key === "Escape") {
+                                      cancelEditNote()
+                                    }
+                                  }}
+                                  className="h-8 min-w-0 text-foreground"
+                                  autoFocus
+                                />
+                                <ButtonGroup className="shrink-0">
+                                  <Button
+                                    size="icon"
+                                    className="size-8"
+                                    onClick={() => saveNote(row.id)}
+                                    aria-label={`Save notes for ${row.name}`}
+                                  >
+                                    <CheckIcon />
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="size-8"
+                                    onClick={cancelEditNote}
+                                    aria-label={`Cancel notes for ${row.name}`}
+                                  >
+                                    <XIcon />
+                                  </Button>
+                                </ButtonGroup>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={isClosed}
+                                className="block min-h-8 w-full cursor-text truncate rounded-md px-2 py-1 text-left hover:bg-muted/70 disabled:cursor-default disabled:hover:bg-transparent"
+                                onClick={() => startEditNote(row.id)}
+                                aria-label={`Edit notes for ${row.name}`}
+                              >
+                                {rowNote}
+                              </button>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {isParentRow ? null : (
+                              <>
+                                {isEditingExchangeRate ? (
                                   <div className="flex min-h-8 items-center gap-2">
                                     <Input
-                                      value={noteDraft}
-                                      onChange={(event) =>
-                                        setNoteDraft(event.target.value)
-                                      }
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={exchangeRateDraft}
+                                      onChange={(event) => {
+                                        const nextValue = event.target.value
+
+                                        if (
+                                          /^\d*(?:[.,]\d{0,4})?$/.test(
+                                            nextValue
+                                          )
+                                        ) {
+                                          setExchangeRateDraft(nextValue)
+                                        }
+                                      }}
                                       onKeyDown={(event) => {
                                         if (event.key === "Enter") {
-                                          saveNote(row.id)
+                                          saveExchangeRate(row.id)
                                         }
 
                                         if (event.key === "Escape") {
-                                          cancelEditNote()
+                                          cancelEditExchangeRate()
                                         }
                                       }}
-                                      className="h-8 min-w-0 text-foreground"
+                                      className="h-8 w-28 text-foreground"
                                       autoFocus
+                                      aria-label={`Exchange rate for ${row.name}`}
                                     />
                                     <ButtonGroup className="shrink-0">
                                       <Button
                                         size="icon"
                                         className="size-8"
-                                        onClick={() => saveNote(row.id)}
-                                        aria-label={`Save notes for ${row.name}`}
+                                        onClick={() => saveExchangeRate(row.id)}
+                                        aria-label={`Save exchange rate for ${row.name}`}
                                       >
                                         <CheckIcon />
                                       </Button>
@@ -2870,8 +2796,8 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                         variant="outline"
                                         size="icon"
                                         className="size-8"
-                                        onClick={cancelEditNote}
-                                        aria-label={`Cancel notes for ${row.name}`}
+                                        onClick={cancelEditExchangeRate}
+                                        aria-label={`Cancel exchange rate for ${row.name}`}
                                       >
                                         <XIcon />
                                       </Button>
@@ -2881,194 +2807,125 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                   <button
                                     type="button"
                                     disabled={isClosed}
-                                    className="block min-h-8 w-full cursor-text truncate rounded-md px-2 py-1 text-left hover:bg-muted/70 disabled:cursor-default disabled:hover:bg-transparent"
-                                    onClick={() => startEditNote(row.id)}
-                                    aria-label={`Edit notes for ${row.name}`}
+                                    className="block min-h-8 w-28 cursor-text truncate rounded-md px-2 py-1 text-left hover:bg-muted/70 disabled:cursor-default disabled:hover:bg-transparent"
+                                    onClick={() =>
+                                      startEditExchangeRate(row.id)
+                                    }
+                                    aria-label={`Edit exchange rate for ${row.name}`}
                                   >
-                                    {rowNote}
+                                    {exchangeRate === undefined
+                                      ? ""
+                                      : exchangeRateDisplay ||
+                                        formatExchangeRate(exchangeRate)}
                                   </button>
                                 )}
-                              </TableCell>
-                              <TableCell className="text-muted-foreground">
-                                {isParentRow ? null : (
-                                  <>
-                                    {isEditingExchangeRate ? (
-                                      <div className="flex min-h-8 items-center gap-2">
-                                        <Input
-                                          type="text"
-                                          inputMode="decimal"
-                                          value={exchangeRateDraft}
-                                          onChange={(event) => {
-                                            const nextValue = event.target.value
+                              </>
+                            )}
+                          </TableCell>
+                          {workflowTasks.map((task) => {
+                            const key = taskKey(row.id, task.id)
+                            const isRequired = requiredTasks.some(
+                              (requiredTask) => requiredTask.id === task.id
+                            )
+                            const Icon = workflowTaskIcons[task.id]
 
-                                            if (
-                                              /^\d*(?:[.,]\d{0,4})?$/.test(
-                                                nextValue
-                                              )
-                                            ) {
-                                              setExchangeRateDraft(nextValue)
-                                            }
-                                          }}
-                                          onKeyDown={(event) => {
-                                            if (event.key === "Enter") {
-                                              saveExchangeRate(row.id)
-                                            }
-
-                                            if (event.key === "Escape") {
-                                              cancelEditExchangeRate()
-                                            }
-                                          }}
-                                          className="h-8 w-28 text-foreground"
-                                          autoFocus
-                                          aria-label={`Exchange rate for ${row.name}`}
-                                        />
-                                        <ButtonGroup className="shrink-0">
-                                          <Button
-                                            size="icon"
-                                            className="size-8"
-                                            onClick={() =>
-                                              saveExchangeRate(row.id)
-                                            }
-                                            aria-label={`Save exchange rate for ${row.name}`}
-                                          >
-                                            <CheckIcon />
-                                          </Button>
-                                          <Button
-                                            variant="outline"
-                                            size="icon"
-                                            className="size-8"
-                                            onClick={cancelEditExchangeRate}
-                                            aria-label={`Cancel exchange rate for ${row.name}`}
-                                          >
-                                            <XIcon />
-                                          </Button>
-                                        </ButtonGroup>
-                                      </div>
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        disabled={isClosed}
-                                        className="block min-h-8 w-28 cursor-text truncate rounded-md px-2 py-1 text-left hover:bg-muted/70 disabled:cursor-default disabled:hover:bg-transparent"
-                                        onClick={() =>
-                                          startEditExchangeRate(row.id)
-                                        }
-                                        aria-label={`Edit exchange rate for ${row.name}`}
-                                      >
-                                        {exchangeRate === undefined
-                                          ? ""
-                                          : exchangeRateDisplay ||
-                                            formatExchangeRate(exchangeRate)}
-                                      </button>
-                                    )}
-                                  </>
+                            return (
+                              <TableCell key={task.id}>
+                                {isParentRow || !isRequired ? null : (
+                                  <label className="flex min-h-8 w-fit min-w-20 cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-muted/70">
+                                    <Checkbox
+                                      checked={asBool(checked[key])}
+                                      disabled={isClosed}
+                                      onCheckedChange={(value) =>
+                                        updateTask(key, value === true)
+                                      }
+                                    />
+                                    <Icon className="size-4 text-muted-foreground" />
+                                  </label>
                                 )}
                               </TableCell>
-                              {workflowTasks.map((task) => {
-                                const key = taskKey(row.id, task.id)
-                                const isRequired = requiredTasks.some(
-                                  (requiredTask) => requiredTask.id === task.id
-                                )
-                                const Icon = workflowTaskIcons[task.id]
-
-                                return (
-                                  <TableCell key={task.id}>
-                                    {isParentRow || !isRequired ? null : (
-                                      <label className="flex min-h-8 w-fit min-w-20 cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-muted/70">
-                                        <Checkbox
-                                          checked={asBool(checked[key])}
-                                          disabled={isClosed}
-                                          onCheckedChange={(value) =>
-                                            updateTask(key, value === true)
-                                          }
-                                        />
-                                        <Icon className="size-4 text-muted-foreground" />
-                                      </label>
-                                    )}
-                                  </TableCell>
-                                )
-                              })}
-                              <TableCell className="pr-[calc(var(--card-spacing)+0.5rem)]">
-                                {hasActionTargets ? (
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger
-                                      render={
-                                        <Button
-                                          variant="ghost"
-                                          size="icon-sm"
-                                          aria-label={`Actions for ${row.name}`}
-                                        />
+                            )
+                          })}
+                          <TableCell className="pr-[calc(var(--card-spacing)+0.5rem)]">
+                            {hasActionTargets ? (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger
+                                  render={
+                                    <Button
+                                      variant="ghost"
+                                      size="icon-sm"
+                                      aria-label={`Actions for ${row.name}`}
+                                    />
+                                  }
+                                >
+                                  <MoreHorizontalIcon />
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent
+                                  align="end"
+                                  className="min-w-40"
+                                >
+                                  {canCheckAll ? (
+                                    <DropdownMenuItem
+                                      onClick={() =>
+                                        updateRowTasks(row, rowIndex, true)
                                       }
                                     >
-                                      <MoreHorizontalIcon />
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent
-                                      align="end"
-                                      className="min-w-40"
+                                      <CheckCircle2Icon />
+                                      Check All
+                                    </DropdownMenuItem>
+                                  ) : null}
+                                  {canUncheckAll ? (
+                                    <DropdownMenuItem
+                                      onClick={() =>
+                                        updateRowTasks(row, rowIndex, false)
+                                      }
                                     >
-                                      {canCheckAll ? (
-                                        <DropdownMenuItem
-                                          onClick={() =>
-                                            updateRowTasks(row, rowIndex, true)
-                                          }
-                                        >
-                                          <CheckCircle2Icon />
-                                          Check All
-                                        </DropdownMenuItem>
-                                      ) : null}
-                                      {canUncheckAll ? (
-                                        <DropdownMenuItem
-                                          onClick={() =>
-                                            updateRowTasks(row, rowIndex, false)
-                                          }
-                                        >
-                                          <XIcon />
-                                          Uncheck All
-                                        </DropdownMenuItem>
-                                      ) : null}
-                                      {rowNote ? (
-                                        <DropdownMenuItem
-                                          variant="destructive"
-                                          onClick={() => deleteNote(row.id)}
-                                        >
-                                          <Trash2Icon />
-                                          Delete Comment
-                                        </DropdownMenuItem>
-                                      ) : null}
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                ) : null}
-                              </TableCell>
-                            </TableRow>
-                          )
-                        })}
-                        {filteredCountryRows.length === 0 ? (
-                          <TableRow>
-                            <TableCell
-                              colSpan={7}
-                              className="h-24 text-center text-muted-foreground"
-                            >
-                              No countries match these filters.
-                            </TableCell>
-                          </TableRow>
-                        ) : null}
-                      </TableBody>
-                    </Table>
-                  </CardContent>
-                </Card>
-              </div>
-            ) : null}
-            {activeMonthEndSection === "tasks" ? (
-              <MonthEndTaskGroupsList
-                groups={orderedTaskGroups}
-                checked={checked}
-                updateTask={updateTask}
-                isReadOnly={isClosed}
-              />
-            ) : null}
+                                      <XIcon />
+                                      Uncheck All
+                                    </DropdownMenuItem>
+                                  ) : null}
+                                  {rowNote ? (
+                                    <DropdownMenuItem
+                                      variant="destructive"
+                                      onClick={() => deleteNote(row.id)}
+                                    >
+                                      <Trash2Icon />
+                                      Delete Comment
+                                    </DropdownMenuItem>
+                                  ) : null}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            ) : null}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                    {filteredCountryRows.length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={7}
+                          className="h-24 text-center text-muted-foreground"
+                        >
+                          No countries match these filters.
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
           </div>
-        </main>
-      </SidebarInset>
-    </SidebarProvider>
+        ) : null}
+        {activeMonthEndSection === "tasks" ? (
+          <MonthEndTaskGroupsList
+            groups={orderedTaskGroups}
+            checked={checked}
+            updateTask={updateTask}
+            isReadOnly={isClosed}
+          />
+        ) : null}
+      </div>
+    </main>
   )
 }
 

@@ -1,16 +1,6 @@
-import type { CSSProperties, ReactNode } from "react"
-
+import type { ReactNode } from "react"
 import { Skeleton } from "@/components/ui/skeleton"
-import { MobilePullRefresh } from "@/components/mobile-pull-refresh"
-import { MobileTabBar } from "@/components/mobile-tab-bar"
-
-function countryIdFallbackName(countryId?: string) {
-  return countryId
-    ?.split("-")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ")
-}
+import { SiteHeader } from "@/components/site-header"
 
 export function AppRouteSkeleton({
   children,
@@ -25,90 +15,36 @@ export function AppRouteSkeleton({
   tabs?: string[]
   activeTab?: string
 }) {
-  const heading = title ?? <Skeleton className="h-5 w-32 rounded-md" />
-
   return (
-    <>
-      <div
-        className="flex min-h-svh bg-background md:p-2"
-        style={
-          {
-            "--sidebar-width": "calc(var(--spacing) * 72)",
-            "--header-height": "calc(var(--spacing) * 12)",
-          } as CSSProperties
-        }
-      >
-        <aside className="hidden w-72 shrink-0 rounded-xl bg-sidebar p-3 md:block">
-          <Skeleton className="h-10 rounded-lg" />
-          <div className="mt-5 grid gap-2">
-            {Array.from({ length: 8 }).map((_, index) => (
-              <Skeleton
-                key={index}
-                className="h-8 rounded-md"
-                style={{ width: `${92 - (index % 3) * 14}%` }}
-              />
-            ))}
-          </div>
-        </aside>
-        <main className="flex min-h-svh flex-1 flex-col bg-background md:min-h-[calc(100svh-1rem)]">
-          <header
-            className={[
-              "sticky top-0 z-40 flex h-[calc(2.5rem+env(safe-area-inset-top,0px))] shrink-0 items-center gap-2 bg-transparent pt-[env(safe-area-inset-top,0px)] md:relative md:z-auto md:h-auto md:min-h-(--header-height) md:flex-col md:items-stretch md:bg-background md:pt-0",
-              tabs?.length ? "md:border-b-0" : "md:border-b",
-            ].join(" ")}
-          >
-            <div
-              className={[
-                "relative z-10 hidden h-(--header-height) w-full items-center gap-3 px-4 md:grid lg:px-6",
-                actions ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-1",
-              ].join(" ")}
-            >
-              <h1 className="min-w-0 truncate text-base font-medium">
-                {heading}
-              </h1>
-              {actions ? (
-                <div className="flex shrink-0 items-center gap-2">
-                  {actions}
-                </div>
-              ) : null}
-            </div>
-            {tabs?.length ? (
-              <div className="relative z-10 hidden h-9 border-b px-4 md:block lg:px-6">
-                <div className="flex min-w-0 flex-wrap justify-start gap-6">
-                  {tabs.map((tab) => {
-                    const isActive = tab === activeTab
-
-                    return (
-                      <span
-                        key={tab}
-                        className={[
-                          "-mb-px inline-flex h-9 items-center border-b border-transparent text-sm font-medium text-muted-foreground",
-                          isActive ? "border-foreground text-foreground" : "",
-                        ].join(" ")}
-                      >
-                        {tab}
-                      </span>
-                    )
-                  })}
-                </div>
+    <main className="app-page bg-background" aria-busy="true">
+      {title || actions || tabs?.length ? (
+        <SiteHeader
+          titleContent={title}
+          actions={actions}
+          bottomContent={
+            tabs?.length ? (
+              <div className="flex gap-6">
+                {tabs.map((tab) => (
+                  <span
+                    key={tab}
+                    className={
+                      tab === activeTab
+                        ? "font-medium"
+                        : "text-muted-foreground"
+                    }
+                  >
+                    {tab}
+                  </span>
+                ))}
               </div>
-            ) : null}
-            <div className="relative z-10 grid w-full grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-center px-4 md:hidden">
-              <Skeleton className="size-10 rounded-full" />
-              <h1 className="truncate text-center text-base font-semibold">
-                {heading}
-              </h1>
-              <Skeleton className="size-10 rounded-full" />
-            </div>
-          </header>
-          <div className="flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
-            {children}
-          </div>
-        </main>
+            ) : undefined
+          }
+        />
+      ) : null}
+      <div className="flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
+        {children}
       </div>
-      <MobilePullRefresh />
-      <MobileTabBar />
-    </>
+    </main>
   )
 }
 
@@ -130,113 +66,28 @@ export function CountryDashboardRouteSkeleton({
   periodTitle?: string
   activeView?: "reconciliation" | "journal" | "dashboard"
 }) {
-  const countryName = countryIdFallbackName(countryId)
+  const countryName = countryId
+    ?.split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ")
   const title =
     countryName && periodTitle
-      ? `${countryName} - ${periodTitle}`
+      ? countryName + " - " + periodTitle
       : countryName || "Country Records"
-
   return (
-    <div
-      className="flex min-h-svh bg-background md:p-2"
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as CSSProperties
-      }
+    <AppRouteSkeleton
+      title={title}
+      tabs={["Reconciliation", "Journal Entry", "Dashboard"]}
     >
-      <aside className="hidden w-72 shrink-0 rounded-xl bg-sidebar p-3 md:block">
-        <Skeleton className="h-10 rounded-lg" />
-        <div className="mt-5 grid gap-2">
-          {Array.from({ length: 8 }).map((_, index) => (
-            <Skeleton
-              key={index}
-              className="h-8 rounded-md"
-              style={{ width: `${92 - (index % 3) * 14}%` }}
-            />
-          ))}
-        </div>
-      </aside>
-      <main className="flex min-h-svh flex-1 flex-col bg-background md:min-h-[calc(100svh-1rem)]">
-        <header className="sticky top-0 z-40 flex h-[calc(2.5rem+env(safe-area-inset-top,0px))] shrink-0 items-center gap-2 bg-transparent pt-[env(safe-area-inset-top,0px)] md:relative md:z-auto md:h-auto md:min-h-(--header-height) md:flex-col md:items-stretch md:bg-background md:pt-0">
-          <div className="relative z-10 hidden h-(--header-height) w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 md:grid lg:px-6">
-            <div className="flex min-w-8 items-center gap-2">
-              <div className="inline-flex h-8 w-[4.625rem] items-center justify-center gap-1.5 rounded-lg border bg-background px-2.5 text-sm font-medium">
-                <Skeleton className="size-4 rounded-sm" />
-                <span>Back</span>
-              </div>
-              <div className="mx-1 h-4 w-px bg-border" />
-            </div>
-            <h1 className="min-w-0 truncate text-base font-medium">{title}</h1>
-            <div className="flex w-48 shrink-0 items-center justify-end gap-1">
-              <div className="inline-flex h-8 items-center gap-1.5 rounded-lg border bg-background px-2.5 text-sm text-muted-foreground">
-                <Skeleton className="size-4 rounded-sm" />
-                <span>Previous</span>
-              </div>
-              <div className="inline-flex h-8 items-center gap-1.5 rounded-lg border bg-background px-2.5 text-sm font-medium">
-                <span>Next</span>
-                <Skeleton className="size-4 rounded-sm" />
-              </div>
-            </div>
-          </div>
-          <div className="relative z-10 hidden h-9 border-b px-4 md:block lg:px-6">
-            <div className="flex min-w-0 flex-wrap justify-start gap-6">
-              <span
-                className={[
-                  "-mb-px inline-flex h-9 items-center border-b text-sm font-medium",
-                  activeView === "reconciliation"
-                    ? "border-foreground text-foreground"
-                    : "border-transparent text-muted-foreground",
-                ].join(" ")}
-              >
-                Reconciliation
-              </span>
-              <span
-                className={[
-                  "-mb-px inline-flex h-9 items-center border-b text-sm font-medium",
-                  activeView === "journal"
-                    ? "border-foreground text-foreground"
-                    : "border-transparent text-muted-foreground",
-                ].join(" ")}
-              >
-                Journal Entry
-              </span>
-              <span
-                className={[
-                  "-mb-px inline-flex h-9 items-center border-b text-sm font-medium",
-                  activeView === "dashboard"
-                    ? "border-foreground text-foreground"
-                    : "border-transparent text-muted-foreground",
-                ].join(" ")}
-              >
-                Country Dashboard
-              </span>
-            </div>
-          </div>
-          <div className="relative z-10 grid w-full grid-cols-[2.25rem_1fr_2.25rem] items-center px-4 md:hidden">
-            <span aria-hidden="true" />
-            <h1 className="truncate text-center text-base font-semibold">
-              {title}
-            </h1>
-            <Skeleton className="size-10 rounded-full" />
-          </div>
-        </header>
-        <div className="@container/month-end flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
-          <section className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <span className="hidden md:block" aria-hidden="true" />
-          </section>
-
-          {activeView === "dashboard" ? (
-            <CountryDashboardBodySkeleton />
-          ) : activeView === "journal" ? (
-            <CountryJournalBodySkeleton />
-          ) : (
-            <CountryReconciliationBodySkeleton />
-          )}
-        </div>
-      </main>
-    </div>
+      {activeView === "dashboard" ? (
+        <CountryDashboardBodySkeleton />
+      ) : activeView === "journal" ? (
+        <CountryJournalBodySkeleton />
+      ) : (
+        <CountryReconciliationBodySkeleton />
+      )}
+    </AppRouteSkeleton>
   )
 }
 

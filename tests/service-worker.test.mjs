@@ -15,19 +15,24 @@ async function loadWorker({ fetchImpl, cacheMatch } = {}) {
   const cache = {
     add: async () => undefined,
     put: async () => undefined,
+    match: cacheMatch ?? (async () => undefined),
   }
   const sandbox = {
     URL,
     Request,
     Response,
     Promise,
-    fetch: fetchImpl ?? (async () => new Response("ok")),
+    fetch:
+      fetchImpl ??
+      (async () =>
+        new Response("ok", { headers: { "content-type": "text/html" } })),
     caches: {
       open: async () => cache,
       keys: async () => [
         "actn-admin-v2",
         "actn-admin-v17",
         "actn-admin-shell-v18",
+        "actn-admin-shell-v19",
         "unrelated-cache",
       ],
       delete: async (key) => {
@@ -122,7 +127,11 @@ test("activation removes only obsolete app caches and claims clients", async () 
   })
   await activation
 
-  assert.deepEqual(worker.deletedCaches, ["actn-admin-v2", "actn-admin-v17"])
+  assert.deepEqual(worker.deletedCaches, [
+    "actn-admin-v2",
+    "actn-admin-v17",
+    "actn-admin-shell-v18",
+  ])
   assert.equal(worker.claimed, true)
 })
 
@@ -142,5 +151,96 @@ test("one missing shell asset cannot block service worker installation", async (
   })
   await installation
 
-  assert.equal(worker.skippedWaiting, true)
+  assert.equal(worker.skippedWaiting, false)
+})
+
+test("missing critical offline HTML rejects installation and keeps the active worker", async () => {
+  const worker = await loadWorker({
+    fetchImpl: async () => new Response("missing", { status: 404 }),
+  })
+  let installation
+  worker.listeners.get("install")({
+    waitUntil(value) {
+      installation = value
+    },
+  })
+  await assert.rejects(installation, /Offline fallback unavailable/)
+  assert.equal(worker.skippedWaiting, false)
+})
+
+test("missing cache storage still returns a usable offline response", async () => {
+  const worker = await loadWorker({
+    fetchImpl: async () => {
+      throw new TypeError("offline")
+    },
+  })
+  let response
+  worker.listeners.get("fetch")({
+    request: {
+      method: "GET",
+      mode: "navigate",
+      url: "https://app.test/deep/route",
+    },
+    respondWith(value) {
+      response = value
+    },
+  })
+  const result = await response
+  assert.equal(result.status, 503)
+  assert.match(await result.text(), /Reconnect/)
+})
+
+test("online navigation bypasses HTTP caches and never writes HTML to Cache Storage", async () => {
+  let options,
+    puts = 0,
+    response
+  const worker = await loadWorker({
+    fetchImpl: async (_request, init) => {
+      options = init
+      return new Response("fresh HTML")
+    },
+  })
+  worker.cache.put = async () => {
+    puts++
+  }
+  worker.listeners.get("fetch")({
+    request: {
+      method: "GET",
+      mode: "navigate",
+      url: "https://app.test/month-end/country",
+    },
+    respondWith(value) {
+      response = value
+    },
+  })
+  assert.equal(await (await response).text(), "fresh HTML")
+  assert.equal(options.cache, "no-store")
+  assert.equal(puts, 0)
+})
+
+test("RSC, API, cross-origin requests and writes are not intercepted", async () => {
+  const worker = await loadWorker()
+  for (const request of [
+    { method: "GET", url: "https://app.test/dashboard?_rsc=123" },
+    { method: "GET", url: "https://app.test/api/data" },
+    { method: "GET", url: "https://other.test/manifest.webmanifest" },
+    { method: "POST", url: "https://app.test/api/data" },
+  ])
+    worker.listeners.get("fetch")({
+      request,
+      respondWith() {
+        assert.fail("Unexpected cache interception")
+      },
+    })
+})
+
+test("worker ignores forced activation messages", async () => {
+  const worker = await loadWorker()
+  worker.listeners.get("message")({
+    data: { type: "SKIP_WAITING" },
+    waitUntil() {
+      assert.fail("Forced activation")
+    },
+  })
+  assert.equal(worker.skippedWaiting, false)
 })

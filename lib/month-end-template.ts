@@ -356,6 +356,10 @@ export function makeTemplateId(value: string) {
     .replace(/^-+|-+$/g, "")
 }
 
+export function createDefaultMonthEndTemplate() {
+  return normalizeTemplate(defaultTemplate)
+}
+
 export function loadMonthEndTemplate() {
   if (typeof window === "undefined") {
     return normalizeTemplate(defaultTemplate)

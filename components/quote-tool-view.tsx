@@ -1,10 +1,7 @@
 "use client"
 
 import * as React from "react"
-import {
-  readBrowserStorage,
-  writeBrowserStorage,
-} from "@/lib/browser-storage"
+import { readBrowserStorage, writeBrowserStorage } from "@/lib/browser-storage"
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -15,16 +12,16 @@ import {
   SearchIcon,
 } from "lucide-react"
 
-import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import {
   Select,
   SelectContent,
@@ -33,7 +30,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import {
   quoteItemCatalog,
   type QuoteCatalogItem,
@@ -242,7 +238,7 @@ function CountrySearchField({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-[calc(100vw-2rem)] max-w-80 gap-2 p-2"
+        className="w-80 max-w-[calc(100%-2rem)] max-w-80 gap-2 p-2"
       >
         <div className="relative">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -289,7 +285,9 @@ function CountrySearchField({
               onMouseEnter={() => setActiveIndex(index)}
               onClick={() => selectCountry(country)}
             >
-              <CheckIcon className={value === country ? undefined : "opacity-0"} />
+              <CheckIcon
+                className={value === country ? undefined : "opacity-0"}
+              />
               <span className="truncate">{country}</span>
             </Button>
           ))}
@@ -385,9 +383,9 @@ export function QuoteToolView() {
     React.useState(0)
   const [shouldFocusFirstPrimaryItem, setShouldFocusFirstPrimaryItem] =
     React.useState(false)
-  const desktopItemRefs = React.useRef<Record<string, HTMLTableRowElement | null>>(
-    {}
-  )
+  const desktopItemRefs = React.useRef<
+    Record<string, HTMLTableRowElement | null>
+  >({})
   const showBulkUnits = sortingField === "Bulk"
 
   const filteredItems = React.useMemo(
@@ -407,16 +405,12 @@ export function QuoteToolView() {
 
   const primaryItems = React.useMemo(
     () =>
-      filteredItems.filter(
-        (item) => !isFeeItem(item) && !isOptionalItem(item)
-      ),
+      filteredItems.filter((item) => !isFeeItem(item) && !isOptionalItem(item)),
     [filteredItems]
   )
   const feeItems = React.useMemo(
     () =>
-      filteredItems.filter(
-        (item) => isFeeItem(item) || isOptionalItem(item)
-      ),
+      filteredItems.filter((item) => isFeeItem(item) || isOptionalItem(item)),
     [filteredItems]
   )
   const itemSections = [
@@ -428,10 +422,7 @@ export function QuoteToolView() {
     },
   ] as const
   const desktopFocusableItems = React.useMemo(
-    () => [
-      ...(openItemSections.fees ? feeItems : []),
-      ...primaryItems,
-    ],
+    () => [...(openItemSections.fees ? feeItems : []), ...primaryItems],
     [feeItems, openItemSections.fees, primaryItems]
   )
 
@@ -439,7 +430,8 @@ export function QuoteToolView() {
     () =>
       filteredItems
         .map((item) => {
-          const quantity = quantities[item.internalId] ?? (isFeeItem(item) ? 1 : 0)
+          const quantity =
+            quantities[item.internalId] ?? (isFeeItem(item) ? 1 : 0)
           const unitPrice = itemPrice(item)
 
           return {
@@ -473,9 +465,11 @@ export function QuoteToolView() {
           if (
             readBrowserStorage("localStorage", catalogVersionKey) !== "synced"
           ) {
-            syncQuoteItemCatalog(quoteItemCatalog).then(() => {
-              writeBrowserStorage("localStorage", catalogVersionKey, "synced")
-            }).catch(() => undefined)
+            syncQuoteItemCatalog(quoteItemCatalog)
+              .then(() => {
+                writeBrowserStorage("localStorage", catalogVersionKey, "synced")
+              })
+              .catch(() => undefined)
           }
         })
         .catch(() => {})
@@ -509,7 +503,10 @@ export function QuoteToolView() {
 
   React.useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key.toLowerCase() !== "k" || (!event.ctrlKey && !event.metaKey)) {
+      if (
+        event.key.toLowerCase() !== "k" ||
+        (!event.ctrlKey && !event.metaKey)
+      ) {
         return
       }
 
@@ -588,115 +585,37 @@ export function QuoteToolView() {
   }
 
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
-      }
-    >
-      <AppSidebar variant="inset" />
-      <SidebarInset>
-        <SiteHeader title="Quote Tool" />
-        <main className="flex flex-1 flex-col gap-4 p-4 [--mobile-page-bottom-padding:calc(10rem+env(safe-area-inset-bottom,0px))] lg:p-6">
-          <Card className="rounded-lg shadow-sm">
-            <CardContent className="relative">
-              <div className="grid gap-3 md:hidden">
-                <Field>
-                  <div className="flex items-center justify-between gap-3">
-                    <FieldLabel>Country</FieldLabel>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-1.5 text-muted-foreground hover:text-foreground"
-                      onClick={resetQuote}
-                    >
-                      <RotateCcwIcon />
-                      Reset
-                    </Button>
-                  </div>
-                  <CountrySearchField
-                    countries={countries}
-                    value={countryName}
-                    onChange={(value) => {
-                      if (value) {
-                        setCountryName(value)
-                        setQuantities({})
-                      }
-                    }}
-                  />
-                </Field>
-                <div className="grid grid-cols-2 gap-2">
-                  <Field>
-                    <FieldLabel>Zone</FieldLabel>
-                    <Select
-                      value={zone}
-                      onValueChange={(value) => {
-                        if (value) {
-                          setZone(value)
-                          setQuantities({})
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="h-11 w-full rounded-xl px-3 text-base">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          {zones.map((option) => (
-                            <SelectItem key={option} value={option}>
-                              {option}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field>
-                    <FieldLabel>Type</FieldLabel>
-                    <Select
-                      value={sortingField}
-                      onValueChange={(value) => {
-                        if (value) {
-                          setSortingField(value)
-                          setQuantities({})
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="h-11 w-full rounded-xl px-3 text-base">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          {selectableSortingFields.map((option) => (
-                            <SelectItem key={option} value={option}>
-                              {option}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                </div>
-              </div>
-              <FieldGroup className="hidden gap-4 md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
-                <Field>
+    <>
+      <SiteHeader title="Quote Tool" />
+      <main className="flex flex-1 flex-col gap-4 p-4 lg:p-6">
+        <Card className="rounded-lg shadow-sm">
+          <CardContent className="relative">
+            <div className="grid gap-3 md:hidden">
+              <Field>
+                <div className="flex items-center justify-between gap-3">
                   <FieldLabel>Country</FieldLabel>
-                  <CountrySearchField
-                    autoOpenOnDesktop
-                    countries={countries}
-                    focusSignal={countrySearchFocusSignal}
-                    value={countryName}
-                    onChange={(value) => {
-                      if (value) {
-                        setCountryName(value)
-                        setQuantities({})
-                        setShouldFocusFirstPrimaryItem(true)
-                      }
-                    }}
-                  />
-                </Field>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-1.5 text-muted-foreground hover:text-foreground"
+                    onClick={resetQuote}
+                  >
+                    <RotateCcwIcon />
+                    Reset
+                  </Button>
+                </div>
+                <CountrySearchField
+                  countries={countries}
+                  value={countryName}
+                  onChange={(value) => {
+                    if (value) {
+                      setCountryName(value)
+                      setQuantities({})
+                    }
+                  }}
+                />
+              </Field>
+              <div className="grid grid-cols-2 gap-2">
                 <Field>
                   <FieldLabel>Zone</FieldLabel>
                   <Select
@@ -708,7 +627,7 @@ export function QuoteToolView() {
                       }
                     }}
                   >
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger className="h-11 w-full rounded-xl px-3 text-base">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -723,7 +642,7 @@ export function QuoteToolView() {
                   </Select>
                 </Field>
                 <Field>
-                  <FieldLabel>Sorting Field</FieldLabel>
+                  <FieldLabel>Type</FieldLabel>
                   <Select
                     value={sortingField}
                     onValueChange={(value) => {
@@ -733,7 +652,7 @@ export function QuoteToolView() {
                       }
                     }}
                   >
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger className="h-11 w-full rounded-xl px-3 text-base">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -747,273 +666,335 @@ export function QuoteToolView() {
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field className="justify-end">
-                  <FieldLabel className="sr-only">Reset Quote</FieldLabel>
-                  <Button
-                    variant="ghost"
-                    className="text-muted-foreground hover:text-foreground"
-                    onClick={resetQuote}
-                  >
-                    <RotateCcwIcon />
-                    Reset
-                  </Button>
-                </Field>
-              </FieldGroup>
-              <div className="mt-6 hidden overflow-x-auto rounded-lg border md:block">
-                <table className="w-full min-w-[640px] text-sm">
-                  <thead className="bg-muted/50 text-muted-foreground">
-                    <tr className="border-b">
-                      <th className="px-3 py-2 text-left font-medium">Item</th>
-                      {showBulkUnits ? (
-                        <th className="w-32 px-3 py-2 text-left font-medium">
-                          Bulk Units
-                        </th>
-                      ) : null}
-                      <th className="w-32 px-3 py-2 text-right font-medium">
-                        Unit Price
+              </div>
+            </div>
+            <FieldGroup className="hidden gap-4 md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+              <Field>
+                <FieldLabel>Country</FieldLabel>
+                <CountrySearchField
+                  autoOpenOnDesktop
+                  countries={countries}
+                  focusSignal={countrySearchFocusSignal}
+                  value={countryName}
+                  onChange={(value) => {
+                    if (value) {
+                      setCountryName(value)
+                      setQuantities({})
+                      setShouldFocusFirstPrimaryItem(true)
+                    }
+                  }}
+                />
+              </Field>
+              <Field>
+                <FieldLabel>Zone</FieldLabel>
+                <Select
+                  value={zone}
+                  onValueChange={(value) => {
+                    if (value) {
+                      setZone(value)
+                      setQuantities({})
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {zones.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field>
+                <FieldLabel>Sorting Field</FieldLabel>
+                <Select
+                  value={sortingField}
+                  onValueChange={(value) => {
+                    if (value) {
+                      setSortingField(value)
+                      setQuantities({})
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {selectableSortingFields.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {option}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field className="justify-end">
+                <FieldLabel className="sr-only">Reset Quote</FieldLabel>
+                <Button
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={resetQuote}
+                >
+                  <RotateCcwIcon />
+                  Reset
+                </Button>
+              </Field>
+            </FieldGroup>
+            <div className="mt-6 hidden overflow-x-auto rounded-lg border md:block">
+              <table className="w-full min-w-[640px] text-sm">
+                <thead className="bg-muted/50 text-muted-foreground">
+                  <tr className="border-b">
+                    <th className="px-3 py-2 text-left font-medium">Item</th>
+                    {showBulkUnits ? (
+                      <th className="w-32 px-3 py-2 text-left font-medium">
+                        Bulk Units
                       </th>
-                      <th className="w-36 px-3 py-2 text-center font-medium">
-                        Quantity
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {itemSections.map((section) =>
-                      section.items.length ? (
-                        <React.Fragment key={section.id}>
-                          <tr className="border-b bg-muted/30">
-                            <td
-                              colSpan={showBulkUnits ? 4 : 3}
-                              className="p-1"
-                            >
-                              <QuoteSectionToggle
-                                title={section.title}
-                                count={section.items.length}
-                                open={section.open}
-                                onToggle={() => toggleItemSection(section.id)}
-                              />
-                            </td>
-                          </tr>
-                          {section.open
-                            ? section.items.map((item) => {
-                                const quantity =
-                                  quantities[item.internalId] ??
-                                  (isFeeItem(item) ? 1 : 0)
-                                const unitPrice = itemPrice(item)
-
-                                return (
-                                  <tr
-                                    key={item.internalId}
-                                    ref={(node) => {
-                                      desktopItemRefs.current[item.internalId] =
-                                        node
-                                    }}
-                                    tabIndex={0}
-                                    aria-label={`${item.name}, quantity ${quantity}`}
-                                    className="border-b border-l-2 border-l-sky-400 outline-none transition-colors last:border-b-0 focus-visible:bg-accent/60 dark:border-l-sky-500"
-                                    onKeyDown={(event) =>
-                                      handleDesktopItemKeyDown(event, item)
-                                    }
-                                  >
-                                    <td className="px-3 py-3 align-top">
-                                      <div className="font-medium">
-                                        {item.name}
-                                      </div>
-                                    </td>
-                                    {showBulkUnits ? (
-                                      <td className="px-3 py-3 align-top text-muted-foreground">
-                                        {item.bulkUnits || "-"}
-                                      </td>
-                                    ) : null}
-                                    <td className="px-3 py-3 text-right align-top font-medium">
-                                      {formatMoney(unitPrice)}
-                                    </td>
-                                    <td className="px-3 py-3 align-top">
-                                      <div className="flex justify-center">
-                                        <QuantityControl
-                                          itemName={item.name}
-                                          quantity={quantity}
-                                          onChange={(nextQuantity) =>
-                                            updateQuantity(
-                                              item.internalId,
-                                              nextQuantity
-                                            )
-                                          }
-                                        />
-                                      </div>
-                                    </td>
-                                  </tr>
-                                )
-                              })
-                            : null}
-                        </React.Fragment>
-                      ) : null
-                    )}
-                    {primaryItems.map((item) => {
-                      const quantity =
-                        quantities[item.internalId] ?? (isFeeItem(item) ? 1 : 0)
-                      const unitPrice = itemPrice(item)
-
-                      return (
-                        <tr
-                          key={item.internalId}
-                          ref={(node) => {
-                            desktopItemRefs.current[item.internalId] = node
-                          }}
-                          tabIndex={0}
-                          aria-label={`${item.name}, quantity ${quantity}`}
-                          className="border-b outline-none transition-colors last:border-0 focus-visible:bg-accent/60"
-                          onKeyDown={(event) =>
-                            handleDesktopItemKeyDown(event, item)
-                          }
-                        >
-                          <td className="px-3 py-3 align-top">
-                            <div className="font-medium">{item.name}</div>
-                          </td>
-                          {showBulkUnits ? (
-                            <td className="px-3 py-3 align-top text-muted-foreground">
-                              {item.bulkUnits || "-"}
-                            </td>
-                          ) : null}
-                          <td className="px-3 py-3 text-right align-top font-medium">
-                            {formatMoney(unitPrice)}
-                          </td>
-                          <td className="px-3 py-3 align-top">
-                            <div className="flex justify-center">
-                              <QuantityControl
-                                itemName={item.name}
-                                quantity={quantity}
-                                onChange={(nextQuantity) =>
-                                  updateQuantity(item.internalId, nextQuantity)
-                                }
-                              />
-                            </div>
+                    ) : null}
+                    <th className="w-32 px-3 py-2 text-right font-medium">
+                      Unit Price
+                    </th>
+                    <th className="w-36 px-3 py-2 text-center font-medium">
+                      Quantity
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {itemSections.map((section) =>
+                    section.items.length ? (
+                      <React.Fragment key={section.id}>
+                        <tr className="border-b bg-muted/30">
+                          <td colSpan={showBulkUnits ? 4 : 3} className="p-1">
+                            <QuoteSectionToggle
+                              title={section.title}
+                              count={section.items.length}
+                              open={section.open}
+                              onToggle={() => toggleItemSection(section.id)}
+                            />
                           </td>
                         </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <div className="mt-4 hidden justify-end border-t pt-4 md:flex">
-                <div className="flex min-w-56 justify-between gap-8 text-base font-semibold">
-                  <span>Total</span>
-                  <span>{formatMoney(subtotal)}</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <div className="grid gap-3 md:hidden">
-            {itemSections.map((section) =>
-              section.items.length ? (
-                <div key={section.id} className="grid gap-3">
-                  <QuoteSectionToggle
-                    title={section.title}
-                    count={section.items.length}
-                    open={section.open}
-                    onToggle={() => toggleItemSection(section.id)}
-                  />
-                  {section.open ? (
-                    <div className="grid gap-3">
-                      {section.items.map((item) => {
-                        const quantity =
-                          quantities[item.internalId] ??
-                          (isFeeItem(item) ? 1 : 0)
-                        const unitPrice = itemPrice(item)
+                        {section.open
+                          ? section.items.map((item) => {
+                              const quantity =
+                                quantities[item.internalId] ??
+                                (isFeeItem(item) ? 1 : 0)
+                              const unitPrice = itemPrice(item)
 
-                        return (
-                          <div
-                            key={item.internalId}
-                            className="grid gap-3 rounded-lg border border-sky-300 bg-background p-3 dark:border-sky-800"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="font-medium leading-snug">
-                                  {item.name}
-                                </div>
-                              </div>
-                              <div className="shrink-0 text-right font-medium">
-                                {formatMoney(unitPrice)}
-                              </div>
-                            </div>
-                            <div className="flex items-center justify-between gap-3">
-                              {showBulkUnits ? (
-                                <div className="text-sm text-muted-foreground">
-                                  <span className="font-medium text-foreground">
-                                    Bulk Units:
-                                  </span>{" "}
-                                  {item.bulkUnits || "-"}
-                                </div>
-                              ) : (
-                                <div />
-                              )}
-                              <QuantityControl
-                                itemName={item.name}
-                                quantity={quantity}
-                                onChange={(nextQuantity) =>
-                                  updateQuantity(item.internalId, nextQuantity)
-                                }
-                              />
-                            </div>
+                              return (
+                                <tr
+                                  key={item.internalId}
+                                  ref={(node) => {
+                                    desktopItemRefs.current[item.internalId] =
+                                      node
+                                  }}
+                                  tabIndex={0}
+                                  aria-label={`${item.name}, quantity ${quantity}`}
+                                  className="border-b border-l-2 border-l-sky-400 outline-none transition-colors last:border-b-0 focus-visible:bg-accent/60 dark:border-l-sky-500"
+                                  onKeyDown={(event) =>
+                                    handleDesktopItemKeyDown(event, item)
+                                  }
+                                >
+                                  <td className="px-3 py-3 align-top">
+                                    <div className="font-medium">
+                                      {item.name}
+                                    </div>
+                                  </td>
+                                  {showBulkUnits ? (
+                                    <td className="px-3 py-3 align-top text-muted-foreground">
+                                      {item.bulkUnits || "-"}
+                                    </td>
+                                  ) : null}
+                                  <td className="px-3 py-3 text-right align-top font-medium">
+                                    {formatMoney(unitPrice)}
+                                  </td>
+                                  <td className="px-3 py-3 align-top">
+                                    <div className="flex justify-center">
+                                      <QuantityControl
+                                        itemName={item.name}
+                                        quantity={quantity}
+                                        onChange={(nextQuantity) =>
+                                          updateQuantity(
+                                            item.internalId,
+                                            nextQuantity
+                                          )
+                                        }
+                                      />
+                                    </div>
+                                  </td>
+                                </tr>
+                              )
+                            })
+                          : null}
+                      </React.Fragment>
+                    ) : null
+                  )}
+                  {primaryItems.map((item) => {
+                    const quantity =
+                      quantities[item.internalId] ?? (isFeeItem(item) ? 1 : 0)
+                    const unitPrice = itemPrice(item)
+
+                    return (
+                      <tr
+                        key={item.internalId}
+                        ref={(node) => {
+                          desktopItemRefs.current[item.internalId] = node
+                        }}
+                        tabIndex={0}
+                        aria-label={`${item.name}, quantity ${quantity}`}
+                        className="border-b outline-none transition-colors last:border-0 focus-visible:bg-accent/60"
+                        onKeyDown={(event) =>
+                          handleDesktopItemKeyDown(event, item)
+                        }
+                      >
+                        <td className="px-3 py-3 align-top">
+                          <div className="font-medium">{item.name}</div>
+                        </td>
+                        {showBulkUnits ? (
+                          <td className="px-3 py-3 align-top text-muted-foreground">
+                            {item.bulkUnits || "-"}
+                          </td>
+                        ) : null}
+                        <td className="px-3 py-3 text-right align-top font-medium">
+                          {formatMoney(unitPrice)}
+                        </td>
+                        <td className="px-3 py-3 align-top">
+                          <div className="flex justify-center">
+                            <QuantityControl
+                              itemName={item.name}
+                              quantity={quantity}
+                              onChange={(nextQuantity) =>
+                                updateQuantity(item.internalId, nextQuantity)
+                              }
+                            />
                           </div>
-                        )
-                      })}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null
-            )}
-            {primaryItems.map((item) => {
-              const quantity =
-                quantities[item.internalId] ?? (isFeeItem(item) ? 1 : 0)
-              const unitPrice = itemPrice(item)
-
-              return (
-                <div
-                  key={item.internalId}
-                  className="grid gap-3 rounded-lg border bg-background p-3"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="font-medium leading-snug">
-                        {item.name}
-                      </div>
-                    </div>
-                    <div className="shrink-0 text-right font-medium">
-                      {formatMoney(unitPrice)}
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    {showBulkUnits ? (
-                      <div className="text-sm text-muted-foreground">
-                        <span className="font-medium text-foreground">
-                          Bulk Units:
-                        </span>{" "}
-                        {item.bulkUnits || "-"}
-                      </div>
-                    ) : (
-                      <div />
-                    )}
-                    <QuantityControl
-                      itemName={item.name}
-                      quantity={quantity}
-                      onChange={(nextQuantity) =>
-                        updateQuantity(item.internalId, nextQuantity)
-                      }
-                    />
-                  </div>
-                </div>
-              )
-            })}
-            <div className="flex justify-end border-t pt-4">
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-4 hidden justify-end border-t pt-4 md:flex">
               <div className="flex min-w-56 justify-between gap-8 text-base font-semibold">
                 <span>Total</span>
                 <span>{formatMoney(subtotal)}</span>
               </div>
             </div>
+          </CardContent>
+        </Card>
+        <div className="grid gap-3 md:hidden">
+          {itemSections.map((section) =>
+            section.items.length ? (
+              <div key={section.id} className="grid gap-3">
+                <QuoteSectionToggle
+                  title={section.title}
+                  count={section.items.length}
+                  open={section.open}
+                  onToggle={() => toggleItemSection(section.id)}
+                />
+                {section.open ? (
+                  <div className="grid gap-3">
+                    {section.items.map((item) => {
+                      const quantity =
+                        quantities[item.internalId] ?? (isFeeItem(item) ? 1 : 0)
+                      const unitPrice = itemPrice(item)
+
+                      return (
+                        <div
+                          key={item.internalId}
+                          className="grid gap-3 rounded-lg border border-sky-300 bg-background p-3 dark:border-sky-800"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="font-medium leading-snug">
+                                {item.name}
+                              </div>
+                            </div>
+                            <div className="shrink-0 text-right font-medium">
+                              {formatMoney(unitPrice)}
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            {showBulkUnits ? (
+                              <div className="text-sm text-muted-foreground">
+                                <span className="font-medium text-foreground">
+                                  Bulk Units:
+                                </span>{" "}
+                                {item.bulkUnits || "-"}
+                              </div>
+                            ) : (
+                              <div />
+                            )}
+                            <QuantityControl
+                              itemName={item.name}
+                              quantity={quantity}
+                              onChange={(nextQuantity) =>
+                                updateQuantity(item.internalId, nextQuantity)
+                              }
+                            />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            ) : null
+          )}
+          {primaryItems.map((item) => {
+            const quantity =
+              quantities[item.internalId] ?? (isFeeItem(item) ? 1 : 0)
+            const unitPrice = itemPrice(item)
+
+            return (
+              <div
+                key={item.internalId}
+                className="grid gap-3 rounded-lg border bg-background p-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-medium leading-snug">{item.name}</div>
+                  </div>
+                  <div className="shrink-0 text-right font-medium">
+                    {formatMoney(unitPrice)}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  {showBulkUnits ? (
+                    <div className="text-sm text-muted-foreground">
+                      <span className="font-medium text-foreground">
+                        Bulk Units:
+                      </span>{" "}
+                      {item.bulkUnits || "-"}
+                    </div>
+                  ) : (
+                    <div />
+                  )}
+                  <QuantityControl
+                    itemName={item.name}
+                    quantity={quantity}
+                    onChange={(nextQuantity) =>
+                      updateQuantity(item.internalId, nextQuantity)
+                    }
+                  />
+                </div>
+              </div>
+            )
+          })}
+          <div className="flex justify-end border-t pt-4">
+            <div className="flex min-w-56 justify-between gap-8 text-base font-semibold">
+              <span>Total</span>
+              <span>{formatMoney(subtotal)}</span>
+            </div>
           </div>
-        </main>
-      </SidebarInset>
-    </SidebarProvider>
+        </div>
+      </main>
+    </>
   )
 }

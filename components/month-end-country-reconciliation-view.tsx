@@ -16,7 +16,6 @@ import {
 } from "lucide-react"
 
 import { AppLink } from "@/components/app-link"
-import { AppSidebar } from "@/components/app-sidebar"
 import { CountryTableFilters } from "@/components/country-table-filters"
 import { HeaderActionMenuTrigger } from "@/components/header-action-menu-trigger"
 import {
@@ -47,7 +46,6 @@ import {
   NavigationMenuItem,
   NavigationMenuList,
 } from "@/components/ui/navigation-menu"
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Table,
@@ -3552,756 +3550,744 @@ function ReconciliationWorkbench({
       </Dialog>
       <div className="grid min-h-0 gap-3 xl:gap-4">
         {!showOnlyMatched ? (
-          <>
-            <div className="grid min-h-0 items-stretch gap-4 lg:min-h-[calc(100svh-var(--header-height)-5.5rem)] lg:grid-cols-2">
-              <section
-                className={
-                  "grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-lg border bg-background p-3 transition-colors " +
-                  (dragTarget === "country"
-                    ? "border-primary bg-primary/5"
-                    : "")
+          <div className="grid min-h-0 items-stretch gap-4 lg:min-h-96 lg:grid-cols-2">
+            <section
+              className={
+                "grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-lg border bg-background p-3 transition-colors " +
+                (dragTarget === "country" ? "border-primary bg-primary/5" : "")
+              }
+              onDragOver={(event) => {
+                if (isReadOnly || !canEditCountryData) {
+                  return
                 }
-                onDragOver={(event) => {
-                  if (isReadOnly || !canEditCountryData) {
-                    return
-                  }
 
-                  event.preventDefault()
-                  setDragTarget("country")
-                }}
-                onDragLeave={() => setDragTarget(null)}
-                onDrop={(event) => {
-                  if (isReadOnly || !canEditCountryData) {
-                    return
-                  }
+                event.preventDefault()
+                setDragTarget("country")
+              }}
+              onDragLeave={() => setDragTarget(null)}
+              onDrop={(event) => {
+                if (isReadOnly || !canEditCountryData) {
+                  return
+                }
 
-                  const files = getDroppedFiles(event)
+                const files = getDroppedFiles(event)
 
-                  if (files.length) {
-                    onDropCountryFiles(files)
-                  }
-                }}
-              >
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                  <h2 className="text-lg font-semibold tracking-normal">
-                    Country
-                  </h2>
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                    {!isReadOnly && onPasteDmiReport ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8 rounded-full"
-                        onClick={onPasteDmiReport}
-                      >
-                        <ClipboardPasteIcon />
-                        Paste DMI Report
-                      </Button>
-                    ) : null}
-                    {!isReadOnly && selectedCountryRecords.length ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="h-8 rounded-md"
-                        disabled={
-                          hasPairedSelection
-                            ? !canReconcileSelectedPair ||
-                              isReconcilingSelectedPair
-                            : isReconcilingCountryRows
-                        }
-                        onClick={
-                          hasPairedSelection
-                            ? reconcileSelectedPair
-                            : openCountryReconcileDialog
-                        }
-                      >
-                        <CheckCircle2Icon />
-                        {hasPairedSelection
-                          ? "Reconcile"
-                          : `Clear (${selectedCountryRecords.length})`}
-                      </Button>
-                    ) : null}
-                  </div>
+                if (files.length) {
+                  onDropCountryFiles(files)
+                }
+              }}
+            >
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold tracking-normal">
+                  Country
+                </h2>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {!isReadOnly && onPasteDmiReport ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 rounded-full"
+                      onClick={onPasteDmiReport}
+                    >
+                      <ClipboardPasteIcon />
+                      Paste DMI Report
+                    </Button>
+                  ) : null}
+                  {!isReadOnly && selectedCountryRecords.length ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 rounded-md"
+                      disabled={
+                        hasPairedSelection
+                          ? !canReconcileSelectedPair ||
+                            isReconcilingSelectedPair
+                          : isReconcilingCountryRows
+                      }
+                      onClick={
+                        hasPairedSelection
+                          ? reconcileSelectedPair
+                          : openCountryReconcileDialog
+                      }
+                    >
+                      <CheckCircle2Icon />
+                      {hasPairedSelection
+                        ? "Reconcile"
+                        : `Clear (${selectedCountryRecords.length})`}
+                    </Button>
+                  ) : null}
                 </div>
-                <div className="grid min-h-0 gap-2 overflow-y-auto pb-3 md:hidden">
-                  {countryRows.length ? (
-                    countryRows.map(({ record }) => (
-                      <article
-                        key={record.id}
-                        className={
-                          "rounded-lg border bg-muted/20 p-3 text-sm transition-colors " +
-                          (isReadOnly
-                            ? ""
-                            : selectedCountryRecordIds.has(record.id)
-                              ? "border-primary bg-primary/5"
-                              : "")
-                        }
-                      >
-                        <div className="flex items-start gap-3">
-                          <Checkbox
-                            checked={selectedCountryRecordIds.has(record.id)}
-                            onCheckedChange={(checked) =>
-                              toggleCountryRow(
-                                record.id,
-                                checked === true,
-                                isShiftClickingCountryRowRef.current
-                              )
-                            }
-                            aria-label={`Select country report row ${record.reference || record.ctnNumber || record.id}`}
-                            className="mt-0.5 shrink-0 after:-inset-2"
-                            disabled={isReadOnly}
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              isShiftClickingCountryRowRef.current =
-                                event.shiftKey
-                            }}
-                          />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="font-semibold break-words">
-                                  {record.ctnNumber || "-"}
-                                </div>
-                                <div className="mt-1 grid grid-cols-[2.5rem_minmax(0,1fr)] gap-2 text-xs">
-                                  <span className="text-muted-foreground">
-                                    BL
-                                  </span>
-                                  <span className="break-words">
-                                    {record.billOfLadingNumber || "-"}
-                                  </span>
-                                </div>
+              </div>
+              <div className="grid min-h-0 gap-2 overflow-y-auto pb-3 md:hidden">
+                {countryRows.length ? (
+                  countryRows.map(({ record }) => (
+                    <article
+                      key={record.id}
+                      className={
+                        "rounded-lg border bg-muted/20 p-3 text-sm transition-colors " +
+                        (isReadOnly
+                          ? ""
+                          : selectedCountryRecordIds.has(record.id)
+                            ? "border-primary bg-primary/5"
+                            : "")
+                      }
+                    >
+                      <div className="flex items-start gap-3">
+                        <Checkbox
+                          checked={selectedCountryRecordIds.has(record.id)}
+                          onCheckedChange={(checked) =>
+                            toggleCountryRow(
+                              record.id,
+                              checked === true,
+                              isShiftClickingCountryRowRef.current
+                            )
+                          }
+                          aria-label={`Select country report row ${record.reference || record.ctnNumber || record.id}`}
+                          className="mt-0.5 shrink-0 after:-inset-2"
+                          disabled={isReadOnly}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            isShiftClickingCountryRowRef.current =
+                              event.shiftKey
+                          }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="font-semibold break-words">
+                                {record.ctnNumber || "-"}
                               </div>
-                              <div className="shrink-0 text-right text-sm font-semibold tabular-nums">
-                                {formatAmount(record.amount)}
+                              <div className="mt-1 grid grid-cols-[2.5rem_minmax(0,1fr)] gap-2 text-xs">
+                                <span className="text-muted-foreground">
+                                  BL
+                                </span>
+                                <span className="break-words">
+                                  {record.billOfLadingNumber || "-"}
+                                </span>
                               </div>
+                            </div>
+                            <div className="shrink-0 text-right text-sm font-semibold tabular-nums">
+                              {formatAmount(record.amount)}
                             </div>
                           </div>
                         </div>
-                      </article>
-                    ))
-                  ) : (
-                    <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
-                      No country-only records.
-                    </div>
-                  )}
-                </div>
-                <div className="hidden min-h-0 overflow-x-hidden overflow-y-auto pb-3 md:block">
-                  <Table
-                    className="w-full table-fixed text-xs"
-                    containerClassName="overflow-x-hidden"
-                  >
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-8">
-                          <Checkbox
-                            checked={allCountryRowsSelected}
-                            onCheckedChange={(checked) =>
-                              toggleAllCountryRows(checked === true)
-                            }
-                            aria-label="Select all unmatched country report rows"
-                          />
-                        </TableHead>
-                        <TableHead className="w-[20%]">Country</TableHead>
-                        <TableHead>Reference</TableHead>
-                        <TableHead>CTN</TableHead>
-                        <TableHead>Bill of Lading</TableHead>
-                        <TableHead className="w-24 text-right">
-                          Amount
-                        </TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {countryRows.length ? (
-                        countryRows.map(({ record }) => (
-                          <TableRow
-                            key={record.id}
-                            aria-selected={selectedCountryRecordIds.has(
-                              record.id
-                            )}
-                            className="h-12"
-                          >
-                            <TableCell className="w-8">
-                              <Checkbox
-                                checked={selectedCountryRecordIds.has(
-                                  record.id
-                                )}
-                                onCheckedChange={(checked) =>
-                                  toggleCountryRow(
-                                    record.id,
-                                    checked === true,
-                                    isShiftClickingCountryRowRef.current
-                                  )
-                                }
-                                aria-label={`Select country report row ${record.reference || record.ctnNumber || record.id}`}
-                                className="after:-inset-2"
-                                disabled={isReadOnly}
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  isShiftClickingCountryRowRef.current =
-                                    event.shiftKey
-                                }}
-                              />
-                            </TableCell>
-                            <TableCell className="min-w-0">
-                              <span
-                                className="block truncate"
-                                title={countryCellLabel(record)}
-                              >
-                                {countryCellLabel(record)}
-                              </span>
-                            </TableCell>
-                            <TableCell className="font-medium break-words">
-                              {record.reference || record.invoiceNumber || "-"}
-                            </TableCell>
-                            <TableCell className="break-words">
-                              {record.ctnNumber || "-"}
-                            </TableCell>
-                            <TableCell className="break-words">
-                              {record.billOfLadingNumber || "-"}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums">
-                              {formatAmount(record.amount)}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      ) : (
-                        <TableRow>
-                          <TableCell
-                            colSpan={6}
-                            className="h-24 text-center text-sm text-muted-foreground"
-                          >
-                            No country-only records.
+                      </div>
+                    </article>
+                  ))
+                ) : (
+                  <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+                    No country-only records.
+                  </div>
+                )}
+              </div>
+              <div className="hidden min-h-0 overflow-x-hidden overflow-y-auto pb-3 md:block">
+                <Table
+                  className="w-full table-fixed text-xs"
+                  containerClassName="overflow-x-hidden"
+                >
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-8">
+                        <Checkbox
+                          checked={allCountryRowsSelected}
+                          onCheckedChange={(checked) =>
+                            toggleAllCountryRows(checked === true)
+                          }
+                          aria-label="Select all unmatched country report rows"
+                        />
+                      </TableHead>
+                      <TableHead className="w-[20%]">Country</TableHead>
+                      <TableHead>Reference</TableHead>
+                      <TableHead>CTN</TableHead>
+                      <TableHead>Bill of Lading</TableHead>
+                      <TableHead className="w-24 text-right">Amount</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {countryRows.length ? (
+                      countryRows.map(({ record }) => (
+                        <TableRow
+                          key={record.id}
+                          aria-selected={selectedCountryRecordIds.has(
+                            record.id
+                          )}
+                          className="h-12"
+                        >
+                          <TableCell className="w-8">
+                            <Checkbox
+                              checked={selectedCountryRecordIds.has(record.id)}
+                              onCheckedChange={(checked) =>
+                                toggleCountryRow(
+                                  record.id,
+                                  checked === true,
+                                  isShiftClickingCountryRowRef.current
+                                )
+                              }
+                              aria-label={`Select country report row ${record.reference || record.ctnNumber || record.id}`}
+                              className="after:-inset-2"
+                              disabled={isReadOnly}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                isShiftClickingCountryRowRef.current =
+                                  event.shiftKey
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell className="min-w-0">
+                            <span
+                              className="block truncate"
+                              title={countryCellLabel(record)}
+                            >
+                              {countryCellLabel(record)}
+                            </span>
+                          </TableCell>
+                          <TableCell className="font-medium break-words">
+                            {record.reference || record.invoiceNumber || "-"}
+                          </TableCell>
+                          <TableCell className="break-words">
+                            {record.ctnNumber || "-"}
+                          </TableCell>
+                          <TableCell className="break-words">
+                            {record.billOfLadingNumber || "-"}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatAmount(record.amount)}
                           </TableCell>
                         </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-                {countryReconcileMessage ? (
-                  <p className="px-1 pb-2 text-xs text-muted-foreground">
-                    {countryReconcileMessage}
-                  </p>
-                ) : null}
-                <div className="-mx-3 -mb-3 flex h-12 items-center justify-between border-t bg-muted/50 px-4 text-xs font-medium">
-                  <div className="flex items-center gap-2">
-                    <span>Matched</span>
-                    <span className="rounded-full border bg-background px-2 py-0.5 tabular-nums">
-                      {Math.max(matchedCountryCount, matchedRowCount)} /{" "}
-                      {countryRecordCount}
-                    </span>
-                  </div>
-                  <span className="text-muted-foreground tabular-nums">
-                    Open {formatAmount(countryTotal)}
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell
+                          colSpan={6}
+                          className="h-24 text-center text-sm text-muted-foreground"
+                        >
+                          No country-only records.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+              {countryReconcileMessage ? (
+                <p className="px-1 pb-2 text-xs text-muted-foreground">
+                  {countryReconcileMessage}
+                </p>
+              ) : null}
+              <div className="-mx-3 -mb-3 flex h-12 items-center justify-between border-t bg-muted/50 px-4 text-xs font-medium">
+                <div className="flex items-center gap-2">
+                  <span>Matched</span>
+                  <span className="rounded-full border bg-background px-2 py-0.5 tabular-nums">
+                    {Math.max(matchedCountryCount, matchedRowCount)} /{" "}
+                    {countryRecordCount}
                   </span>
                 </div>
-              </section>
-              <section
-                className={
-                  "grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-lg border bg-background p-3 transition-colors " +
-                  (dragTarget === "master" ? "border-primary bg-primary/5" : "")
+                <span className="text-muted-foreground tabular-nums">
+                  Open {formatAmount(countryTotal)}
+                </span>
+              </div>
+            </section>
+            <section
+              className={
+                "grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-lg border bg-background p-3 transition-colors " +
+                (dragTarget === "master" ? "border-primary bg-primary/5" : "")
+              }
+              onDragOver={(event) => {
+                if (isReadOnly) {
+                  return
                 }
-                onDragOver={(event) => {
-                  if (isReadOnly) {
-                    return
-                  }
 
-                  event.preventDefault()
-                  setDragTarget("master")
-                }}
-                onDragLeave={() => setDragTarget(null)}
-                onDrop={(event) => {
-                  if (isReadOnly) {
-                    return
-                  }
+                event.preventDefault()
+                setDragTarget("master")
+              }}
+              onDragLeave={() => setDragTarget(null)}
+              onDrop={(event) => {
+                if (isReadOnly) {
+                  return
+                }
 
-                  const [file] = getDroppedFiles(event)
+                const [file] = getDroppedFiles(event)
 
-                  if (file) {
-                    onDropMasterFile(file)
-                  }
-                }}
-              >
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                  <h2 className="text-lg font-semibold tracking-normal">
-                    NetSuite
-                  </h2>
-                  <div className="flex items-center gap-2">
-                    {!isReadOnly &&
-                    showAngolaNetSuiteReferences &&
-                    selectedMasterRecords.length &&
-                    !hasPairedSelection &&
-                    onMoveInvoicesToOot ? (
+                if (file) {
+                  onDropMasterFile(file)
+                }
+              }}
+            >
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold tracking-normal">
+                  NetSuite
+                </h2>
+                <div className="flex items-center gap-2">
+                  {!isReadOnly &&
+                  showAngolaNetSuiteReferences &&
+                  selectedMasterRecords.length &&
+                  !hasPairedSelection &&
+                  onMoveInvoicesToOot ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={isRollingInvoices || isMovingInvoicesToOot}
+                      onClick={moveSelectedInvoicesToOot}
+                    >
+                      <ArrowRightIcon />
+                      Move to OOT
+                    </Button>
+                  ) : null}
+                  {!isReadOnly &&
+                  selectedMasterRecords.length &&
+                  !hasPairedSelection ? (
+                    <>
                       <Button
                         type="button"
                         variant="outline"
                         disabled={isRollingInvoices || isMovingInvoicesToOot}
-                        onClick={moveSelectedInvoicesToOot}
+                        onClick={leaveSelectedInvoices}
                       >
                         <ArrowRightIcon />
-                        Move to OOT
+                        Leave Invoices ({selectedMasterRecords.length})
                       </Button>
-                    ) : null}
-                    {!isReadOnly &&
-                    selectedMasterRecords.length &&
-                    !hasPairedSelection ? (
-                      <>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          disabled={isRollingInvoices || isMovingInvoicesToOot}
-                          onClick={leaveSelectedInvoices}
-                        >
-                          <ArrowRightIcon />
-                          Leave Invoices ({selectedMasterRecords.length})
-                        </Button>
-                        <Button
-                          type="button"
-                          disabled={isRollingInvoices || isMovingInvoicesToOot}
-                          onClick={rollSelectedInvoices}
-                        >
-                          <FileOutputIcon />
-                          Roll Invoices ({selectedMasterRecords.length})
-                        </Button>
-                      </>
-                    ) : !isReadOnly && canProceed ? (
                       <Button
                         type="button"
-                        disabled={
-                          isRollingInvoices ||
-                          isMovingInvoicesToOot ||
-                          isProceeding
-                        }
-                        onClick={proceedToNextStep}
+                        disabled={isRollingInvoices || isMovingInvoicesToOot}
+                        onClick={rollSelectedInvoices}
                       >
-                        <ArrowRightIcon />
-                        Proceed
+                        <FileOutputIcon />
+                        Roll Invoices ({selectedMasterRecords.length})
                       </Button>
-                    ) : null}
-                  </div>
+                    </>
+                  ) : !isReadOnly && canProceed ? (
+                    <Button
+                      type="button"
+                      disabled={
+                        isRollingInvoices ||
+                        isMovingInvoicesToOot ||
+                        isProceeding
+                      }
+                      onClick={proceedToNextStep}
+                    >
+                      <ArrowRightIcon />
+                      Proceed
+                    </Button>
+                  ) : null}
                 </div>
-                {masterRecords.length ? (
-                  <>
-                    <div className="grid min-h-0 gap-2 overflow-y-auto pb-3 md:hidden">
-                      {masterRows.length ? (
-                        masterRows.map(({ record }) => {
-                          const gabonPairIssue = gabonPairIssueByRecordId.get(
-                            record.id
-                          )
+              </div>
+              {masterRecords.length ? (
+                <>
+                  <div className="grid min-h-0 gap-2 overflow-y-auto pb-3 md:hidden">
+                    {masterRows.length ? (
+                      masterRows.map(({ record }) => {
+                        const gabonPairIssue = gabonPairIssueByRecordId.get(
+                          record.id
+                        )
 
-                          return (
-                            <article
-                              key={record.id}
-                              className={
-                                "rounded-lg border p-3 text-sm transition-colors " +
-                                (gabonPairIssue
-                                  ? "border-red-300 bg-red-50 text-red-950 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-100 "
-                                  : "bg-muted/20 ") +
-                                (isReadOnly
-                                  ? ""
-                                  : selectedMasterRecordIds.has(record.id)
-                                    ? "border-primary bg-primary/5"
-                                    : "")
-                              }
-                            >
-                              <div className="flex items-start gap-3">
-                                <Checkbox
-                                  checked={selectedMasterRecordIds.has(
-                                    record.id
-                                  )}
-                                  onCheckedChange={(checked) =>
-                                    toggleMasterRow(
-                                      record.id,
-                                      checked === true,
-                                      isShiftClickingMasterRowRef.current
-                                    )
-                                  }
-                                  aria-label={`Select NetSuite record ${record.salesOrderNumber || record.id}`}
-                                  className="mt-0.5 shrink-0 after:-inset-2"
-                                  disabled={isReadOnly}
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    isShiftClickingMasterRowRef.current =
-                                      event.shiftKey
-                                  }}
-                                />
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                      <div className="text-xs font-medium text-muted-foreground">
-                                        {formatTransactionDate(
-                                          record.transactionDate
-                                        )}
-                                      </div>
-                                      <div className="font-semibold break-words">
-                                        {showAngolaNetSuiteReferences
-                                          ? record.billOfLadingNumber || "-"
-                                          : record.salesOrderNumber || "-"}
-                                      </div>
-                                      {gabonPairIssue ? (
-                                        <div className="mt-1 text-xs font-semibold text-red-700 dark:text-red-300">
-                                          {gabonPairIssue}
-                                        </div>
-                                      ) : null}
+                        return (
+                          <article
+                            key={record.id}
+                            className={
+                              "rounded-lg border p-3 text-sm transition-colors " +
+                              (gabonPairIssue
+                                ? "border-red-300 bg-red-50 text-red-950 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-100 "
+                                : "bg-muted/20 ") +
+                              (isReadOnly
+                                ? ""
+                                : selectedMasterRecordIds.has(record.id)
+                                  ? "border-primary bg-primary/5"
+                                  : "")
+                            }
+                          >
+                            <div className="flex items-start gap-3">
+                              <Checkbox
+                                checked={selectedMasterRecordIds.has(record.id)}
+                                onCheckedChange={(checked) =>
+                                  toggleMasterRow(
+                                    record.id,
+                                    checked === true,
+                                    isShiftClickingMasterRowRef.current
+                                  )
+                                }
+                                aria-label={`Select NetSuite record ${record.salesOrderNumber || record.id}`}
+                                className="mt-0.5 shrink-0 after:-inset-2"
+                                disabled={isReadOnly}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  isShiftClickingMasterRowRef.current =
+                                    event.shiftKey
+                                }}
+                              />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="text-xs font-medium text-muted-foreground">
+                                      {formatTransactionDate(
+                                        record.transactionDate
+                                      )}
                                     </div>
-                                    <div className="shrink-0 text-right text-sm font-semibold tabular-nums">
-                                      {formatAmount(record.amount)}
+                                    <div className="font-semibold break-words">
+                                      {showAngolaNetSuiteReferences
+                                        ? record.billOfLadingNumber || "-"
+                                        : record.salesOrderNumber || "-"}
                                     </div>
-                                  </div>
-                                  <dl className="mt-3 grid gap-2 text-xs">
-                                    {showAngolaNetSuiteReferences ? (
-                                      <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
-                                        <dt className="text-muted-foreground">
-                                          CTN
-                                        </dt>
-                                        <dd className="break-words">
-                                          {record.ctnNumber || "-"}
-                                        </dd>
-                                      </div>
-                                    ) : (
-                                      <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
-                                        <dt className="text-muted-foreground">
-                                          {masterReferenceLabel}
-                                        </dt>
-                                        <dd className="break-words">
-                                          {(showCtnReference
-                                            ? record.ctnNumber
-                                            : record.billOfLadingNumber) || "-"}
-                                        </dd>
-                                      </div>
-                                    )}
-                                    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
-                                      <dt className="text-muted-foreground">
-                                        Status
-                                      </dt>
-                                      <dd className="break-words">
-                                        {record.status || "-"}
-                                      </dd>
-                                    </div>
-                                    {showCountryColumn ? (
-                                      <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
-                                        <dt className="text-muted-foreground">
-                                          Country
-                                        </dt>
-                                        <dd className="break-words">
-                                          {record.countryName || "-"}
-                                        </dd>
+                                    {gabonPairIssue ? (
+                                      <div className="mt-1 text-xs font-semibold text-red-700 dark:text-red-300">
+                                        {gabonPairIssue}
                                       </div>
                                     ) : null}
-                                  </dl>
+                                  </div>
+                                  <div className="shrink-0 text-right text-sm font-semibold tabular-nums">
+                                    {formatAmount(record.amount)}
+                                  </div>
                                 </div>
+                                <dl className="mt-3 grid gap-2 text-xs">
+                                  {showAngolaNetSuiteReferences ? (
+                                    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
+                                      <dt className="text-muted-foreground">
+                                        CTN
+                                      </dt>
+                                      <dd className="break-words">
+                                        {record.ctnNumber || "-"}
+                                      </dd>
+                                    </div>
+                                  ) : (
+                                    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
+                                      <dt className="text-muted-foreground">
+                                        {masterReferenceLabel}
+                                      </dt>
+                                      <dd className="break-words">
+                                        {(showCtnReference
+                                          ? record.ctnNumber
+                                          : record.billOfLadingNumber) || "-"}
+                                      </dd>
+                                    </div>
+                                  )}
+                                  <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
+                                    <dt className="text-muted-foreground">
+                                      Status
+                                    </dt>
+                                    <dd className="break-words">
+                                      {record.status || "-"}
+                                    </dd>
+                                  </div>
+                                  {showCountryColumn ? (
+                                    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
+                                      <dt className="text-muted-foreground">
+                                        Country
+                                      </dt>
+                                      <dd className="break-words">
+                                        {record.countryName || "-"}
+                                      </dd>
+                                    </div>
+                                  ) : null}
+                                </dl>
                               </div>
-                            </article>
-                          )
-                        })
-                      ) : (
-                        <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
-                          No NetSuite-only records.
-                        </div>
-                      )}
-                    </div>
-                    <div className="hidden min-h-0 overflow-x-hidden overflow-y-auto pb-3 md:block">
-                      <Table
-                        className="w-full table-fixed text-xs"
-                        containerClassName="overflow-x-hidden"
-                      >
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-14">
-                              <Checkbox
-                                checked={allMasterRowsSelected}
-                                onCheckedChange={(checked) =>
-                                  toggleAllMasterRows(checked === true)
-                                }
-                                aria-label="Select all unmatched NetSuite records"
-                              />
-                            </TableHead>
-                            <TableHead className="w-24">Date</TableHead>
-                            {showAngolaNetSuiteReferences ? (
-                              <>
-                                <TableHead>Bill of Lading</TableHead>
-                                <TableHead>CTN</TableHead>
-                              </>
-                            ) : (
-                              <>
-                                <TableHead>Sales Order</TableHead>
-                                <TableHead>{masterReferenceLabel}</TableHead>
-                              </>
-                            )}
-                            <TableHead className="w-[18%]">Status</TableHead>
-                            <TableHead className="w-24 text-right">
-                              Amount
-                            </TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {masterRows.length ? (
-                            masterDisplayRows.map((displayRow) => {
-                              const record = displayRow.record
-                              const isGroup = displayRow.kind === "group"
-                              const isExpanded =
-                                isGroup &&
-                                expandedMasterGroupIds.has(displayRow.id)
-                              const selectedCount = displayRow.records.filter(
-                                (groupRecord) =>
-                                  selectedMasterRecordIds.has(groupRecord.id)
-                              ).length
-                              const allGroupRecordsSelected =
-                                selectedCount === displayRow.records.length
-                              const gabonPairIssue =
-                                !isGroup &&
-                                gabonPairIssueByRecordId.get(record.id)
+                            </div>
+                          </article>
+                        )
+                      })
+                    ) : (
+                      <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+                        No NetSuite-only records.
+                      </div>
+                    )}
+                  </div>
+                  <div className="hidden min-h-0 overflow-x-hidden overflow-y-auto pb-3 md:block">
+                    <Table
+                      className="w-full table-fixed text-xs"
+                      containerClassName="overflow-x-hidden"
+                    >
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-14">
+                            <Checkbox
+                              checked={allMasterRowsSelected}
+                              onCheckedChange={(checked) =>
+                                toggleAllMasterRows(checked === true)
+                              }
+                              aria-label="Select all unmatched NetSuite records"
+                            />
+                          </TableHead>
+                          <TableHead className="w-24">Date</TableHead>
+                          {showAngolaNetSuiteReferences ? (
+                            <>
+                              <TableHead>Bill of Lading</TableHead>
+                              <TableHead>CTN</TableHead>
+                            </>
+                          ) : (
+                            <>
+                              <TableHead>Sales Order</TableHead>
+                              <TableHead>{masterReferenceLabel}</TableHead>
+                            </>
+                          )}
+                          <TableHead className="w-[18%]">Status</TableHead>
+                          <TableHead className="w-24 text-right">
+                            Amount
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {masterRows.length ? (
+                          masterDisplayRows.map((displayRow) => {
+                            const record = displayRow.record
+                            const isGroup = displayRow.kind === "group"
+                            const isExpanded =
+                              isGroup &&
+                              expandedMasterGroupIds.has(displayRow.id)
+                            const selectedCount = displayRow.records.filter(
+                              (groupRecord) =>
+                                selectedMasterRecordIds.has(groupRecord.id)
+                            ).length
+                            const allGroupRecordsSelected =
+                              selectedCount === displayRow.records.length
+                            const gabonPairIssue =
+                              !isGroup &&
+                              gabonPairIssueByRecordId.get(record.id)
 
-                              return (
-                                <React.Fragment key={displayRow.id}>
-                                  <TableRow
-                                    aria-selected={selectedCount > 0}
-                                    className={
-                                      isGroup
-                                        ? "h-12 cursor-pointer"
-                                        : gabonPairIssue
-                                          ? "h-12 border-l-4 border-l-red-500 bg-red-50 text-red-950 dark:bg-red-950/30 dark:text-red-100"
-                                          : "h-12"
+                            return (
+                              <React.Fragment key={displayRow.id}>
+                                <TableRow
+                                  aria-selected={selectedCount > 0}
+                                  className={
+                                    isGroup
+                                      ? "h-12 cursor-pointer"
+                                      : gabonPairIssue
+                                        ? "h-12 border-l-4 border-l-red-500 bg-red-50 text-red-950 dark:bg-red-950/30 dark:text-red-100"
+                                        : "h-12"
+                                  }
+                                  onClick={() => {
+                                    if (isGroup) {
+                                      toggleMasterGroup(displayRow.id)
                                     }
-                                    onClick={() => {
-                                      if (isGroup) {
-                                        toggleMasterGroup(displayRow.id)
-                                      }
-                                    }}
-                                  >
-                                    <TableCell className="w-14">
-                                      <div className="flex items-center gap-2">
-                                        <Checkbox
-                                          checked={
-                                            isGroup
-                                              ? allGroupRecordsSelected
-                                              : selectedMasterRecordIds.has(
-                                                  record.id
-                                                )
-                                          }
-                                          aria-checked={
-                                            isGroup &&
-                                            selectedCount > 0 &&
-                                            !allGroupRecordsSelected
-                                              ? "mixed"
-                                              : undefined
-                                          }
-                                          onCheckedChange={(checked) => {
-                                            if (isGroup) {
-                                              toggleMasterRecords(
-                                                displayRow.records,
-                                                checked === true
+                                  }}
+                                >
+                                  <TableCell className="w-14">
+                                    <div className="flex items-center gap-2">
+                                      <Checkbox
+                                        checked={
+                                          isGroup
+                                            ? allGroupRecordsSelected
+                                            : selectedMasterRecordIds.has(
+                                                record.id
                                               )
-                                              return
-                                            }
-
-                                            toggleMasterRow(
-                                              record.id,
-                                              checked === true,
-                                              isShiftClickingMasterRowRef.current
+                                        }
+                                        aria-checked={
+                                          isGroup &&
+                                          selectedCount > 0 &&
+                                          !allGroupRecordsSelected
+                                            ? "mixed"
+                                            : undefined
+                                        }
+                                        onCheckedChange={(checked) => {
+                                          if (isGroup) {
+                                            toggleMasterRecords(
+                                              displayRow.records,
+                                              checked === true
                                             )
-                                          }}
-                                          aria-label={
-                                            isGroup
-                                              ? `Select paired NetSuite records for ${record.salesOrderNumber || record.id}`
-                                              : `Select NetSuite record ${record.salesOrderNumber || record.id}`
+                                            return
                                           }
-                                          className="after:-inset-2"
-                                          disabled={isReadOnly}
+
+                                          toggleMasterRow(
+                                            record.id,
+                                            checked === true,
+                                            isShiftClickingMasterRowRef.current
+                                          )
+                                        }}
+                                        aria-label={
+                                          isGroup
+                                            ? `Select paired NetSuite records for ${record.salesOrderNumber || record.id}`
+                                            : `Select NetSuite record ${record.salesOrderNumber || record.id}`
+                                        }
+                                        className="after:-inset-2"
+                                        disabled={isReadOnly}
+                                        onClick={(event) => {
+                                          event.stopPropagation()
+                                          isShiftClickingMasterRowRef.current =
+                                            event.shiftKey
+                                        }}
+                                      />
+                                      {isGroup ? (
+                                        <button
+                                          type="button"
+                                          aria-label={
+                                            isExpanded
+                                              ? "Collapse paired NetSuite records"
+                                              : "Expand paired NetSuite records"
+                                          }
+                                          aria-expanded={isExpanded}
+                                          className="flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
                                           onClick={(event) => {
                                             event.stopPropagation()
-                                            isShiftClickingMasterRowRef.current =
-                                              event.shiftKey
+                                            toggleMasterGroup(displayRow.id)
                                           }}
-                                        />
-                                        {isGroup ? (
-                                          <button
-                                            type="button"
-                                            aria-label={
-                                              isExpanded
-                                                ? "Collapse paired NetSuite records"
-                                                : "Expand paired NetSuite records"
+                                        >
+                                          <ChevronDownIcon
+                                            className={
+                                              "size-4 transition-transform " +
+                                              (isExpanded ? "" : "-rotate-90")
                                             }
-                                            aria-expanded={isExpanded}
-                                            className="flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
+                                          />
+                                        </button>
+                                      ) : null}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="break-words tabular-nums">
+                                    {isExpanded
+                                      ? ""
+                                      : formatTransactionDate(
+                                          record.transactionDate
+                                        )}
+                                  </TableCell>
+                                  {showAngolaNetSuiteReferences ? (
+                                    <>
+                                      <TableCell className="break-words">
+                                        {isExpanded
+                                          ? ""
+                                          : record.billOfLadingNumber || "-"}
+                                      </TableCell>
+                                      <TableCell className="break-words">
+                                        {isExpanded
+                                          ? ""
+                                          : record.ctnNumber || "-"}
+                                      </TableCell>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <TableCell className="font-medium break-words">
+                                        {isExpanded
+                                          ? ""
+                                          : record.salesOrderNumber || "-"}
+                                      </TableCell>
+                                      <TableCell className="break-words">
+                                        {isExpanded
+                                          ? ""
+                                          : (showCtnReference
+                                              ? record.ctnNumber
+                                              : record.billOfLadingNumber) ||
+                                            "-"}
+                                      </TableCell>
+                                    </>
+                                  )}
+                                  <TableCell className="break-words">
+                                    {isExpanded ? "" : record.status || "-"}
+                                  </TableCell>
+                                  <TableCell className="text-right tabular-nums">
+                                    {isExpanded
+                                      ? ""
+                                      : formatAmount(record.amount)}
+                                  </TableCell>
+                                </TableRow>
+                                {isGroup && isExpanded
+                                  ? displayRow.records.map((childRecord) => (
+                                      <TableRow
+                                        key={childRecord.id}
+                                        aria-selected={selectedMasterRecordIds.has(
+                                          childRecord.id
+                                        )}
+                                        className="h-12 border-l-4 border-l-border"
+                                      >
+                                        <TableCell className="w-14 pl-9">
+                                          <Checkbox
+                                            checked={selectedMasterRecordIds.has(
+                                              childRecord.id
+                                            )}
+                                            onCheckedChange={(checked) =>
+                                              toggleMasterRow(
+                                                childRecord.id,
+                                                checked === true,
+                                                isShiftClickingMasterRowRef.current
+                                              )
+                                            }
+                                            aria-label={`Select NetSuite record ${childRecord.salesOrderNumber || childRecord.id}`}
+                                            className="after:-inset-2"
+                                            disabled={isReadOnly}
                                             onClick={(event) => {
                                               event.stopPropagation()
-                                              toggleMasterGroup(displayRow.id)
+                                              isShiftClickingMasterRowRef.current =
+                                                event.shiftKey
                                             }}
-                                          >
-                                            <ChevronDownIcon
-                                              className={
-                                                "size-4 transition-transform " +
-                                                (isExpanded ? "" : "-rotate-90")
-                                              }
-                                            />
-                                          </button>
-                                        ) : null}
-                                      </div>
-                                    </TableCell>
-                                    <TableCell className="break-words tabular-nums">
-                                      {isExpanded
-                                        ? ""
-                                        : formatTransactionDate(
-                                            record.transactionDate
+                                          />
+                                        </TableCell>
+                                        <TableCell className="pl-4 break-words tabular-nums">
+                                          {formatTransactionDate(
+                                            childRecord.transactionDate
                                           )}
-                                    </TableCell>
-                                    {showAngolaNetSuiteReferences ? (
-                                      <>
+                                        </TableCell>
+                                        {showAngolaNetSuiteReferences ? (
+                                          <>
+                                            <TableCell className="break-words">
+                                              {childRecord.billOfLadingNumber ||
+                                                "-"}
+                                            </TableCell>
+                                            <TableCell className="break-words">
+                                              {childRecord.ctnNumber || "-"}
+                                            </TableCell>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <TableCell className="pl-4 font-medium break-words">
+                                              {childRecord.salesOrderNumber ||
+                                                "-"}
+                                            </TableCell>
+                                            <TableCell className="break-words">
+                                              {(showCtnReference
+                                                ? childRecord.ctnNumber
+                                                : childRecord.billOfLadingNumber) ||
+                                                "-"}
+                                            </TableCell>
+                                          </>
+                                        )}
                                         <TableCell className="break-words">
-                                          {isExpanded
-                                            ? ""
-                                            : record.billOfLadingNumber || "-"}
+                                          {childRecord.status || "-"}
                                         </TableCell>
-                                        <TableCell className="break-words">
-                                          {isExpanded
-                                            ? ""
-                                            : record.ctnNumber || "-"}
+                                        <TableCell className="text-right tabular-nums">
+                                          {formatAmount(childRecord.amount)}
                                         </TableCell>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <TableCell className="font-medium break-words">
-                                          {isExpanded
-                                            ? ""
-                                            : record.salesOrderNumber || "-"}
-                                        </TableCell>
-                                        <TableCell className="break-words">
-                                          {isExpanded
-                                            ? ""
-                                            : (showCtnReference
-                                                ? record.ctnNumber
-                                                : record.billOfLadingNumber) ||
-                                              "-"}
-                                        </TableCell>
-                                      </>
-                                    )}
-                                    <TableCell className="break-words">
-                                      {isExpanded ? "" : record.status || "-"}
-                                    </TableCell>
-                                    <TableCell className="text-right tabular-nums">
-                                      {isExpanded
-                                        ? ""
-                                        : formatAmount(record.amount)}
-                                    </TableCell>
-                                  </TableRow>
-                                  {isGroup && isExpanded
-                                    ? displayRow.records.map((childRecord) => (
-                                        <TableRow
-                                          key={childRecord.id}
-                                          aria-selected={selectedMasterRecordIds.has(
-                                            childRecord.id
-                                          )}
-                                          className="h-12 border-l-4 border-l-border"
-                                        >
-                                          <TableCell className="w-14 pl-9">
-                                            <Checkbox
-                                              checked={selectedMasterRecordIds.has(
-                                                childRecord.id
-                                              )}
-                                              onCheckedChange={(checked) =>
-                                                toggleMasterRow(
-                                                  childRecord.id,
-                                                  checked === true,
-                                                  isShiftClickingMasterRowRef.current
-                                                )
-                                              }
-                                              aria-label={`Select NetSuite record ${childRecord.salesOrderNumber || childRecord.id}`}
-                                              className="after:-inset-2"
-                                              disabled={isReadOnly}
-                                              onClick={(event) => {
-                                                event.stopPropagation()
-                                                isShiftClickingMasterRowRef.current =
-                                                  event.shiftKey
-                                              }}
-                                            />
-                                          </TableCell>
-                                          <TableCell className="pl-4 break-words tabular-nums">
-                                            {formatTransactionDate(
-                                              childRecord.transactionDate
-                                            )}
-                                          </TableCell>
-                                          {showAngolaNetSuiteReferences ? (
-                                            <>
-                                              <TableCell className="break-words">
-                                                {childRecord.billOfLadingNumber ||
-                                                  "-"}
-                                              </TableCell>
-                                              <TableCell className="break-words">
-                                                {childRecord.ctnNumber || "-"}
-                                              </TableCell>
-                                            </>
-                                          ) : (
-                                            <>
-                                              <TableCell className="pl-4 font-medium break-words">
-                                                {childRecord.salesOrderNumber ||
-                                                  "-"}
-                                              </TableCell>
-                                              <TableCell className="break-words">
-                                                {(showCtnReference
-                                                  ? childRecord.ctnNumber
-                                                  : childRecord.billOfLadingNumber) ||
-                                                  "-"}
-                                              </TableCell>
-                                            </>
-                                          )}
-                                          <TableCell className="break-words">
-                                            {childRecord.status || "-"}
-                                          </TableCell>
-                                          <TableCell className="text-right tabular-nums">
-                                            {formatAmount(childRecord.amount)}
-                                          </TableCell>
-                                        </TableRow>
-                                      ))
-                                    : null}
-                                </React.Fragment>
-                              )
-                            })
-                          ) : (
-                            <TableRow>
-                              <TableCell
-                                colSpan={6}
-                                className="h-24 text-center text-sm text-muted-foreground"
-                              >
-                                No NetSuite-only records.
-                              </TableCell>
-                            </TableRow>
-                          )}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </>
-                ) : (
-                  <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
-                    Upload or replace the NetSuite report from the Upload menu.
+                                      </TableRow>
+                                    ))
+                                  : null}
+                              </React.Fragment>
+                            )
+                          })
+                        ) : (
+                          <TableRow>
+                            <TableCell
+                              colSpan={6}
+                              className="h-24 text-center text-sm text-muted-foreground"
+                            >
+                              No NetSuite-only records.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
                   </div>
-                )}
-                {rollInvoiceMessage ? (
-                  <p className="px-1 pb-2 text-xs text-muted-foreground">
-                    {rollInvoiceMessage}
-                  </p>
-                ) : null}
-                <div className="-mx-3 -mb-3 flex h-12 items-center justify-between border-t bg-muted/50 px-4 text-xs font-medium">
-                  <div className="flex items-center gap-2">
-                    <span>Matched</span>
-                    <span className="rounded-full border bg-background px-2 py-0.5 tabular-nums">
-                      {matchedMasterCount} / {masterRecordCount}
-                    </span>
-                  </div>
-                  <span className="text-muted-foreground tabular-nums">
-                    Open {formatAmount(masterTotal)}
+                </>
+              ) : (
+                <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
+                  Upload or replace the NetSuite report from the Upload menu.
+                </div>
+              )}
+              {rollInvoiceMessage ? (
+                <p className="px-1 pb-2 text-xs text-muted-foreground">
+                  {rollInvoiceMessage}
+                </p>
+              ) : null}
+              <div className="-mx-3 -mb-3 flex h-12 items-center justify-between border-t bg-muted/50 px-4 text-xs font-medium">
+                <div className="flex items-center gap-2">
+                  <span>Matched</span>
+                  <span className="rounded-full border bg-background px-2 py-0.5 tabular-nums">
+                    {matchedMasterCount} / {masterRecordCount}
                   </span>
                 </div>
-              </section>
-            </div>
-          </>
+                <span className="text-muted-foreground tabular-nums">
+                  Open {formatAmount(masterTotal)}
+                </span>
+              </div>
+            </section>
+          </div>
         ) : null}
         <section
           className={
             "grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3 overflow-hidden rounded-lg border bg-background p-3 " +
-            (showOnlyMatched
-              ? "lg:min-h-[calc(100svh-var(--header-height)-5.5rem)]"
-              : "")
+            (showOnlyMatched ? "lg:min-h-96" : "")
           }
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -9729,345 +9715,324 @@ export function MonthEndCountryReconciliationView({
   ) : undefined
 
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-          "--mobile-page-bottom-padding":
-            "calc(10rem + env(safe-area-inset-bottom, 0px))",
-        } as React.CSSProperties
-      }
-    >
-      <AppSidebar variant="inset" />
-      <SidebarInset className="md:overflow-y-auto">
-        <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
-          <SiteHeader
-            title={title}
-            leadingContent={countryHeaderLeading}
-            mobileLeadingContent={countryHeaderMobileLeading}
-            actions={countryHeaderActions}
-            bottomContent={countryProcessMenu}
-          />
-          <HiddenFileInput
-            ref={masterInputRef}
-            accept=".csv,text/csv"
-            onFiles={(files) => {
-              const file = files[0]
+    <main className="app-page bg-background">
+      <SiteHeader
+        title={title}
+        leadingContent={countryHeaderLeading}
+        mobileLeadingContent={countryHeaderMobileLeading}
+        actions={countryHeaderActions}
+        bottomContent={countryProcessMenu}
+      />
+      <HiddenFileInput
+        ref={masterInputRef}
+        accept=".csv,text/csv"
+        onFiles={(files) => {
+          const file = files[0]
 
-              if (file) {
-                uploadMasterFile(file)
-              }
-            }}
-          />
-          <HiddenFileInput
-            ref={countryReportInputRef}
-            accept=".csv,.pdf,.xls,.xlsx,text/csv,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            multiple
-            onFiles={uploadCountryReports}
-          />
-          <HiddenFileInput
-            ref={invoiceInputRef}
-            accept=".pdf,.csv,.xls,.xlsx,application/pdf,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          if (file) {
+            uploadMasterFile(file)
+          }
+        }}
+      />
+      <HiddenFileInput
+        ref={countryReportInputRef}
+        accept=".csv,.pdf,.xls,.xlsx,text/csv,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        multiple
+        onFiles={uploadCountryReports}
+      />
+      <HiddenFileInput
+        ref={invoiceInputRef}
+        accept=".pdf,.csv,.xls,.xlsx,application/pdf,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        onFiles={uploadInvoiceFiles}
+      />
+      {countryMobileProcessMenu ? (
+        <div className="overflow-x-auto px-4 pt-4 md:hidden">
+          {countryMobileProcessMenu}
+        </div>
+      ) : null}
+      {uploadError || loadError ? (
+        <div className="px-4 pt-4 lg:px-6">
+          {uploadError ? (
+            <p className="text-sm text-destructive">{uploadError}</p>
+          ) : null}
+          {loadError ? (
+            <p className="text-sm text-destructive">{loadError}</p>
+          ) : null}
+        </div>
+      ) : null}
+      {!hasLoaded ? (
+        resolvedView === "dashboard" ? (
+          <CountryDashboardSkeleton />
+        ) : resolvedView === "journal" ? (
+          <div className="flex flex-1 px-4 py-4 lg:px-6">
+            <CountryJournalBodySkeleton />
+          </div>
+        ) : (
+          <CountryReconciliationSkeleton />
+        )
+      ) : shouldShowFrabemarPackage ? (
+        <FrabemarInvoicePackageStep
+          packageDocument={frabemarPackageDocument}
+          isReadOnly={isMonthClosed}
+          isSaving={isSavingFrabemarInvoices}
+          sharedExchangeRateDisplay={frabemarPackageExchangeRateDisplay}
+          onSave={saveFrabemarInvoicePackage}
+          onSaveSharedExchangeRate={saveFrabemarExchangeRateForPackage}
+          onDownloadAllCommissionInvoices={
+            downloadAllFrabemarCommissionInvoices
+          }
+          onMakeJournalEntries={makeFrabemarPackageJournalEntries}
+        />
+      ) : resolvedView === "dashboard" ? (
+        <CountryReconciliationDashboard
+          countryName={countryDisplayName || country?.name || "Unknown country"}
+          masterRecords={records}
+          countryRecords={countryReportRecords}
+          reconciliation={displayedReconciliation}
+          rolledInternalIds={rolledInternalIds}
+          leftInvoiceRecordIds={leftInvoiceRecordIds}
+          resolvedCountryReportRows={resolvedCountryReportRows}
+          activeSection={activeDashboardSection}
+          onActiveSectionChange={saveCountryDashboardSection}
+        />
+      ) : resolvedView === "journal" ? (
+        country?.invoiceRequired === true && !isInvoiceComplete ? (
+          <InvoiceUploadStep
+            countryName={
+              countryDisplayName || country?.name || "Unknown country"
+            }
+            invoiceDocument={activeInvoiceDocument}
+            isComplete={isInvoiceComplete}
+            isReadOnly={isMonthClosed}
+            isUploading={isUploadingInvoice}
+            congoInvoiceValues={
+              activeCountryId === "republic-of-congo"
+                ? congoInvoiceJournalValues
+                : undefined
+            }
+            visaUsedValue={
+              activeCountryId === "republic-of-congo"
+                ? congoVisaUsedText
+                : undefined
+            }
+            onVisaUsedChange={
+              activeCountryId === "republic-of-congo"
+                ? setCongoVisaUsedText
+                : undefined
+            }
+            onSaveVisaUsed={
+              activeCountryId === "republic-of-congo"
+                ? saveCongoVisaUsed
+                : undefined
+            }
+            onChooseFile={openInvoiceFilePicker}
             onFiles={uploadInvoiceFiles}
+            dashboardHref={countryDashboardHref}
           />
-          {countryMobileProcessMenu ? (
-            <div className="overflow-x-auto px-4 pt-4 md:hidden">
-              {countryMobileProcessMenu}
-            </div>
+        ) : (
+          <JournalEntryPreview
+            countryName={
+              countryDisplayName || country?.name || "Unknown country"
+            }
+            entries={displayedJournalEntries}
+            additionalRows={displayedAdditionalJournalRows}
+            simpleRows={displayedSimpleJournalRows}
+            journalRows={displayedJournalRows}
+            sourceDocumentCount={displayedSourceDocumentCount}
+            isReadOnly={isMonthClosed}
+            pdfDownloadAction={
+              isFrabemarChildCountry
+                ? {
+                    label: "Download PDF",
+                    disabled:
+                      !frabemarCountryConfig?.hasCommission ||
+                      !frabemarCountryJournalValues?.commission ||
+                      !frabemarCountryJournalValues.invoiceNumber,
+                    onClick: () =>
+                      activeCountryId
+                        ? downloadFrabemarCommissionInvoice(activeCountryId)
+                        : Promise.resolve(),
+                  }
+                : undefined
+            }
+            exchangeRateEditor={
+              isFrabemarChildCountry
+                ? {
+                    value: frabemarExchangeRate,
+                    draft: frabemarExchangeRateText,
+                    onDraftChange: (value) => {
+                      setIsFrabemarExchangeRateNeedsAttention(false)
+                      setFrabemarExchangeRateText(value)
+                    },
+                    onSave: saveFrabemarExchangeRate,
+                  }
+                : undefined
+            }
+            exchangeRateNeedsAttention={isFrabemarExchangeRateNeedsAttention}
+            onExchangeRateAttentionHandled={() =>
+              setIsFrabemarExchangeRateNeedsAttention(false)
+            }
+            onMakeJournalEntry={makeJournalEntry}
+          />
+        )
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
+          {isPasteReportOpen && !isMonthClosed ? (
+            <Card className="max-h-[min(70vh,42rem)] overflow-hidden rounded-lg py-0 shadow-sm">
+              <CardContent className="flex max-h-[min(70vh,42rem)] min-h-0 flex-col gap-3 p-3">
+                <Textarea
+                  ref={pasteReportTextareaRef}
+                  value={pastedReportText}
+                  onChange={(event) => {
+                    setPastedReportText(event.target.value)
+                    if (shouldScrollPastedReportRef.current) {
+                      shouldScrollPastedReportRef.current = false
+                      keepPasteReportControlsReachable()
+                    }
+                  }}
+                  onPaste={() => {
+                    shouldScrollPastedReportRef.current = true
+                  }}
+                  placeholder="Paste report data"
+                  className="[field-sizing:fixed] min-h-48 flex-1 resize-none overflow-auto rounded-lg font-mono text-sm"
+                />
+                <div
+                  ref={pasteReportActionsRef}
+                  className="-mx-3 -mb-3 flex shrink-0 justify-end gap-2 border-t bg-card px-3 py-3"
+                >
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setIsPasteReportOpen(false)
+                      setPastedReportText("")
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={uploadPastedCountryReport}
+                    disabled={
+                      !pastedReportText.trim() || isUploadingCountryReport
+                    }
+                  >
+                    <ClipboardPasteIcon />
+                    Import Paste
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           ) : null}
-          {uploadError || loadError ? (
-            <div className="px-4 pt-4 lg:px-6">
-              {uploadError ? (
-                <p className="text-sm text-destructive">{uploadError}</p>
-              ) : null}
-              {loadError ? (
-                <p className="text-sm text-destructive">{loadError}</p>
-              ) : null}
-            </div>
+
+          {isCameroonDmiPasteOpen && !isMonthClosed ? (
+            <Card className="max-h-[min(70vh,42rem)] overflow-hidden rounded-lg py-0 shadow-sm">
+              <CardContent className="flex max-h-[min(70vh,42rem)] min-h-0 flex-col gap-3 p-3">
+                <Textarea
+                  value={cameroonDmiPasteText}
+                  onChange={(event) =>
+                    setCameroonDmiPasteText(event.target.value)
+                  }
+                  placeholder="Paste Cameroon DMI report data"
+                  className="[field-sizing:fixed] min-h-48 flex-1 resize-none overflow-auto rounded-lg font-mono text-sm"
+                />
+                <div className="-mx-3 -mb-3 flex shrink-0 justify-end gap-2 border-t bg-card px-3 py-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setIsCameroonDmiPasteOpen(false)
+                      setCameroonDmiPasteText("")
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={saveCameroonDmiPaste}
+                    disabled={
+                      !cameroonDmiPasteText.trim() || isSavingCameroonDmiPaste
+                    }
+                  >
+                    <ClipboardPasteIcon />
+                    Apply DMI
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           ) : null}
+
           {!hasLoaded ? (
-            resolvedView === "dashboard" ? (
-              <CountryDashboardSkeleton />
-            ) : resolvedView === "journal" ? (
-              <div className="flex flex-1 px-4 py-4 lg:px-6">
-                <CountryJournalBodySkeleton />
-              </div>
-            ) : (
-              <CountryReconciliationSkeleton />
-            )
-          ) : shouldShowFrabemarPackage ? (
-            <FrabemarInvoicePackageStep
-              packageDocument={frabemarPackageDocument}
-              isReadOnly={isMonthClosed}
-              isSaving={isSavingFrabemarInvoices}
-              sharedExchangeRateDisplay={frabemarPackageExchangeRateDisplay}
-              onSave={saveFrabemarInvoicePackage}
-              onSaveSharedExchangeRate={saveFrabemarExchangeRateForPackage}
-              onDownloadAllCommissionInvoices={
-                downloadAllFrabemarCommissionInvoices
-              }
-              onMakeJournalEntries={makeFrabemarPackageJournalEntries}
+            <CountryReconciliationSkeleton />
+          ) : requiresCountryReport && !hasCountryReport && !isMonthClosed ? (
+            <CountryReportUploadStep
+              countryReportLabel={countryReportLabel}
+              masterCount={records.length}
+              isUploading={isUploadingCountryReport}
+              canPasteReport={canPasteReport}
+              isAntaserPackage={activeCountryId?.startsWith("antaser")}
+              onChooseFile={openCountryReportFilePicker}
+              onPasteReport={() => {
+                if (!isMonthClosed) {
+                  setIsPasteReportOpen(true)
+                }
+              }}
+              onFiles={uploadCountryReports}
             />
-          ) : resolvedView === "dashboard" ? (
-            <CountryReconciliationDashboard
-              countryName={
-                countryDisplayName || country?.name || "Unknown country"
-              }
-              masterRecords={records}
+          ) : requiresCountryReport && !hasCountryReport ? (
+            <div className="rounded-lg border bg-background p-4 text-sm text-muted-foreground">
+              Reopen this month to upload a country report.
+            </div>
+          ) : hasCountryReport || hasMasterRecords ? (
+            <ReconciliationWorkbench
               countryRecords={countryReportRecords}
-              reconciliation={displayedReconciliation}
+              masterRecords={sortedRecords}
+              matchedRecords={displayedReconciliation.matched}
+              missingCountryRecordIds={missingCountryRecordIds}
+              missingMasterRecordIds={missingMasterRecordIds}
               rolledInternalIds={rolledInternalIds}
               leftInvoiceRecordIds={leftInvoiceRecordIds}
               resolvedCountryReportRows={resolvedCountryReportRows}
-              activeSection={activeDashboardSection}
-              onActiveSectionChange={saveCountryDashboardSection}
+              showCountryColumn={showCountryColumn}
+              onDropMasterFile={uploadMasterFile}
+              onDropCountryFiles={uploadCountryReports}
+              canEditCountryData={requiresCountryReport}
+              isReadOnly={isReconciliationComplete || isMonthClosed}
+              canUnreconcile={!isReconciliationComplete && !isMonthClosed}
+              showOnlyMatched={isReconciliationComplete}
+              countryId={activeCountryId}
+              countryName={
+                countryDisplayName || country?.name || "Unknown country"
+              }
+              countryRecordCount={countryReportRecords.length}
+              masterRecordCount={
+                records.length -
+                displayedReconciliation.linkedMasterRecordIds.size
+              }
+              matchedCountryCount={reconciliationCounts.country}
+              matchedMasterCount={reconciliationCounts.master}
+              onRollInvoices={rollInvoices}
+              onLeaveInvoices={leaveInvoices}
+              onReconcileSelectedPair={reconcileSelectedPair}
+              onReconcileCountryRows={reconcileCountryRows}
+              onUnreconcileMatchedRows={unreconcileMatchedRows}
+              onPasteDmiReport={
+                activeCountryId === "cameroon" &&
+                hasCountryReport &&
+                !isMonthClosed
+                  ? () => setIsCameroonDmiPasteOpen(true)
+                  : undefined
+              }
+              onProceed={proceedFromReconciliation}
+              onMoveInvoicesToOot={
+                activeCountryId === "angola"
+                  ? moveInvoicesToAngolaOot
+                  : undefined
+              }
             />
-          ) : resolvedView === "journal" ? (
-            country?.invoiceRequired === true && !isInvoiceComplete ? (
-              <InvoiceUploadStep
-                countryName={
-                  countryDisplayName || country?.name || "Unknown country"
-                }
-                invoiceDocument={activeInvoiceDocument}
-                isComplete={isInvoiceComplete}
-                isReadOnly={isMonthClosed}
-                isUploading={isUploadingInvoice}
-                congoInvoiceValues={
-                  activeCountryId === "republic-of-congo"
-                    ? congoInvoiceJournalValues
-                    : undefined
-                }
-                visaUsedValue={
-                  activeCountryId === "republic-of-congo"
-                    ? congoVisaUsedText
-                    : undefined
-                }
-                onVisaUsedChange={
-                  activeCountryId === "republic-of-congo"
-                    ? setCongoVisaUsedText
-                    : undefined
-                }
-                onSaveVisaUsed={
-                  activeCountryId === "republic-of-congo"
-                    ? saveCongoVisaUsed
-                    : undefined
-                }
-                onChooseFile={openInvoiceFilePicker}
-                onFiles={uploadInvoiceFiles}
-                dashboardHref={countryDashboardHref}
-              />
-            ) : (
-              <JournalEntryPreview
-                countryName={
-                  countryDisplayName || country?.name || "Unknown country"
-                }
-                entries={displayedJournalEntries}
-                additionalRows={displayedAdditionalJournalRows}
-                simpleRows={displayedSimpleJournalRows}
-                journalRows={displayedJournalRows}
-                sourceDocumentCount={displayedSourceDocumentCount}
-                isReadOnly={isMonthClosed}
-                pdfDownloadAction={
-                  isFrabemarChildCountry
-                    ? {
-                        label: "Download PDF",
-                        disabled:
-                          !frabemarCountryConfig?.hasCommission ||
-                          !frabemarCountryJournalValues?.commission ||
-                          !frabemarCountryJournalValues.invoiceNumber,
-                        onClick: () =>
-                          activeCountryId
-                            ? downloadFrabemarCommissionInvoice(activeCountryId)
-                            : Promise.resolve(),
-                      }
-                    : undefined
-                }
-                exchangeRateEditor={
-                  isFrabemarChildCountry
-                    ? {
-                        value: frabemarExchangeRate,
-                        draft: frabemarExchangeRateText,
-                        onDraftChange: (value) => {
-                          setIsFrabemarExchangeRateNeedsAttention(false)
-                          setFrabemarExchangeRateText(value)
-                        },
-                        onSave: saveFrabemarExchangeRate,
-                      }
-                    : undefined
-                }
-                exchangeRateNeedsAttention={
-                  isFrabemarExchangeRateNeedsAttention
-                }
-                onExchangeRateAttentionHandled={() =>
-                  setIsFrabemarExchangeRateNeedsAttention(false)
-                }
-                onMakeJournalEntry={makeJournalEntry}
-              />
-            )
           ) : (
-            <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
-              {isPasteReportOpen && !isMonthClosed ? (
-                <Card className="max-h-[min(70vh,42rem)] overflow-hidden rounded-lg py-0 shadow-sm">
-                  <CardContent className="flex max-h-[min(70vh,42rem)] min-h-0 flex-col gap-3 p-3">
-                    <Textarea
-                      ref={pasteReportTextareaRef}
-                      value={pastedReportText}
-                      onChange={(event) => {
-                        setPastedReportText(event.target.value)
-                        if (shouldScrollPastedReportRef.current) {
-                          shouldScrollPastedReportRef.current = false
-                          keepPasteReportControlsReachable()
-                        }
-                      }}
-                      onPaste={() => {
-                        shouldScrollPastedReportRef.current = true
-                      }}
-                      placeholder="Paste report data"
-                      className="[field-sizing:fixed] min-h-48 flex-1 resize-none overflow-auto rounded-lg font-mono text-sm"
-                    />
-                    <div
-                      ref={pasteReportActionsRef}
-                      className="-mx-3 -mb-3 flex shrink-0 justify-end gap-2 border-t bg-card px-3 py-3"
-                    >
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setIsPasteReportOpen(false)
-                          setPastedReportText("")
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        onClick={uploadPastedCountryReport}
-                        disabled={
-                          !pastedReportText.trim() || isUploadingCountryReport
-                        }
-                      >
-                        <ClipboardPasteIcon />
-                        Import Paste
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : null}
-
-              {isCameroonDmiPasteOpen && !isMonthClosed ? (
-                <Card className="max-h-[min(70vh,42rem)] overflow-hidden rounded-lg py-0 shadow-sm">
-                  <CardContent className="flex max-h-[min(70vh,42rem)] min-h-0 flex-col gap-3 p-3">
-                    <Textarea
-                      value={cameroonDmiPasteText}
-                      onChange={(event) =>
-                        setCameroonDmiPasteText(event.target.value)
-                      }
-                      placeholder="Paste Cameroon DMI report data"
-                      className="[field-sizing:fixed] min-h-48 flex-1 resize-none overflow-auto rounded-lg font-mono text-sm"
-                    />
-                    <div className="-mx-3 -mb-3 flex shrink-0 justify-end gap-2 border-t bg-card px-3 py-3">
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setIsCameroonDmiPasteOpen(false)
-                          setCameroonDmiPasteText("")
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        onClick={saveCameroonDmiPaste}
-                        disabled={
-                          !cameroonDmiPasteText.trim() ||
-                          isSavingCameroonDmiPaste
-                        }
-                      >
-                        <ClipboardPasteIcon />
-                        Apply DMI
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : null}
-
-              {!hasLoaded ? (
-                <CountryReconciliationSkeleton />
-              ) : requiresCountryReport &&
-                !hasCountryReport &&
-                !isMonthClosed ? (
-                <CountryReportUploadStep
-                  countryReportLabel={countryReportLabel}
-                  masterCount={records.length}
-                  isUploading={isUploadingCountryReport}
-                  canPasteReport={canPasteReport}
-                  isAntaserPackage={activeCountryId?.startsWith("antaser")}
-                  onChooseFile={openCountryReportFilePicker}
-                  onPasteReport={() => {
-                    if (!isMonthClosed) {
-                      setIsPasteReportOpen(true)
-                    }
-                  }}
-                  onFiles={uploadCountryReports}
-                />
-              ) : requiresCountryReport && !hasCountryReport ? (
-                <div className="rounded-lg border bg-background p-4 text-sm text-muted-foreground">
-                  Reopen this month to upload a country report.
-                </div>
-              ) : hasCountryReport || hasMasterRecords ? (
-                <ReconciliationWorkbench
-                  countryRecords={countryReportRecords}
-                  masterRecords={sortedRecords}
-                  matchedRecords={displayedReconciliation.matched}
-                  missingCountryRecordIds={missingCountryRecordIds}
-                  missingMasterRecordIds={missingMasterRecordIds}
-                  rolledInternalIds={rolledInternalIds}
-                  leftInvoiceRecordIds={leftInvoiceRecordIds}
-                  resolvedCountryReportRows={resolvedCountryReportRows}
-                  showCountryColumn={showCountryColumn}
-                  onDropMasterFile={uploadMasterFile}
-                  onDropCountryFiles={uploadCountryReports}
-                  canEditCountryData={requiresCountryReport}
-                  isReadOnly={isReconciliationComplete || isMonthClosed}
-                  canUnreconcile={!isReconciliationComplete && !isMonthClosed}
-                  showOnlyMatched={isReconciliationComplete}
-                  countryId={activeCountryId}
-                  countryName={
-                    countryDisplayName || country?.name || "Unknown country"
-                  }
-                  countryRecordCount={countryReportRecords.length}
-                  masterRecordCount={
-                    records.length -
-                    displayedReconciliation.linkedMasterRecordIds.size
-                  }
-                  matchedCountryCount={reconciliationCounts.country}
-                  matchedMasterCount={reconciliationCounts.master}
-                  onRollInvoices={rollInvoices}
-                  onLeaveInvoices={leaveInvoices}
-                  onReconcileSelectedPair={reconcileSelectedPair}
-                  onReconcileCountryRows={reconcileCountryRows}
-                  onUnreconcileMatchedRows={unreconcileMatchedRows}
-                  onPasteDmiReport={
-                    activeCountryId === "cameroon" &&
-                    hasCountryReport &&
-                    !isMonthClosed
-                      ? () => setIsCameroonDmiPasteOpen(true)
-                      : undefined
-                  }
-                  onProceed={proceedFromReconciliation}
-                  onMoveInvoicesToOot={
-                    activeCountryId === "angola"
-                      ? moveInvoicesToAngolaOot
-                      : undefined
-                  }
-                />
-              ) : (
-                <div className="rounded-lg border bg-background p-4 text-sm text-muted-foreground">
-                  Upload both reports to build this reconciliation view.
-                </div>
-              )}
+            <div className="rounded-lg border bg-background p-4 text-sm text-muted-foreground">
+              Upload both reports to build this reconciliation view.
             </div>
           )}
-        </main>
-      </SidebarInset>
-    </SidebarProvider>
+        </div>
+      )}
+    </main>
   )
 }

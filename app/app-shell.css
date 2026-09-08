@@ -1,0 +1,189 @@
+:root {
+  --app-viewport-height: 100vh;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --app-header-height: 2.5rem;
+  --header-height: 3rem;
+  --app-bottom-nav-height: 4.125rem;
+  --app-nav-gap: 1rem;
+  --app-content-gap: 1rem;
+  --content-top-offset: calc(var(--safe-top) + var(--app-header-height));
+  --content-bottom-offset: calc(
+    var(--safe-bottom) + var(--app-bottom-nav-height) + var(--app-nav-gap) +
+      var(--app-content-gap)
+  );
+  --app-z-header: 40;
+  --app-z-nav: 40;
+  --app-z-overlay: 50;
+}
+@supports (height: 100dvh) {
+  :root {
+    --app-viewport-height: 100dvh;
+  }
+}
+.app-shell {
+  position: fixed;
+  inset: 0;
+  top: var(--app-keyboard-top, 0px);
+  width: 100%;
+  height: var(--app-keyboard-height, var(--app-viewport-height));
+  min-height: 0;
+  overflow: hidden; /* Scroll is deliberately delegated to .app-scroll. */
+  background: var(--background);
+  --sidebar-width: 18rem;
+}
+.app-inset {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.app-header {
+  position: relative;
+  flex: none;
+  z-index: var(--app-z-header);
+  padding-top: var(--safe-top);
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+  background: var(--background);
+}
+.app-header-content {
+  height: var(--app-header-height);
+}
+.app-header-slot:not(:empty) + .app-header-fallback {
+  display: none;
+}
+.app-scroll {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scroll-behavior: auto;
+  scroll-padding-block: var(--app-content-gap) var(--content-bottom-offset);
+  padding-inline: var(--safe-left) var(--safe-right);
+  -webkit-overflow-scrolling: touch;
+}
+.app-route {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 100%;
+  padding-bottom: var(--content-bottom-offset);
+  overflow-wrap: anywhere;
+}
+.app-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.app-mobile-nav {
+  position: absolute;
+  inset-inline: 0;
+  bottom: calc(var(--safe-bottom) + var(--app-nav-gap));
+  height: var(--app-bottom-nav-height);
+  padding-left: max(1.25rem, var(--safe-left));
+  padding-right: max(1.25rem, var(--safe-right));
+  z-index: var(--app-z-nav);
+}
+.app-mobile-menu {
+  bottom: calc(
+    var(--app-viewport-height) - var(--app-keyboard-top, 0px) -
+      var(--app-keyboard-height, var(--app-viewport-height))
+  );
+  max-height: calc(
+    var(--app-keyboard-height, var(--app-viewport-height)) - var(--safe-top) -
+      1rem
+  );
+  padding-bottom: calc(var(--safe-bottom) + 1rem);
+  padding-inline: var(--safe-left) var(--safe-right);
+}
+.app-mobile-menu [data-slot="sheet-header"] {
+  flex-shrink: 0;
+}
+.app-overlay-scroll {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.app-folder-prompt[data-slot="dialog-content"] {
+  /* Dialog's entry keyframes use its centered translation variables. A full
+     viewport prompt must opt out of both the centering and zoom animation. */
+  --tw-translate-x: 0px;
+  --tw-translate-y: 0px;
+  animation: none;
+  inset: var(--app-keyboard-top, 0px) 0 auto;
+  transform: none;
+  translate: none;
+  width: 100%;
+  max-width: none;
+  height: var(--app-keyboard-height, var(--app-viewport-height));
+  max-height: none;
+  padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+}
+[data-slot="dialog-content"] {
+  max-height: calc(
+    var(--app-keyboard-height, var(--app-viewport-height)) - var(--safe-top) -
+      var(--safe-bottom) - 2rem
+  );
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+:root[data-app-keyboard] [data-slot="dialog-content"]:not(.app-folder-prompt) {
+  top: calc(
+    var(--app-keyboard-top) +
+      (var(--app-keyboard-height) + var(--safe-top) - var(--safe-bottom)) / 2
+  );
+  translate: -50% -50%;
+}
+/* Panels fill the available content region; their editor/table owns local overflow. */
+.app-route:has(> [data-app-panel="true"]) {
+  height: 100%;
+  min-height: 0;
+}
+.app-page[data-app-panel="true"] {
+  min-height: 0;
+  overflow: hidden;
+}
+@media (max-width: 767px) {
+  .app-shell [data-slot="sidebar-container"] {
+    display: none;
+  }
+  .app-header::after {
+    content: "";
+    position: absolute;
+    inset: 100% 0 auto;
+    height: 1rem;
+    pointer-events: none;
+    background: linear-gradient(var(--background), transparent);
+  }
+  /* Prevent iOS input zoom without changing every descendant's text metrics. */
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}
+@media (min-width: 768px) {
+  :root {
+    --app-header-height: 3rem;
+    --content-bottom-offset: 1rem;
+  }
+  .app-header-content {
+    height: auto;
+    min-height: var(--app-header-height);
+  }
+  .app-header {
+    padding-top: 0;
+  }
+  .app-mobile-nav {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-mobile-nav * {
+    transition: none !important;
+  }
+}

@@ -18,7 +18,6 @@ import {
   markAuthSessionStarted,
 } from "@/lib/auth-session-timeout"
 import { createClient } from "@/lib/client"
-import { setMobileDashboardActiveNavState } from "@/lib/mobile-nav-active-state"
 import { cn } from "@/lib/utils"
 import { readBrowserStorage, writeBrowserStorage } from "@/lib/browser-storage"
 
@@ -80,7 +79,6 @@ export function LoginForm({
     markAuthSessionStarted()
 
     if (isPhoneAuthSession()) {
-      setMobileDashboardActiveNavState()
       window.location.assign("/dashboard")
       return
     }

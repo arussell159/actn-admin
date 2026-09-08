@@ -38,10 +38,10 @@ export function CountryTableFilters({
   onSelectedFilterChange: (value: string) => void
 }) {
   return (
-    <section className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+    <section className="flex min-w-0 flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-between">
       <div
         className={cn(
-          "flex flex-col gap-2 md:flex-row md:items-center",
+          "flex min-w-0 flex-col gap-2 md:flex-row md:flex-wrap md:items-center",
           mobileFiltersFullWidth && "w-full md:w-auto"
         )}
       >
@@ -67,7 +67,7 @@ export function CountryTableFilters({
         </div>
         <div
           className={cn(
-            "inline-flex h-9 items-center rounded-lg bg-muted p-1",
+            "inline-flex min-h-9 max-w-full flex-wrap items-center rounded-lg bg-muted p-1",
             mobileFiltersFullWidth
               ? "w-full justify-center md:w-fit md:justify-start"
               : "w-fit"

@@ -50,7 +50,9 @@ export default function GlobalError({
                 disabled={isRepairing}
                 onClick={() => {
                   setIsRepairing(true)
-                  void repairApplication()
+                  void repairApplication().then((started) => {
+                    if (!started) setIsRepairing(false)
+                  })
                 }}
               >
                 {isRepairing ? "Repairing…" : "Repair app"}

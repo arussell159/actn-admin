@@ -1,148 +1,66 @@
 "use client"
 
-import * as React from "react"
-
-import { appCachePrefix, serviceWorkerCacheName } from "@/lib/pwa-recovery"
-
-const controllerReloadKey = "actn-admin:last-controller-reload"
-const controllerReloadCooldownMs = 60_000
-
-function canReloadForControllerChange() {
-  try {
-    const lastReload = Number(
-      window.sessionStorage.getItem(controllerReloadKey)
-    )
-
-    if (
-      Number.isFinite(lastReload) &&
-      Date.now() - lastReload < controllerReloadCooldownMs
-    ) {
-      return false
-    }
-
-    window.sessionStorage.setItem(controllerReloadKey, String(Date.now()))
-  } catch {
-    // The in-memory flag in the effect still prevents repeated reloads.
-  }
-
-  return true
-}
+import { useEffect } from "react"
 
 export function PwaRegister() {
-  React.useEffect(() => {
-    if (!("serviceWorker" in navigator)) {
-      return
-    }
-
-    if (process.env.NODE_ENV !== "production") {
-      void navigator.serviceWorker
-        .getRegistrations()
-        .then((registrations) =>
-          Promise.all(
-            registrations.map((registration) => registration.unregister())
-          )
-        )
-        .catch(() => undefined)
-      void window.caches
-        ?.keys()
-        .then((keys) =>
-          Promise.all(
-            keys
-              .filter((key) => key.startsWith(appCachePrefix))
-              .map((key) => window.caches.delete(key))
-          )
-        )
-        .catch(() => undefined)
-      return
-    }
-
-    let isMounted = true
-    let isReloading = false
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return
+    const scriptURL = new URL("/sw.js", window.location.origin).href
+    let mounted = true
     let registration: ServiceWorkerRegistration | undefined
     let lastUpdateCheck = 0
-    const hadControllerAtStartup = Boolean(navigator.serviceWorker.controller)
-
-    const updateRegistration = () => {
+    const update = () => {
       if (
         !registration ||
         !navigator.onLine ||
         Date.now() - lastUpdateCheck < 60_000
-      ) {
+      )
         return
-      }
-
       lastUpdateCheck = Date.now()
       void registration.update().catch(() => undefined)
     }
-
-    const handleControllerChange = () => {
-      if (
-        !hadControllerAtStartup ||
-        isReloading ||
-        !canReloadForControllerChange()
-      ) {
-        return
-      }
-
-      isReloading = true
-      window.location.reload()
+    const resume = () => {
+      if (document.visibilityState === "visible") update()
     }
-
-    const handleResume = () => {
-      if (document.visibilityState === "visible") {
-        updateRegistration()
-      }
-    }
-
-    navigator.serviceWorker.addEventListener(
-      "controllerchange",
-      handleControllerChange
-    )
-    window.addEventListener("online", updateRegistration)
-    document.addEventListener("visibilitychange", handleResume)
-
-    void navigator.serviceWorker
-      .register("/sw.js", { updateViaCache: "none" })
-      .then((activeRegistration) => {
-        if (!isMounted) {
-          return
-        }
-
-        registration = activeRegistration
-        activeRegistration.waiting?.postMessage({ type: "SKIP_WAITING" })
-        updateRegistration()
-      })
-      .catch((error) => {
-        console.warn("[ACTN PWA] Service worker registration failed", {
-          message: error instanceof Error ? error.message : String(error),
-          online: navigator.onLine,
-        })
-      })
-
-    void window.caches
-      ?.keys()
-      .then((keys) =>
-        Promise.all(
-          keys
-            .filter(
-              (key) =>
-                key.startsWith(appCachePrefix) && key !== serviceWorkerCacheName
-            )
-            .map((key) => window.caches.delete(key))
+    if (process.env.NODE_ENV !== "production") {
+      // Only unregister our own worker; other apps may share a development origin.
+      void navigator.serviceWorker
+        .getRegistrations()
+        .then((registrations) =>
+          Promise.all(
+            registrations
+              .filter(
+                (r) =>
+                  (r.active ?? r.waiting ?? r.installing)?.scriptURL ===
+                  scriptURL
+              )
+              .map((r) => r.unregister())
+          )
         )
+        .catch(() => undefined)
+      return
+    }
+    void navigator.serviceWorker
+      .register("/sw.js", { scope: "/", updateViaCache: "none" })
+      .then((value) => {
+        if (!mounted) return
+        registration = value
+        update()
+      })
+      .catch((error) =>
+        console.warn("[ACTN PWA] Registration unavailable", error)
       )
-      .catch(() => undefined)
-
+    // A waiting worker activates when old clients close. Neither controllerchange
+    // nor resume is permission to reload an in-progress editor or form.
+    window.addEventListener("online", update)
+    window.addEventListener("pageshow", resume)
+    document.addEventListener("visibilitychange", resume)
     return () => {
-      isMounted = false
-      navigator.serviceWorker.removeEventListener(
-        "controllerchange",
-        handleControllerChange
-      )
-      window.removeEventListener("online", updateRegistration)
-      document.removeEventListener("visibilitychange", handleResume)
+      mounted = false
+      window.removeEventListener("online", update)
+      window.removeEventListener("pageshow", resume)
+      document.removeEventListener("visibilitychange", resume)
     }
   }, [])
-
   return null
 }

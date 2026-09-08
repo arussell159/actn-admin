@@ -1,14 +1,13 @@
 import { readBrowserStorage, writeBrowserStorage } from "@/lib/browser-storage"
-import { isRecoveryCooldownElapsed } from "@/lib/recovery-policy"
 
 export { isStaleAssetError } from "@/lib/recovery-policy"
 
 export const appCachePrefix = "actn-admin-"
-export const serviceWorkerCacheName = "actn-admin-shell-v18"
+export const serviceWorkerCacheName = "actn-admin-shell-v19"
 
 const automaticRecoveryKey = "actn-admin:last-automatic-recovery"
 const automaticRecoveryQueryKey = "__pwa_recovery"
-const automaticRecoveryCooldownMs = 5 * 60 * 1000
+let recoveryInFlight = false
 
 function recentRecoveryTimestamp() {
   const storedTimestamp = Number(
@@ -24,12 +23,12 @@ function recentRecoveryTimestamp() {
   )
 }
 
-export function canAttemptAutomaticRecovery(now = Date.now()) {
-  return isRecoveryCooldownElapsed({
-    lastRecovery: recentRecoveryTimestamp(),
-    now,
-    cooldownMs: automaticRecoveryCooldownMs,
-  })
+export function canAttemptAutomaticRecovery() {
+  // One automatic reload per tab/session. The URL marker survives disabled
+  // storage and prevents the failing document from repeatedly reloading itself.
+  return (
+    navigator.onLine && !recoveryInFlight && recentRecoveryTimestamp() === 0
+  )
 }
 
 async function deleteApplicationCaches() {
@@ -55,7 +54,14 @@ async function refreshServiceWorker(unregister: boolean) {
   }
 
   try {
-    const registrations = await navigator.serviceWorker.getRegistrations()
+    const scriptURL = new URL("/sw.js", window.location.origin).href
+    const registrations = (
+      await navigator.serviceWorker.getRegistrations()
+    ).filter(
+      (registration) =>
+        (registration.active ?? registration.waiting ?? registration.installing)
+          ?.scriptURL === scriptURL
+    )
 
     await Promise.all(
       registrations.map(async (registration) => {
@@ -65,7 +71,6 @@ async function refreshServiceWorker(unregister: boolean) {
         }
 
         await registration.update()
-        registration.waiting?.postMessage({ type: "SKIP_WAITING" })
       })
     )
   } catch {
@@ -84,17 +89,21 @@ export async function recoverFromStaleAssets() {
     return false
   }
 
+  recoveryInFlight = true
   const timestamp = Date.now()
   writeBrowserStorage("sessionStorage", automaticRecoveryKey, String(timestamp))
 
-  await deleteApplicationCaches()
-  await refreshServiceWorker(false)
+  // Public fallback caches do not contain app chunks. Deleting them here only
+  // damages offline recovery. Let the navigation fetch a fresh document.
+  void refreshServiceWorker(false)
   reloadWithRecoveryMarker(timestamp)
   return true
 }
 
 export async function repairApplication() {
+  if (!navigator.onLine) return false
   await deleteApplicationCaches()
   await refreshServiceWorker(true)
   window.location.reload()
+  return true
 }

@@ -13,6 +13,10 @@ const applicationDocumentRoutes = [
 ]
 
 const nextConfig: NextConfig = {
+  deploymentId:
+    process.env.DEPLOYMENT_VERSION ??
+    process.env.VERCEL_GIT_COMMIT_SHA ??
+    process.env.GITHUB_SHA,
   async headers() {
     return [
       ...applicationDocumentRoutes.map((source) => ({

@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { createPortal } from "react-dom"
 import { usePathname } from "next/navigation"
 import {
   closestCenter,
@@ -47,15 +46,6 @@ import {
   getMobileNavDockHrefs,
   saveMobileNavDockHrefs,
 } from "@/lib/mobile-nav-settings"
-import {
-  mobileNavActiveIndicatorPendingStorageKey,
-  mobileNavActiveIndicatorStorageKey,
-} from "@/lib/mobile-nav-active-state"
-import {
-  readBrowserStorage,
-  removeBrowserStorage,
-  writeBrowserStorage,
-} from "@/lib/browser-storage"
 import { cn } from "@/lib/utils"
 
 const maxDockItems = 4
@@ -113,10 +103,6 @@ const defaultDockHrefs = [
 ]
 
 type ModuleItem = (typeof allModuleItems)[number]
-
-function subscribeToClientMount() {
-  return () => {}
-}
 
 function isActivePath(pathname: string, matches: string[]) {
   return matches.some((match) =>
@@ -214,34 +200,7 @@ export function MobileTabBar() {
     isActivePath(pathname, item.match)
   )
   const activeIndicatorIndex = activeDockIndex >= 0 ? activeDockIndex : 4
-  const [displayedActiveIndicatorIndex, setDisplayedActiveIndicatorIndex] =
-    React.useState(() => {
-      if (typeof window === "undefined") {
-        return activeIndicatorIndex
-      }
-
-      const shouldAnimateFromStoredIndex =
-        readBrowserStorage(
-          "sessionStorage",
-          mobileNavActiveIndicatorPendingStorageKey
-        ) === "true"
-      const storedIndex = Number(
-        readBrowserStorage("sessionStorage", mobileNavActiveIndicatorStorageKey)
-      )
-
-      return shouldAnimateFromStoredIndex &&
-        Number.isInteger(storedIndex) &&
-        storedIndex >= 0 &&
-        storedIndex <= 4
-        ? storedIndex
-        : activeIndicatorIndex
-    })
-  const isMounted = React.useSyncExternalStore(
-    subscribeToClientMount,
-    () => true,
-    () => false
-  )
-  const portalTarget = isMounted ? document.body : null
+  const displayedActiveIndicatorIndex = activeIndicatorIndex
 
   React.useEffect(() => {
     let isMounted = true
@@ -271,21 +230,17 @@ export function MobileTabBar() {
   }, [])
 
   React.useEffect(() => {
-    const animationFrameId = window.requestAnimationFrame(() => {
-      setDisplayedActiveIndicatorIndex(activeIndicatorIndex)
-      writeBrowserStorage(
-        "sessionStorage",
-        mobileNavActiveIndicatorStorageKey,
-        String(activeIndicatorIndex)
-      )
-      removeBrowserStorage(
-        "sessionStorage",
-        mobileNavActiveIndicatorPendingStorageKey
-      )
-    })
-
-    return () => window.cancelAnimationFrame(animationFrameId)
-  }, [activeIndicatorIndex])
+    const close = () => setIsMoreOpen(false)
+    window.addEventListener("popstate", close)
+    window.addEventListener("app:navigate", close)
+    const desktop = window.matchMedia("(min-width: 768px)")
+    desktop.addEventListener("change", close)
+    return () => {
+      window.removeEventListener("popstate", close)
+      window.removeEventListener("app:navigate", close)
+      desktop.removeEventListener("change", close)
+    }
+  }, [])
 
   function handleMoreOpenChange(open: boolean) {
     setIsMoreOpen(open)
@@ -328,27 +283,10 @@ export function MobileTabBar() {
     }
   }
 
-  function prepareActiveIndicatorTransition() {
-    writeBrowserStorage(
-      "sessionStorage",
-      mobileNavActiveIndicatorStorageKey,
-      String(displayedActiveIndicatorIndex)
-    )
-    writeBrowserStorage(
-      "sessionStorage",
-      mobileNavActiveIndicatorPendingStorageKey,
-      "true"
-    )
-  }
-
-  if (!portalTarget) {
-    return null
-  }
-
-  return createPortal(
+  return (
     <nav
-      className="pointer-events-none fixed inset-x-0 z-40 flex justify-center px-5 pb-0 md:hidden"
-      style={{ bottom: "1rem" }}
+      className="app-mobile-nav pointer-events-none flex justify-center md:hidden"
+      data-app-nav=""
       aria-label="Mobile app navigation"
     >
       <div className="pointer-events-auto relative w-full max-w-[28rem] overflow-hidden rounded-full border border-white/50 bg-background/65 px-1.5 py-2 shadow-[0_14px_40px_rgba(15,23,42,0.14),inset_0_1px_0_rgba(255,255,255,0.8),inset_0_-1px_0_rgba(15,23,42,0.05)] backdrop-blur-2xl supports-backdrop-filter:bg-background/50">
@@ -375,7 +313,6 @@ export function MobileTabBar() {
                 href={item.href}
                 aria-current={isActive ? "page" : undefined}
                 title={item.label}
-                onClick={prepareActiveIndicatorTransition}
                 onPointerEnter={() => {
                   if (isActive) {
                     setIsActiveIndicatorPressed(true)
@@ -403,7 +340,7 @@ export function MobileTabBar() {
           <Sheet open={isMoreOpen} onOpenChange={handleMoreOpenChange}>
             <SheetTrigger
               className={cn(
-                "relative z-10 mx-auto grid h-12 w-[calc(100%-0.25rem)] place-items-center rounded-full text-muted-foreground transition-colors hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_8%)] active:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_14%)] active:text-muted-foreground",
+                "col-start-5 relative z-10 mx-auto grid h-12 w-[calc(100%-0.25rem)] place-items-center rounded-full text-muted-foreground transition-colors hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_8%)] active:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_14%)] active:text-muted-foreground",
                 isMoreActive &&
                   "bg-transparent text-foreground hover:bg-transparent active:bg-transparent active:text-foreground"
               )}
@@ -428,12 +365,8 @@ export function MobileTabBar() {
             <SheetContent
               side="bottom"
               showCloseButton={false}
-              className={cn(
-                "overflow-hidden px-0 pb-[calc(env(safe-area-inset-bottom)+1rem)]",
-                isCustomizing
-                  ? "max-h-[95svh] rounded-t-2xl"
-                  : "max-h-[82svh] rounded-t-2xl"
-              )}
+              className="app-mobile-menu overflow-hidden rounded-t-2xl"
+              data-app-menu=""
             >
               <SheetHeader className="grid grid-cols-[1fr_auto_1fr] items-center px-5 pt-5 pb-2">
                 <SheetClose className="justify-self-start text-sm font-medium">
@@ -451,7 +384,7 @@ export function MobileTabBar() {
                 </button>
               </SheetHeader>
               {isCustomizing ? (
-                <div className="grid max-h-[calc(95svh-5rem)] gap-6 overflow-auto px-5 pt-4 pb-8">
+                <div className="app-overlay-scroll grid gap-6 px-5 pt-4 pb-8">
                   <section className="grid gap-2">
                     <div className="flex items-center justify-between">
                       <h2 className="font-semibold">Dock</h2>
@@ -515,7 +448,7 @@ export function MobileTabBar() {
                   </section>
                 </div>
               ) : (
-                <div className="max-h-[62svh] overflow-auto px-3">
+                <div className="app-overlay-scroll px-3">
                   {moreItems.map((item, index) => {
                     const Icon = item.icon
                     const isActive = pathname.startsWith(item.href)
@@ -523,14 +456,7 @@ export function MobileTabBar() {
                     return (
                       <React.Fragment key={item.href}>
                         {index > 0 ? <Separator /> : null}
-                        <SheetClose
-                          render={
-                            <AppLink
-                              href={item.href}
-                              onClick={prepareActiveIndicatorTransition}
-                            />
-                          }
-                        >
+                        <SheetClose render={<AppLink href={item.href} />}>
                           <span
                             className={cn(
                               "flex min-h-14 items-center gap-3 rounded-xl px-3 text-left transition-colors active:bg-muted",
@@ -552,7 +478,6 @@ export function MobileTabBar() {
           </Sheet>
         </div>
       </div>
-    </nav>,
-    portalTarget
+    </nav>
   )
 }
