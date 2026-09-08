@@ -50,10 +50,10 @@ export function AppRouteSkeleton({
             ))}
           </div>
         </aside>
-        <main className="flex min-h-svh flex-1 flex-col bg-background md:min-h-[calc(100svh-1rem)]">
+        <main className="flex min-h-svh flex-1 flex-col bg-background pt-[calc(2.5rem+env(safe-area-inset-top,0px))] md:min-h-[calc(100svh-1rem)] md:pt-0">
           <header
             className={[
-              "sticky top-0 z-40 flex h-[calc(2.5rem+env(safe-area-inset-top,0px))] shrink-0 items-center gap-2 bg-transparent pt-[env(safe-area-inset-top,0px)] md:relative md:z-auto md:h-auto md:min-h-(--header-height) md:flex-col md:items-stretch md:bg-background md:pt-0",
+              "fixed inset-x-0 top-0 z-40 flex h-[calc(2.5rem+env(safe-area-inset-top,0px))] shrink-0 items-center gap-2 bg-transparent pt-[env(safe-area-inset-top,0px)] md:relative md:z-auto md:h-auto md:min-h-(--header-height) md:flex-col md:items-stretch md:bg-background md:pt-0",
               tabs?.length ? "md:border-b-0" : "md:border-b",
             ].join(" ")}
           >
@@ -158,8 +158,8 @@ export function CountryDashboardRouteSkeleton({
           ))}
         </div>
       </aside>
-      <main className="flex min-h-svh flex-1 flex-col bg-background md:min-h-[calc(100svh-1rem)]">
-        <header className="sticky top-0 z-40 flex h-[calc(2.5rem+env(safe-area-inset-top,0px))] shrink-0 items-center gap-2 bg-transparent pt-[env(safe-area-inset-top,0px)] md:relative md:z-auto md:h-auto md:min-h-(--header-height) md:flex-col md:items-stretch md:bg-background md:pt-0">
+      <main className="flex min-h-svh flex-1 flex-col bg-background pt-[calc(2.5rem+env(safe-area-inset-top,0px))] md:min-h-[calc(100svh-1rem)] md:pt-0">
+        <header className="fixed inset-x-0 top-0 z-40 flex h-[calc(2.5rem+env(safe-area-inset-top,0px))] shrink-0 items-center gap-2 bg-transparent pt-[env(safe-area-inset-top,0px)] md:relative md:z-auto md:h-auto md:min-h-(--header-height) md:flex-col md:items-stretch md:bg-background md:pt-0">
           <div className="relative z-10 hidden h-(--header-height) w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 md:grid lg:px-6">
             <div className="flex min-w-8 items-center gap-2">
               <div className="inline-flex h-8 w-[4.625rem] items-center justify-center gap-1.5 rounded-lg border bg-background px-2.5 text-sm font-medium">

@@ -62,7 +62,7 @@ export default function manifest(): MetadataRoute.Manifest {
         purpose: "any",
       },
       {
-        src: "/actn-admin-icon-512.png",
+        src: "/actn-admin-icon-maskable.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable",

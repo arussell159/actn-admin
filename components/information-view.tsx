@@ -22,7 +22,6 @@ import {
   PinOffIcon,
   PlusIcon,
   RotateCcwIcon,
-  SearchIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react"
@@ -630,15 +629,6 @@ function splitEditorTitleAndContent(value: string, fallbackTitle: string) {
   }
 }
 
-function MobileSearchBar() {
-  return (
-    <div className="fixed inset-x-4 bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] z-30 flex h-11 items-center gap-3 rounded-full bg-background/95 px-4 shadow-lg ring-1 ring-foreground/5 backdrop-blur md:hidden">
-      <SearchIcon className="size-5 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 text-muted-foreground">Search</span>
-    </div>
-  )
-}
-
 function MobileFolderTitlePrompt({
   value,
   onChange,
@@ -760,7 +750,6 @@ function MobileFoldersScreen({
       <p className="mt-3 px-1 text-sm text-muted-foreground">
         {totalNotes} Notes
       </p>
-      <MobileSearchBar />
     </div>
   )
 }
@@ -956,7 +945,6 @@ function MobileFolderNotesScreen({
           </div>
         ))}
       </div>
-      <MobileSearchBar />
     </div>
   )
 }
@@ -2606,7 +2594,7 @@ export function InformationView() {
       ref={notebookShellRef}
       data-mobile-note-editor={activeNode?.type === "note" ? "true" : undefined}
       className={cn(
-        "min-h-[calc(100dvh+env(safe-area-inset-top,0px)+env(safe-area-inset-bottom,0px))] md:min-h-svh md:bg-sidebar",
+        "min-h-0 md:min-h-svh md:bg-sidebar",
         activeNode?.type === "note" ? "bg-background" : "bg-muted/60"
       )}
       style={
@@ -2619,7 +2607,7 @@ export function InformationView() {
       <AppSidebar variant="inset" />
       <SidebarInset
         className={cn(
-          "min-h-[calc(100dvh+env(safe-area-inset-top,0px)+env(safe-area-inset-bottom,0px))] md:min-h-0 md:bg-background",
+          "min-h-0 md:bg-background",
           activeNode?.type === "note"
             ? "bg-background lg:h-[calc(100svh-1rem)] lg:overflow-hidden"
             : "bg-muted/60"
@@ -2627,7 +2615,7 @@ export function InformationView() {
       >
         <main
           className={cn(
-            "flex min-h-[calc(100dvh+env(safe-area-inset-top,0px)+env(safe-area-inset-bottom,0px))] flex-1 flex-col md:min-h-[calc(100svh-1rem)] md:bg-background",
+            "flex min-h-0 flex-1 flex-col md:min-h-[calc(100svh-1rem)] md:bg-background",
             activeNode?.type === "note"
               ? "bg-background lg:h-full lg:min-h-0 lg:overflow-hidden"
               : "bg-muted/60"
