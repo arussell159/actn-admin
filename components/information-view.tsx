@@ -27,6 +27,7 @@ import {
   XIcon,
 } from "lucide-react"
 
+import { AppSidebar } from "@/components/app-sidebar"
 import { NotebookSkeleton } from "@/components/page-skeletons"
 import {
   SiteHeader,
@@ -35,7 +36,6 @@ import {
 } from "@/components/site-header"
 import { SimpleEditor } from "@/components/tiptap-templates/simple/simple-editor"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import {
   DropdownMenu,
@@ -50,6 +50,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import {
   createInformationId,
   getInformationNotes,
@@ -631,7 +632,7 @@ function splitEditorTitleAndContent(value: string, fallbackTitle: string) {
 
 function MobileSearchBar() {
   return (
-    <div className="mx-4 mt-4 flex h-11 shrink-0 items-center gap-3 rounded-full bg-background/95 px-4 shadow-lg ring-1 ring-foreground/5 backdrop-blur md:hidden">
+    <div className="fixed inset-x-4 bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] z-30 flex h-11 items-center gap-3 rounded-full bg-background/95 px-4 shadow-lg ring-1 ring-foreground/5 backdrop-blur md:hidden">
       <SearchIcon className="size-5 shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1 text-muted-foreground">Search</span>
     </div>
@@ -650,62 +651,49 @@ function MobileFolderTitlePrompt({
   onCancel: () => void
 }) {
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onCancel()
-      }}
-    >
-      <DialogContent
-        showCloseButton={false}
-        className="app-folder-prompt flex flex-col gap-0 rounded-none p-0 md:hidden"
-      >
-        <DialogTitle className="sr-only">New Folder</DialogTitle>
-        <header className="grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center px-4">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="justify-self-start rounded-full bg-background shadow-sm"
-            aria-label="Cancel folder"
-            onClick={onCancel}
-          >
-            <XIcon />
-          </Button>
-          <div className="text-sm font-semibold text-foreground">
-            New Folder
-          </div>
-          <Button
-            size="icon-sm"
-            className="justify-self-end rounded-full bg-yellow-400 text-yellow-950 shadow-sm hover:bg-yellow-300 disabled:opacity-40"
-            aria-label="Create folder"
-            disabled={!value.trim()}
-            onClick={onConfirm}
-          >
-            <CheckIcon />
-          </Button>
-        </header>
-        <div className="grid gap-3 px-4 pt-3">
-          <div className="relative">
-            <Input
-              value={value}
-              onChange={(event) => onChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  onConfirm()
-                }
+    <div className="fixed inset-0 z-50 flex flex-col bg-background pt-[env(safe-area-inset-top,0px)] md:hidden">
+      <header className="grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center px-4">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="justify-self-start rounded-full bg-background shadow-sm"
+          aria-label="Cancel folder"
+          onClick={onCancel}
+        >
+          <XIcon />
+        </Button>
+        <div className="text-sm font-semibold text-foreground">New Folder</div>
+        <Button
+          size="icon-sm"
+          className="justify-self-end rounded-full bg-yellow-400 text-yellow-950 shadow-sm hover:bg-yellow-300 disabled:opacity-40"
+          aria-label="Create folder"
+          disabled={!value.trim()}
+          onClick={onConfirm}
+        >
+          <CheckIcon />
+        </Button>
+      </header>
+      <div className="grid gap-3 px-4 pt-3">
+        <div className="relative">
+          <Input
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                onConfirm()
+              }
 
-                if (event.key === "Escape") {
-                  onCancel()
-                }
-              }}
-              className="h-12 rounded-xl bg-background pr-10 pl-3 text-base shadow-sm"
-              aria-label="Folder title"
-              autoFocus
-            />
-          </div>
+              if (event.key === "Escape") {
+                onCancel()
+              }
+            }}
+            className="h-12 rounded-xl bg-background pr-10 pl-3 text-base shadow-sm"
+            aria-label="Folder title"
+            autoFocus
+          />
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   )
 }
 
@@ -1577,6 +1565,7 @@ export function InformationView() {
     {}
   )
   const mobileNoteSelectorRef = React.useRef<HTMLDetailsElement | null>(null)
+  const notebookShellRef = React.useRef<HTMLDivElement | null>(null)
   const hasInitializedCollapsedFolders = React.useRef(false)
   const hasLoadedNotes = React.useRef(false)
   const [pendingDesktopNodeFocusId, setPendingDesktopNodeFocusId] =
@@ -1752,6 +1741,54 @@ export function InformationView() {
   }, [])
 
   const activeNode = nodes.find((node) => node.id === activeId)
+
+  React.useEffect(() => {
+    const shell = notebookShellRef.current
+
+    if (!shell || activeNode?.type !== "note") {
+      return
+    }
+
+    const activeShell = shell
+    const mobileQuery = window.matchMedia("(max-width: 767px)")
+    const visualViewport = window.visualViewport
+
+    function syncMobileEditorViewport() {
+      if (!mobileQuery.matches) {
+        activeShell.style.removeProperty("--mobile-note-viewport-height")
+        activeShell.style.removeProperty("--mobile-note-viewport-top")
+        return
+      }
+
+      activeShell.style.setProperty(
+        "--mobile-note-viewport-height",
+        `${visualViewport?.height ?? window.innerHeight}px`
+      )
+      activeShell.style.setProperty(
+        "--mobile-note-viewport-top",
+        `${visualViewport?.offsetTop ?? 0}px`
+      )
+
+      activeShell
+        .querySelector<HTMLElement>('[data-slot="sidebar-inset"]')
+        ?.scrollTo({ top: 0, left: 0 })
+    }
+
+    syncMobileEditorViewport()
+    window.addEventListener("resize", syncMobileEditorViewport)
+    visualViewport?.addEventListener("resize", syncMobileEditorViewport)
+    visualViewport?.addEventListener("scroll", syncMobileEditorViewport)
+    mobileQuery.addEventListener("change", syncMobileEditorViewport)
+
+    return () => {
+      window.removeEventListener("resize", syncMobileEditorViewport)
+      visualViewport?.removeEventListener("resize", syncMobileEditorViewport)
+      visualViewport?.removeEventListener("scroll", syncMobileEditorViewport)
+      mobileQuery.removeEventListener("change", syncMobileEditorViewport)
+      activeShell.style.removeProperty("--mobile-note-viewport-height")
+      activeShell.style.removeProperty("--mobile-note-viewport-top")
+    }
+  }, [activeNode?.type])
 
   React.useEffect(() => {
     if (!hasLoadedNotes.current) {
@@ -2525,351 +2562,394 @@ export function InformationView() {
       : undefined
 
   return (
-    <main
-      data-app-panel={activeNode?.type === "note" ? "true" : undefined}
+    <SidebarProvider
+      ref={notebookShellRef}
+      data-mobile-note-editor={activeNode?.type === "note" ? "true" : undefined}
       className={cn(
-        "app-page md:bg-background",
+        "min-h-[calc(100dvh+env(safe-area-inset-top,0px)+env(safe-area-inset-bottom,0px))] md:min-h-svh md:bg-sidebar",
         activeNode?.type === "note" ? "bg-background" : "bg-muted/60"
       )}
+      style={
+        {
+          "--sidebar-width": "calc(var(--spacing) * 72)",
+          "--header-height": "calc(var(--spacing) * 12)",
+        } as React.CSSProperties
+      }
     >
-      <SiteHeader
-        titleContent={<NotebookBreadcrumbs items={notebookBreadcrumbItems} />}
-        mobileLeadingContent={
-          mobileHeaderBackAction ? (
-            <SiteHeaderBackButton
-              label="Back to notes"
-              onClick={mobileHeaderBackAction}
-            />
-          ) : undefined
-        }
-        mobileTrailingContent={
-          <MobileNotebookActions
-            activeNode={activeNode}
-            nodes={nodes}
-            onCreateNote={() =>
-              startCreate(
-                "note",
-                activeNode?.type === "folder" ? activeNode.id : ""
-              )
-            }
-            onCreateFolder={() =>
-              requestCreateFolder(
-                activeNode?.type === "folder" ? activeNode.id : ""
-              )
-            }
-            onOpenTrash={() => selectTrash()}
-            trashCount={trashedNodes.length}
-            onDelete={deleteNode}
-            onMove={moveNode}
-          />
-        }
-      />
-      {folderPromptParentId !== null ? (
-        <MobileFolderTitlePrompt
-          value={folderPromptTitle}
-          onChange={setFolderPromptTitle}
-          onConfirm={confirmCreateFolder}
-          onCancel={cancelCreateFolder}
-        />
-      ) : null}
-      <div className="flex min-h-0 flex-1 px-0 py-0 sm:px-4 sm:py-4 lg:px-6">
-        <Card
+      <AppSidebar variant="inset" />
+      <SidebarInset
+        className={cn(
+          "min-h-[calc(100dvh+env(safe-area-inset-top,0px)+env(safe-area-inset-bottom,0px))] md:min-h-0 md:bg-background",
+          activeNode?.type === "note"
+            ? "bg-background lg:h-[calc(100svh-1rem)] lg:overflow-hidden"
+            : "bg-muted/60"
+        )}
+      >
+        <main
           className={cn(
-            "min-h-0 flex-1 rounded-none bg-transparent py-0 shadow-none ring-0 sm:rounded-lg sm:bg-card sm:shadow-sm sm:ring-1 md:overflow-visible md:rounded-none md:bg-transparent md:shadow-none md:ring-0",
-            activeNode?.type === "note" && "lg:overflow-hidden"
+            "flex min-h-[calc(100dvh+env(safe-area-inset-top,0px)+env(safe-area-inset-bottom,0px))] flex-1 flex-col md:min-h-[calc(100svh-1rem)] md:bg-background",
+            activeNode?.type === "note"
+              ? "bg-background lg:h-full lg:min-h-0 lg:overflow-hidden"
+              : "bg-muted/60"
           )}
         >
-          {isNotebookLoading ? (
-            <NotebookSkeleton />
-          ) : (
-            <CardContent className="grid min-h-0 flex-1 gap-0 p-0 lg:grid-cols-[20rem_minmax(0,1fr)]">
-              <aside className="notebook-tree hidden min-h-0 flex-col border-b p-5 lg:flex lg:border-r lg:border-b-0 lg:text-sm">
-                <div className="mb-3 flex items-center justify-center gap-1 text-muted-foreground">
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="size-8 rounded-md hover:bg-muted hover:text-foreground"
-                    aria-label="Create new note"
-                    title="Create new note"
-                    onClick={() => startCreateAtActiveFocus("note")}
-                  >
-                    <FilePlus2Icon />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="size-8 rounded-md hover:bg-muted hover:text-foreground"
-                    aria-label="Create new folder"
-                    title="Create new folder"
-                    onClick={() => startCreateAtActiveFocus("folder")}
-                  >
-                    <FolderPlusIcon />
-                  </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          className="size-8 rounded-md hover:bg-muted hover:text-foreground"
-                          aria-label={`Sort: ${currentSortOption.label}`}
-                          title={`Sort: ${currentSortOption.label}`}
-                        />
-                      }
-                    >
-                      <ListSortAscendingIcon />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="min-w-52">
-                      <DropdownMenuRadioGroup
-                        value={informationSortOrder}
-                        onValueChange={(value) =>
-                          setInformationSortOrder(value as InformationSortOrder)
-                        }
+          <SiteHeader
+            titleContent={
+              <NotebookBreadcrumbs items={notebookBreadcrumbItems} />
+            }
+            mobileLeadingContent={
+              mobileHeaderBackAction ? (
+                <SiteHeaderBackButton
+                  label="Back to notes"
+                  onClick={mobileHeaderBackAction}
+                />
+              ) : undefined
+            }
+            mobileTrailingContent={
+              <MobileNotebookActions
+                activeNode={activeNode}
+                nodes={nodes}
+                onCreateNote={() =>
+                  startCreate(
+                    "note",
+                    activeNode?.type === "folder" ? activeNode.id : ""
+                  )
+                }
+                onCreateFolder={() =>
+                  requestCreateFolder(
+                    activeNode?.type === "folder" ? activeNode.id : ""
+                  )
+                }
+                onOpenTrash={() => selectTrash()}
+                trashCount={trashedNodes.length}
+                onDelete={deleteNode}
+                onMove={moveNode}
+              />
+            }
+          />
+          {folderPromptParentId !== null ? (
+            <MobileFolderTitlePrompt
+              value={folderPromptTitle}
+              onChange={setFolderPromptTitle}
+              onConfirm={confirmCreateFolder}
+              onCancel={cancelCreateFolder}
+            />
+          ) : null}
+          <div className="flex min-h-0 flex-1 px-0 py-0 sm:px-4 sm:py-4 lg:px-6">
+            <Card
+              className={cn(
+                "min-h-0 flex-1 rounded-none bg-transparent py-0 shadow-none ring-0 sm:rounded-lg sm:bg-card sm:shadow-sm sm:ring-1 md:overflow-visible md:rounded-none md:bg-transparent md:shadow-none md:ring-0",
+                activeNode?.type === "note" && "lg:overflow-hidden"
+              )}
+            >
+              {isNotebookLoading ? (
+                <NotebookSkeleton />
+              ) : (
+                <CardContent className="grid min-h-0 flex-1 gap-0 p-0 lg:grid-cols-[20rem_minmax(0,1fr)]">
+                  <aside className="notebook-tree hidden min-h-0 flex-col border-b p-5 lg:flex lg:border-r lg:border-b-0 lg:text-sm">
+                    <div className="mb-3 flex items-center justify-center gap-1 text-muted-foreground">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="size-8 rounded-md hover:bg-muted hover:text-foreground"
+                        aria-label="Create new note"
+                        title="Create new note"
+                        onClick={() => startCreateAtActiveFocus("note")}
                       >
-                        {informationSortOptions.map((option) => (
-                          <DropdownMenuRadioItem
-                            key={option.value}
-                            value={option.value}
-                          >
-                            {option.value === "name-asc" ? (
-                              <ArrowDownAZIcon />
-                            ) : option.value === "name-desc" ? (
-                              <ArrowDownZAIcon />
-                            ) : (
-                              <ClockIcon />
-                            )}
-                            {option.label}
-                          </DropdownMenuRadioItem>
-                        ))}
-                      </DropdownMenuRadioGroup>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="size-8 rounded-md hover:bg-muted hover:text-foreground"
-                    aria-label="Reveal active note"
-                    title="Reveal active note"
-                    onClick={revealActiveNote}
-                  >
-                    <PanelTopCloseIcon />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="size-8 rounded-md hover:bg-muted hover:text-foreground"
-                    aria-label="Collapse all"
-                    title="Collapse all"
-                    onClick={collapseAllFolders}
-                  >
-                    <ListCollapseIcon />
-                  </Button>
-                </div>
-                <div className="grid min-h-0 flex-1 content-start gap-4 overflow-auto">
-                  <Input
-                    ref={desktopSearchInputRef}
-                    value={noteSearch}
-                    onChange={(event) => setNoteSearch(event.target.value)}
-                    onKeyDown={handleDesktopSearchKeyDown}
-                    placeholder="Search notebook"
-                  />
-
-                  <NoteTree
-                    nodes={visibleNodes}
-                    allNodes={nodes}
-                    activeId={activeId}
-                    onSelect={selectNode}
-                    onCreate={startCreate}
-                    onDelete={deleteNode}
-                    onTogglePin={togglePin}
-                    onMove={moveNode}
-                    collapsedFolderIds={collapsedFolderIds}
-                    sortOrder={informationSortOrder}
-                    onToggleCollapse={toggleFolderCollapse}
-                    editingNodeId={editingTreeNodeId}
-                    titleDraft={treeTitleDraft}
-                    onTitleDraftChange={setTreeTitleDraft}
-                    onCommitTitle={commitTreeTitle}
-                    onCancelTitleEdit={cancelTreeTitleEdit}
-                    focusableNodeIds={desktopVisibleTreeNodeIds}
-                    nodeRefs={desktopNodeRefs}
-                    onFocusNode={focusDesktopTreeNode}
-                    onOpenNoteForTyping={focusDesktopEditor}
-                  />
-                </div>
-                <Button
-                  variant={activeId === trashViewId ? "secondary" : "ghost"}
-                  className="mt-4 h-9 justify-start gap-2 rounded-md px-2 text-sm font-normal"
-                  onClick={() => selectTrash()}
-                >
-                  <Trash2Icon className="size-4" />
-                  <span className="min-w-0 flex-1 text-left">Trash</span>
-                  {trashedNodes.length ? (
-                    <span className="text-xs text-muted-foreground">
-                      {trashedNodes.length}
-                    </span>
-                  ) : null}
-                </Button>
-              </aside>
-
-              <section className="flex min-h-0 min-w-0 flex-col p-0 sm:p-5">
-                <div className="hidden">
-                  <div className="flex items-center gap-2">
-                    <details
-                      ref={mobileNoteSelectorRef}
-                      className="group min-w-0 flex-1"
-                    >
-                      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg border bg-background px-4 text-base font-medium marker:hidden">
-                        <span className="min-w-0 truncate">
-                          {activeNode?.title ?? "Notebook"}
-                        </span>
-                        <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
-                      </summary>
-                      <div className="mt-3 max-h-[52svh] overflow-auto rounded-lg border bg-background p-4 shadow-md">
-                        <Input
-                          value={noteSearch}
-                          onChange={(event) =>
-                            setNoteSearch(event.target.value)
+                        <FilePlus2Icon />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="size-8 rounded-md hover:bg-muted hover:text-foreground"
+                        aria-label="Create new folder"
+                        title="Create new folder"
+                        onClick={() => startCreateAtActiveFocus("folder")}
+                      >
+                        <FolderPlusIcon />
+                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              className="size-8 rounded-md hover:bg-muted hover:text-foreground"
+                              aria-label={`Sort: ${currentSortOption.label}`}
+                              title={`Sort: ${currentSortOption.label}`}
+                            />
                           }
-                          placeholder="Search notebook"
-                          className="mb-3"
-                        />
-                        <NoteTree
-                          nodes={visibleNodes}
-                          allNodes={nodes}
-                          activeId={activeId}
-                          onSelect={selectNode}
-                          onCreate={startCreate}
-                          onDelete={deleteNode}
-                          onTogglePin={togglePin}
-                          onMove={moveNode}
-                          collapsedFolderIds={collapsedFolderIds}
-                          sortOrder={informationSortOrder}
-                          onToggleCollapse={toggleFolderCollapse}
-                          editingNodeId={editingTreeNodeId}
-                          titleDraft={treeTitleDraft}
-                          onTitleDraftChange={setTreeTitleDraft}
-                          onCommitTitle={commitTreeTitle}
-                          onCancelTitleEdit={cancelTreeTitleEdit}
-                        />
-                      </div>
-                    </details>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <Button
-                            size="icon-sm"
-                            className="size-10"
-                            aria-label="Create note or folder"
-                          />
-                        }
+                        >
+                          <ListSortAscendingIcon />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="min-w-52">
+                          <DropdownMenuRadioGroup
+                            value={informationSortOrder}
+                            onValueChange={(value) =>
+                              setInformationSortOrder(
+                                value as InformationSortOrder
+                              )
+                            }
+                          >
+                            {informationSortOptions.map((option) => (
+                              <DropdownMenuRadioItem
+                                key={option.value}
+                                value={option.value}
+                              >
+                                {option.value === "name-asc" ? (
+                                  <ArrowDownAZIcon />
+                                ) : option.value === "name-desc" ? (
+                                  <ArrowDownZAIcon />
+                                ) : (
+                                  <ClockIcon />
+                                )}
+                                {option.label}
+                              </DropdownMenuRadioItem>
+                            ))}
+                          </DropdownMenuRadioGroup>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="size-8 rounded-md hover:bg-muted hover:text-foreground"
+                        aria-label="Reveal active note"
+                        title="Reveal active note"
+                        onClick={revealActiveNote}
                       >
-                        <PlusIcon />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="min-w-44">
-                        <DropdownMenuItem onClick={() => startCreate("note")}>
-                          <FilePlus2Icon />
-                          Add Note
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => startCreate("folder")}>
-                          <FolderPlusIcon />
-                          Add Folder
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
+                        <PanelTopCloseIcon />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="size-8 rounded-md hover:bg-muted hover:text-foreground"
+                        aria-label="Collapse all"
+                        title="Collapse all"
+                        onClick={collapseAllFolders}
+                      >
+                        <ListCollapseIcon />
+                      </Button>
+                    </div>
+                    <div className="grid min-h-0 flex-1 content-start gap-4 overflow-auto">
+                      <Input
+                        ref={desktopSearchInputRef}
+                        value={noteSearch}
+                        onChange={(event) => setNoteSearch(event.target.value)}
+                        onKeyDown={handleDesktopSearchKeyDown}
+                        placeholder="Search notebook"
+                      />
 
-                {activeId === trashViewId ? (
-                  <TrashDashboard
-                    trashedNodes={trashedNodes}
-                    onRestore={restoreNode}
-                  />
-                ) : activeNode?.type === "note" ? (
-                  <div className="min-h-0 flex-1 overflow-hidden bg-background pt-2 sm:-m-5 sm:pt-0">
-                    <SimpleEditor
-                      key={activeNode.id}
-                      focusSignal={editorFocusSignal}
-                      restoreSelectionSignal={editorRestoreSelectionSignal}
-                      restoredSelection={
-                        selectionByNoteIdRef.current[activeNode.id] ??
-                        selectionByNoteId[activeNode.id]
-                      }
-                      value={editorContentWithTitle(titleDraft, contentDraft)}
-                      onChange={updateActiveNoteContent}
-                      onSelectionChange={(selection) => {
-                        if (!isDesktopViewport()) {
-                          return
-                        }
-
-                        selectionByNoteIdRef.current = {
-                          ...selectionByNoteIdRef.current,
-                          [activeNode.id]: selection,
-                        }
-                      }}
-                    />
-                  </div>
-                ) : activeNode?.type === "folder" ? (
-                  <>
-                    <MobileFolderNotesScreen
-                      folder={activeNode}
-                      nodes={nodes}
-                      notes={activeFolderNotes}
-                      onOpenNote={selectNode}
-                      onDelete={deleteNode}
-                      onMove={moveNode}
-                    />
-                    <div className="hidden px-3 pt-3 pb-3 sm:px-0 sm:pt-0 sm:pb-0 md:block">
-                      <FolderDashboard
-                        folder={activeNode}
-                        nodes={nodes}
-                        onOpenNote={selectNode}
+                      <NoteTree
+                        nodes={visibleNodes}
+                        allNodes={nodes}
+                        activeId={activeId}
+                        onSelect={selectNode}
+                        onCreate={startCreate}
+                        onDelete={deleteNode}
+                        onTogglePin={togglePin}
+                        onMove={moveNode}
+                        collapsedFolderIds={collapsedFolderIds}
+                        sortOrder={informationSortOrder}
+                        onToggleCollapse={toggleFolderCollapse}
+                        editingNodeId={editingTreeNodeId}
+                        titleDraft={treeTitleDraft}
+                        onTitleDraftChange={setTreeTitleDraft}
+                        onCommitTitle={commitTreeTitle}
+                        onCancelTitleEdit={cancelTreeTitleEdit}
+                        focusableNodeIds={desktopVisibleTreeNodeIds}
+                        nodeRefs={desktopNodeRefs}
+                        onFocusNode={focusDesktopTreeNode}
+                        onOpenNoteForTyping={focusDesktopEditor}
                       />
                     </div>
-                  </>
-                ) : activeId === mobileRootNotesId ? (
-                  <>
-                    <MobileFolderNotesScreen
-                      nodes={nodes}
-                      notes={activeFolderNotes}
-                      onOpenNote={selectNode}
-                      onDelete={deleteNode}
-                      onMove={moveNode}
-                    />
-                    <div className="hidden px-3 pb-3 sm:px-0 sm:pb-0 md:block">
-                      <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
-                        <HomeIcon className="size-8" />
-                        <p>Select a note from the tree or create a new one.</p>
+                    <Button
+                      variant={activeId === trashViewId ? "secondary" : "ghost"}
+                      className="mt-4 h-9 justify-start gap-2 rounded-md px-2 text-sm font-normal"
+                      onClick={() => selectTrash()}
+                    >
+                      <Trash2Icon className="size-4" />
+                      <span className="min-w-0 flex-1 text-left">Trash</span>
+                      {trashedNodes.length ? (
+                        <span className="text-xs text-muted-foreground">
+                          {trashedNodes.length}
+                        </span>
+                      ) : null}
+                    </Button>
+                  </aside>
+
+                  <section className="flex min-h-0 min-w-0 flex-col p-0 sm:p-5">
+                    <div className="hidden">
+                      <div className="flex items-center gap-2">
+                        <details
+                          ref={mobileNoteSelectorRef}
+                          className="group min-w-0 flex-1"
+                        >
+                          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg border bg-background px-4 text-base font-medium marker:hidden">
+                            <span className="min-w-0 truncate">
+                              {activeNode?.title ?? "Notebook"}
+                            </span>
+                            <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+                          </summary>
+                          <div className="mt-3 max-h-[52svh] overflow-auto rounded-lg border bg-background p-4 shadow-md">
+                            <Input
+                              value={noteSearch}
+                              onChange={(event) =>
+                                setNoteSearch(event.target.value)
+                              }
+                              placeholder="Search notebook"
+                              className="mb-3"
+                            />
+                            <NoteTree
+                              nodes={visibleNodes}
+                              allNodes={nodes}
+                              activeId={activeId}
+                              onSelect={selectNode}
+                              onCreate={startCreate}
+                              onDelete={deleteNode}
+                              onTogglePin={togglePin}
+                              onMove={moveNode}
+                              collapsedFolderIds={collapsedFolderIds}
+                              sortOrder={informationSortOrder}
+                              onToggleCollapse={toggleFolderCollapse}
+                              editingNodeId={editingTreeNodeId}
+                              titleDraft={treeTitleDraft}
+                              onTitleDraftChange={setTreeTitleDraft}
+                              onCommitTitle={commitTreeTitle}
+                              onCancelTitleEdit={cancelTreeTitleEdit}
+                            />
+                          </div>
+                        </details>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            render={
+                              <Button
+                                size="icon-sm"
+                                className="size-10"
+                                aria-label="Create note or folder"
+                              />
+                            }
+                          >
+                            <PlusIcon />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="min-w-44">
+                            <DropdownMenuItem
+                              onClick={() => startCreate("note")}
+                            >
+                              <FilePlus2Icon />
+                              Add Note
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => startCreate("folder")}
+                            >
+                              <FolderPlusIcon />
+                              Add Folder
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </div>
-                  </>
-                ) : nodes.length ? (
-                  <>
-                    <MobileFoldersScreen
-                      nodes={nodes}
-                      onOpenFolder={selectNode}
-                      onOpenRootNotes={selectRootNotes}
-                    />
-                    <div className="hidden px-3 pb-3 sm:px-0 sm:pb-0 md:block">
-                      <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
-                        <HomeIcon className="size-8" />
-                        <p>Select a note from the tree or create a new one.</p>
+
+                    {activeId === trashViewId ? (
+                      <TrashDashboard
+                        trashedNodes={trashedNodes}
+                        onRestore={restoreNode}
+                      />
+                    ) : activeNode?.type === "note" ? (
+                      <div className="min-h-0 flex-1 overflow-hidden bg-background pt-2 sm:-m-5 sm:pt-0">
+                        <SimpleEditor
+                          key={activeNode.id}
+                          focusSignal={editorFocusSignal}
+                          restoreSelectionSignal={editorRestoreSelectionSignal}
+                          restoredSelection={
+                            selectionByNoteIdRef.current[activeNode.id] ??
+                            selectionByNoteId[activeNode.id]
+                          }
+                          value={editorContentWithTitle(
+                            titleDraft,
+                            contentDraft
+                          )}
+                          onChange={updateActiveNoteContent}
+                          onSelectionChange={(selection) => {
+                            if (!isDesktopViewport()) {
+                              return
+                            }
+
+                            selectionByNoteIdRef.current = {
+                              ...selectionByNoteIdRef.current,
+                              [activeNode.id]: selection,
+                            }
+                          }}
+                        />
                       </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="px-3 pb-3 sm:px-0 sm:pb-0">
-                    <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
-                      <HomeIcon className="size-8" />
-                      <p>Select a note from the tree or create a new one.</p>
-                    </div>
-                  </div>
-                )}
-              </section>
-            </CardContent>
-          )}
-        </Card>
-      </div>
-    </main>
+                    ) : activeNode?.type === "folder" ? (
+                      <>
+                        <MobileFolderNotesScreen
+                          folder={activeNode}
+                          nodes={nodes}
+                          notes={activeFolderNotes}
+                          onOpenNote={selectNode}
+                          onDelete={deleteNode}
+                          onMove={moveNode}
+                        />
+                        <div className="hidden px-3 pt-3 pb-3 sm:px-0 sm:pt-0 sm:pb-0 md:block">
+                          <FolderDashboard
+                            folder={activeNode}
+                            nodes={nodes}
+                            onOpenNote={selectNode}
+                          />
+                        </div>
+                      </>
+                    ) : activeId === mobileRootNotesId ? (
+                      <>
+                        <MobileFolderNotesScreen
+                          nodes={nodes}
+                          notes={activeFolderNotes}
+                          onOpenNote={selectNode}
+                          onDelete={deleteNode}
+                          onMove={moveNode}
+                        />
+                        <div className="hidden px-3 pb-3 sm:px-0 sm:pb-0 md:block">
+                          <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
+                            <HomeIcon className="size-8" />
+                            <p>
+                              Select a note from the tree or create a new one.
+                            </p>
+                          </div>
+                        </div>
+                      </>
+                    ) : nodes.length ? (
+                      <>
+                        <MobileFoldersScreen
+                          nodes={nodes}
+                          onOpenFolder={selectNode}
+                          onOpenRootNotes={selectRootNotes}
+                        />
+                        <div className="hidden px-3 pb-3 sm:px-0 sm:pb-0 md:block">
+                          <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
+                            <HomeIcon className="size-8" />
+                            <p>
+                              Select a note from the tree or create a new one.
+                            </p>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="px-3 pb-3 sm:px-0 sm:pb-0">
+                        <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
+                          <HomeIcon className="size-8" />
+                          <p>
+                            Select a note from the tree or create a new one.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                </CardContent>
+              )}
+            </Card>
+          </div>
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }

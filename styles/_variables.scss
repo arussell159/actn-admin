@@ -3,8 +3,13 @@
   Basics
   ******************/
 
-  /* Global text metrics belong to app/globals.css. Loading an editor route
-     must not change text rendering or sizing for the rest of the app. */
+  overflow-wrap: break-word;
+  /* iOS WebKit only honors the -webkit- prefixed form */
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 
   /****************** 
   Colors variables

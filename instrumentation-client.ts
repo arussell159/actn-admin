@@ -37,14 +37,6 @@ window.addEventListener(
           ? failedElement.href
           : ""
 
-    if (assetUrl) {
-      const url = new URL(assetUrl, window.location.href)
-      const isAppChunk =
-        url.origin === window.location.origin &&
-        url.pathname.startsWith("/_next/static/") &&
-        /\.(js|css)$/.test(url.pathname)
-      if (!isAppChunk) return
-    }
     handleFailure(
       assetUrl ? "asset-load" : "uncaught-error",
       event.error ??

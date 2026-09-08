@@ -10,9 +10,6 @@
 
 # testing
 /coverage
-/outputs/mobile-stability/
-/playwright-report/
-/test-results/
 
 # next.js
 /.next/

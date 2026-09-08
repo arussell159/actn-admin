@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { getAppScroller } from "@/lib/app-scroll"
 
 const pullThreshold = 78
 const maxPullDistance = 106
@@ -9,89 +8,93 @@ const maxPullDistance = 106
 export function useMobilePullRefresh() {
   const [pullDistance, setPullDistance] = React.useState(0)
   const [isRefreshing, setIsRefreshing] = React.useState(false)
+
   React.useEffect(() => {
-    const scroller = getAppScroller()
-    if (!scroller) return
-    const mobile = window.matchMedia("(max-width: 767px)")
-    let startX = 0,
-      startY = 0,
-      distance = 0,
-      pulling = false
-    const cancel = () => {
-      pulling = false
-      distance = 0
-      setPullDistance(0)
-    }
-    const start = (event: TouchEvent) => {
-      cancel()
-      if (
-        !mobile.matches ||
-        isRefreshing ||
-        event.touches.length !== 1 ||
-        scroller.scrollTop > 0
+    const mediaQuery = window.matchMedia("(max-width: 767px)")
+    let startY = 0
+    let startX = 0
+    let isPulling = false
+    let activeScroller: HTMLElement | null = null
+
+    function getScroller(target: EventTarget | null) {
+      const element = target instanceof Element ? target : null
+
+      return (
+        element?.closest<HTMLElement>("[data-slot='sidebar-inset']") ??
+        document.querySelector<HTMLElement>("[data-slot='sidebar-inset']")
       )
-        return
-      const target = event.target instanceof Element ? event.target : null
-      if (
-        !target ||
-        target.closest(
-          "input, textarea, select, button, a, [contenteditable], [data-app-panel], [role=dialog]"
-        )
-      )
-        return
-      // Never steal gestures from intentional table/editor/overlay scrollers.
-      for (
-        let node = target;
-        node && node !== scroller;
-        node = node.parentElement!
-      ) {
-        if (
-          node.scrollHeight > node.clientHeight + 1 &&
-          /auto|scroll/.test(getComputedStyle(node).overflowY)
-        )
-          return
-      }
-      startX = event.touches[0].clientX
-      startY = event.touches[0].clientY
-      pulling = true
     }
-    const move = (event: TouchEvent) => {
-      if (!pulling) return
-      if (event.touches.length !== 1) {
-        cancel()
+
+    function handleTouchStart(event: TouchEvent) {
+      if (!mediaQuery.matches || isRefreshing || event.touches.length !== 1) {
         return
       }
-      const dy = event.touches[0].clientY - startY
-      const dx = Math.abs(event.touches[0].clientX - startX)
-      if (dy <= 0 || dx > dy || scroller.scrollTop > 0) {
-        cancel()
+
+      activeScroller = getScroller(event.target)
+      startY = event.touches[0]?.clientY ?? 0
+      startX = event.touches[0]?.clientX ?? 0
+      isPulling = Boolean(activeScroller && activeScroller.scrollTop <= 0)
+    }
+
+    function handleTouchMove(event: TouchEvent) {
+      if (!isPulling || !activeScroller || event.touches.length !== 1) {
         return
       }
-      if (event.cancelable) event.preventDefault()
-      distance = Math.min(dy * 0.45, maxPullDistance)
-      setPullDistance(distance)
+
+      const touch = event.touches[0]
+      const deltaY = (touch?.clientY ?? 0) - startY
+      const deltaX = Math.abs((touch?.clientX ?? 0) - startX)
+
+      if (deltaY <= 0 || deltaX > deltaY) {
+        setPullDistance(0)
+        return
+      }
+
+      if (activeScroller.scrollTop > 0) {
+        isPulling = false
+        setPullDistance(0)
+        return
+      }
+
+      event.preventDefault()
+      setPullDistance(Math.min(deltaY * 0.45, maxPullDistance))
     }
-    const end = () => {
-      if (pulling && distance >= pullThreshold && navigator.onLine) {
-        pulling = false
-        setIsRefreshing(true)
-        // An explicit user refresh; no timers or transformed content/chrome.
-        window.location.reload()
-      } else cancel()
+
+    function handleTouchEnd() {
+      if (!isPulling) {
+        return
+      }
+
+      isPulling = false
+
+      setPullDistance((currentDistance) => {
+        if (currentDistance >= pullThreshold) {
+          setIsRefreshing(true)
+          window.setTimeout(() => window.location.reload(), 120)
+          return pullThreshold
+        }
+
+        return 0
+      })
     }
-    scroller.addEventListener("touchstart", start, { passive: true })
-    scroller.addEventListener("touchmove", move, { passive: false })
-    scroller.addEventListener("touchend", end)
-    scroller.addEventListener("touchcancel", cancel)
-    window.addEventListener("app:navigate", cancel)
+
+    document.addEventListener("touchstart", handleTouchStart, {
+      passive: true,
+    })
+    document.addEventListener("touchmove", handleTouchMove, {
+      passive: false,
+    })
+    document.addEventListener("touchend", handleTouchEnd)
+    document.addEventListener("touchcancel", handleTouchEnd)
+
     return () => {
-      scroller.removeEventListener("touchstart", start)
-      scroller.removeEventListener("touchmove", move)
-      scroller.removeEventListener("touchend", end)
-      scroller.removeEventListener("touchcancel", cancel)
-      window.removeEventListener("app:navigate", cancel)
+      document.removeEventListener("touchstart", handleTouchStart)
+      document.removeEventListener("touchmove", handleTouchMove)
+      document.removeEventListener("touchend", handleTouchEnd)
+      document.removeEventListener("touchcancel", handleTouchEnd)
     }
   }, [isRefreshing])
+
   return {
     isRefreshing,
     pullDistance,

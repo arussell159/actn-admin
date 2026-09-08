@@ -2,6 +2,8 @@ import "./globals.css"
 import { PwaRegister } from "@/components/pwa-register"
 import { AppCommandMenu } from "@/components/app-command-menu"
 import { AuthSessionGuard } from "@/components/auth-session-guard"
+import { MobileAppGuard } from "@/components/mobile-app-guard"
+import { RouteScrollReset } from "@/components/route-scroll-reset"
 import { ThemeProvider } from "@/components/theme-provider"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { appTitle } from "@/lib/page-title"
@@ -12,10 +14,7 @@ import * as React from "react"
 
 const inter = localFont({
   src: "../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2",
-  display: "optional",
-  preload: true,
-  adjustFontFallback: "Arial",
-  fallback: ["system-ui", "sans-serif"],
+  display: "swap",
   weight: "100 900",
   variable: "--font-inter",
 })
@@ -63,12 +62,11 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
   viewportFit: "cover",
-  colorScheme: "light dark",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
-  ],
+  colorScheme: "light",
+  themeColor: "#ffffff",
 }
 
 export default function RootLayout({
@@ -86,7 +84,11 @@ export default function RootLayout({
         <ThemeProvider>
           <TooltipProvider>
             <PwaRegister />
+            <MobileAppGuard />
             <AuthSessionGuard />
+            <React.Suspense fallback={null}>
+              <RouteScrollReset />
+            </React.Suspense>
             <AppCommandMenu />
             {children}
           </TooltipProvider>

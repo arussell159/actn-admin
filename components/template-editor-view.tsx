@@ -34,6 +34,7 @@ import {
   XIcon,
 } from "lucide-react"
 
+import { AppSidebar } from "@/components/app-sidebar"
 import { HeaderActionMenuTrigger } from "@/components/header-action-menu-trigger"
 import { PricingUploadContent } from "@/components/pricing-upload-view"
 import { SiteHeader, SiteHeaderBackButton } from "@/components/site-header"
@@ -72,6 +73,7 @@ import {
   SelectItem,
   SelectTrigger,
 } from "@/components/ui/select"
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
@@ -87,7 +89,7 @@ import {
   defaultCountryReportMapping,
   defaultMasterReportMapping,
   getMonthEndTemplate,
-  createDefaultMonthEndTemplate,
+  loadMonthEndTemplate,
   makeTemplateId,
   saveMonthEndTemplate,
   type MonthEndTemplate,
@@ -368,9 +370,8 @@ type ItemForm =
   | null
 
 export function TemplateEditorView() {
-  const [template, setTemplate] = React.useState<MonthEndTemplate>(
-    createDefaultMonthEndTemplate
-  )
+  const [template, setTemplate] =
+    React.useState<MonthEndTemplate>(loadMonthEndTemplate)
   const [activeModuleId, setActiveModuleId] = React.useState<string | null>(
     countriesModuleId
   )
@@ -1220,305 +1221,321 @@ export function TemplateEditorView() {
   }
 
   return (
-    <main className="app-page bg-background">
-      <SiteHeader
-        title={settingsHeaderTitle}
-        leadingContent={settingsHeaderLeading}
-        mobileLeadingContent={
-          activeCountry ? (
-            <SiteHeaderBackButton
-              label="Back to countries"
-              onClick={requestCloseActiveCountry}
-            />
-          ) : undefined
-        }
-        actions={settingsHeaderActions}
-        bottomContent={settingsHeaderTabs}
-      />
-      <div className="grid gap-4 px-4 py-4 lg:px-6">
-        {!activeModuleId ? (
-          <section className="grid gap-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <h1 className="text-lg font-semibold">Settings</h1>
-              <div className="flex flex-wrap gap-2">
-                <Button onClick={() => setShowModuleForm(true)}>
-                  <PlusIcon />
-                  Add New Setting
-                </Button>
-              </div>
-            </div>
-            <div className="grid gap-4">
-              {showModuleForm ? (
-                <Card role="dialog" className="rounded-lg shadow-none">
-                  <CardHeader>
-                    <CardTitle>Add New Setting</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <FieldSet>
-                      <FieldLegend>Setting Details</FieldLegend>
-                      <FieldGroup className="grid gap-4 md:grid-cols-2">
-                        <Field>
-                          <FieldLabel htmlFor="module-name">
-                            Setting Name
-                          </FieldLabel>
-                          <Input
-                            id="module-name"
-                            value={moduleDraft.name}
-                            onChange={(event) =>
-                              setModuleDraft((current) => ({
-                                ...current,
-                                name: event.target.value,
-                              }))
-                            }
-                            placeholder="New setting name"
-                          />
-                        </Field>
-                        <LevelField
-                          id="module-level"
-                          value={moduleDraft.level}
-                          onChange={(level) =>
-                            setModuleDraft((current) => ({
-                              ...current,
-                              level,
-                            }))
-                          }
-                        />
-                      </FieldGroup>
-                    </FieldSet>
-                    <div className="mt-5 flex justify-end gap-2">
-                      <Button variant="outline" onClick={cancelModuleForm}>
-                        <XIcon />
-                        Cancel
-                      </Button>
-                      <Button onClick={saveNewModule}>
-                        <SaveIcon />
-                        Save
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : null}
-              {editingModuleId ? (
-                <ModuleDetailsPanel
-                  draft={moduleDetailsDraft}
-                  onChange={setModuleDetailsDraft}
-                  onCancel={cancelModuleDetailsForm}
-                  onSave={saveModuleDetails}
+    <SidebarProvider
+      style={
+        {
+          "--sidebar-width": "calc(var(--spacing) * 72)",
+          "--header-height": "calc(var(--spacing) * 12)",
+        } as React.CSSProperties
+      }
+    >
+      <AppSidebar variant="inset" />
+      <SidebarInset>
+        <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
+          <SiteHeader
+            title={settingsHeaderTitle}
+            leadingContent={settingsHeaderLeading}
+            mobileLeadingContent={
+              activeCountry ? (
+                <SiteHeaderBackButton
+                  label="Back to countries"
+                  onClick={requestCloseActiveCountry}
                 />
-              ) : null}
-
-              <Table containerClassName="rounded-lg border bg-background">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Setting Name</TableHead>
-                    <TableHead>Level</TableHead>
-                    <TableHead>Last Modified</TableHead>
-                    <TableHead className="w-12" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {modules.map((module) => (
-                    <TableRow
-                      key={module.id}
-                      className="group cursor-pointer"
-                      onClick={() => {
-                        selectActiveModule(module.id)
-                      }}
-                    >
-                      <TableCell className="font-medium">
-                        <div className="flex items-center gap-2">
-                          <span className="underline-offset-4 group-hover:underline">
-                            {module.name}
-                          </span>
-                          <Badge variant="secondary">{module.count}</Badge>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <ModuleLevelBadge level={module.level} />
-                      </TableCell>
-                      <TableCell>
-                        {formatModified(module.lastModified)}
-                      </TableCell>
-                      <TableCell onClick={(event) => event.stopPropagation()}>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger
-                            render={
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                aria-label={`Actions for ${module.name}`}
+              ) : undefined
+            }
+            actions={settingsHeaderActions}
+            bottomContent={settingsHeaderTabs}
+          />
+          <div className="grid gap-4 px-4 py-4 lg:px-6">
+            {!activeModuleId ? (
+              <section className="grid gap-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <h1 className="text-lg font-semibold">Settings</h1>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={() => setShowModuleForm(true)}>
+                      <PlusIcon />
+                      Add New Setting
+                    </Button>
+                  </div>
+                </div>
+                <div className="grid gap-4">
+                  {showModuleForm ? (
+                    <Card role="dialog" className="rounded-lg shadow-none">
+                      <CardHeader>
+                        <CardTitle>Add New Setting</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <FieldSet>
+                          <FieldLegend>Setting Details</FieldLegend>
+                          <FieldGroup className="grid gap-4 md:grid-cols-2">
+                            <Field>
+                              <FieldLabel htmlFor="module-name">
+                                Setting Name
+                              </FieldLabel>
+                              <Input
+                                id="module-name"
+                                value={moduleDraft.name}
+                                onChange={(event) =>
+                                  setModuleDraft((current) => ({
+                                    ...current,
+                                    name: event.target.value,
+                                  }))
+                                }
+                                placeholder="New setting name"
                               />
-                            }
-                          >
-                            <MoreHorizontalIcon />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => startEditModule(module.id)}
-                            >
-                              <PencilIcon />
-                              Edit Setting
-                            </DropdownMenuItem>
-                            {protectedModuleIds.has(module.id) ? null : (
-                              <DropdownMenuItem
-                                variant="destructive"
-                                onClick={() => deleteModule(module.id)}
-                              >
-                                <Trash2Icon />
-                                Delete
-                              </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </section>
-        ) : (
-          <section className="grid gap-4">
-            <div className="grid gap-4">
-              {showModuleForm ? (
-                <Card role="dialog" className="rounded-lg shadow-none">
-                  <CardHeader>
-                    <CardTitle>Add New Setting</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <FieldSet>
-                      <FieldLegend>Setting Details</FieldLegend>
-                      <FieldGroup className="grid gap-4 md:grid-cols-2">
-                        <Field>
-                          <FieldLabel htmlFor="module-name-active">
-                            Setting Name
-                          </FieldLabel>
-                          <Input
-                            id="module-name-active"
-                            value={moduleDraft.name}
-                            onChange={(event) =>
-                              setModuleDraft((current) => ({
-                                ...current,
-                                name: event.target.value,
-                              }))
-                            }
-                            placeholder="New setting name"
-                          />
-                        </Field>
-                        <LevelField
-                          id="module-level-active"
-                          value={moduleDraft.level}
-                          onChange={(level) =>
-                            setModuleDraft((current) => ({
-                              ...current,
-                              level,
-                            }))
-                          }
-                        />
-                      </FieldGroup>
-                    </FieldSet>
-                    <div className="mt-5 flex justify-end gap-2">
-                      <Button variant="outline" onClick={cancelModuleForm}>
-                        <XIcon />
-                        Cancel
-                      </Button>
-                      <Button onClick={saveNewModule}>
-                        <SaveIcon />
-                        Save
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : null}
-              {editingModuleId ? (
-                <ModuleDetailsPanel
-                  draft={moduleDetailsDraft}
-                  onChange={setModuleDetailsDraft}
-                  onCancel={cancelModuleDetailsForm}
-                  onSave={saveModuleDetails}
-                />
-              ) : null}
-              {itemForm ? (
-                itemForm.mode === "add-country" ? (
-                  <ItemFormPanel
-                    form={itemForm}
-                    parentRows={parentRows}
-                    template={template}
-                    onChange={setItemForm}
-                    onCancel={() => setItemForm(null)}
-                    onSave={saveItemForm}
-                  />
-                ) : null
-              ) : null}
+                            </Field>
+                            <LevelField
+                              id="module-level"
+                              value={moduleDraft.level}
+                              onChange={(level) =>
+                                setModuleDraft((current) => ({
+                                  ...current,
+                                  level,
+                                }))
+                              }
+                            />
+                          </FieldGroup>
+                        </FieldSet>
+                        <div className="mt-5 flex justify-end gap-2">
+                          <Button variant="outline" onClick={cancelModuleForm}>
+                            <XIcon />
+                            Cancel
+                          </Button>
+                          <Button onClick={saveNewModule}>
+                            <SaveIcon />
+                            Save
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ) : null}
+                  {editingModuleId ? (
+                    <ModuleDetailsPanel
+                      draft={moduleDetailsDraft}
+                      onChange={setModuleDetailsDraft}
+                      onCancel={cancelModuleDetailsForm}
+                      onSave={saveModuleDetails}
+                    />
+                  ) : null}
 
-              {activeModuleId === countriesModuleId && activeCountry ? (
-                <CountryMappingPanel
-                  ref={countryMappingPanelRef}
-                  country={activeCountry}
-                  detailsForm={activeCountryDetailsForm}
-                  parentRows={parentRows}
-                  template={template}
-                  mappingHeaders={activeCountryMappingHeaders}
-                  showExitPrompt={showCountryExitPrompt}
-                  activeSettingsSection={activeCountrySettingsSection}
-                  onChangeDetailsForm={setItemForm}
-                  onActiveSettingsSectionChange={
-                    setActiveCountrySettingsSection
-                  }
-                  onSaveDetailsForm={saveItemForm}
-                  onSaveAndExit={saveMappingsAndCloseCountry}
-                  onDiscardAndExit={discardMappingsAndCloseCountry}
-                  onKeepEditing={() => setShowCountryExitPrompt(false)}
-                  onLoadSample={loadMappingSample}
-                  onLoadSampleText={loadMappingSampleText}
-                  onSaveMapping={(mappingType, mapping) =>
-                    updateCountryReportMapping(
-                      activeCountry.id,
-                      mappingType,
-                      mapping
-                    )
-                  }
-                  onSaveAiNotes={(aiNotes) =>
-                    updateCountryAiNotes(activeCountry.id, aiNotes)
-                  }
-                />
-              ) : activeModuleId === countriesModuleId ? (
-                <CountriesTable
-                  template={template}
-                  itemForm={itemForm?.mode === "edit-country" ? itemForm : null}
-                  rowIds={countryRowIds}
-                  sensors={countryRowDndSensors}
-                  onChangeItemForm={setItemForm}
-                  onCancelItemForm={() => setItemForm(null)}
-                  onOpenCountry={openCountry}
-                  onEditCountry={startEditCountry}
-                  onDeleteCountry={deleteCountryRow}
-                  onDragEnd={reorderCountryRow}
-                  onSaveItemForm={saveItemForm}
-                />
-              ) : activeModuleId === tasksModuleId ? (
-                <TaskGroupsPanel
-                  groups={template.taskGroups}
-                  protectedModuleIds={protectedModuleIds}
-                  activeTaskGroupId={activeTaskGroup?.id ?? null}
-                  itemForm={itemForm}
-                  onChangeItemForm={setItemForm}
-                  onCancelItemForm={() => setItemForm(null)}
-                  onSaveItemForm={saveItemForm}
-                  onAddTask={startAddTask}
-                  onEditTask={startEditTask}
-                  onDeleteTask={deleteTask}
-                  onEditGroup={startEditModule}
-                  onDeleteGroup={deleteModule}
-                />
-              ) : activeModuleId === netsuiteModuleId ? (
-                <PricingUploadContent />
-              ) : null}
-            </div>
-          </section>
-        )}
-      </div>
-    </main>
+                  <Table containerClassName="rounded-lg border bg-background">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Setting Name</TableHead>
+                        <TableHead>Level</TableHead>
+                        <TableHead>Last Modified</TableHead>
+                        <TableHead className="w-12" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {modules.map((module) => (
+                        <TableRow
+                          key={module.id}
+                          className="group cursor-pointer"
+                          onClick={() => {
+                            selectActiveModule(module.id)
+                          }}
+                        >
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              <span className="underline-offset-4 group-hover:underline">
+                                {module.name}
+                              </span>
+                              <Badge variant="secondary">{module.count}</Badge>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <ModuleLevelBadge level={module.level} />
+                          </TableCell>
+                          <TableCell>
+                            {formatModified(module.lastModified)}
+                          </TableCell>
+                          <TableCell
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <DropdownMenu>
+                              <DropdownMenuTrigger
+                                render={
+                                  <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    aria-label={`Actions for ${module.name}`}
+                                  />
+                                }
+                              >
+                                <MoreHorizontalIcon />
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={() => startEditModule(module.id)}
+                                >
+                                  <PencilIcon />
+                                  Edit Setting
+                                </DropdownMenuItem>
+                                {protectedModuleIds.has(module.id) ? null : (
+                                  <DropdownMenuItem
+                                    variant="destructive"
+                                    onClick={() => deleteModule(module.id)}
+                                  >
+                                    <Trash2Icon />
+                                    Delete
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </section>
+            ) : (
+              <section className="grid gap-4">
+                <div className="grid gap-4">
+                  {showModuleForm ? (
+                    <Card role="dialog" className="rounded-lg shadow-none">
+                      <CardHeader>
+                        <CardTitle>Add New Setting</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <FieldSet>
+                          <FieldLegend>Setting Details</FieldLegend>
+                          <FieldGroup className="grid gap-4 md:grid-cols-2">
+                            <Field>
+                              <FieldLabel htmlFor="module-name-active">
+                                Setting Name
+                              </FieldLabel>
+                              <Input
+                                id="module-name-active"
+                                value={moduleDraft.name}
+                                onChange={(event) =>
+                                  setModuleDraft((current) => ({
+                                    ...current,
+                                    name: event.target.value,
+                                  }))
+                                }
+                                placeholder="New setting name"
+                              />
+                            </Field>
+                            <LevelField
+                              id="module-level-active"
+                              value={moduleDraft.level}
+                              onChange={(level) =>
+                                setModuleDraft((current) => ({
+                                  ...current,
+                                  level,
+                                }))
+                              }
+                            />
+                          </FieldGroup>
+                        </FieldSet>
+                        <div className="mt-5 flex justify-end gap-2">
+                          <Button variant="outline" onClick={cancelModuleForm}>
+                            <XIcon />
+                            Cancel
+                          </Button>
+                          <Button onClick={saveNewModule}>
+                            <SaveIcon />
+                            Save
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ) : null}
+                  {editingModuleId ? (
+                    <ModuleDetailsPanel
+                      draft={moduleDetailsDraft}
+                      onChange={setModuleDetailsDraft}
+                      onCancel={cancelModuleDetailsForm}
+                      onSave={saveModuleDetails}
+                    />
+                  ) : null}
+                  {itemForm ? (
+                    itemForm.mode === "add-country" ? (
+                      <ItemFormPanel
+                        form={itemForm}
+                        parentRows={parentRows}
+                        template={template}
+                        onChange={setItemForm}
+                        onCancel={() => setItemForm(null)}
+                        onSave={saveItemForm}
+                      />
+                    ) : null
+                  ) : null}
+
+                  {activeModuleId === countriesModuleId && activeCountry ? (
+                    <CountryMappingPanel
+                      ref={countryMappingPanelRef}
+                      country={activeCountry}
+                      detailsForm={activeCountryDetailsForm}
+                      parentRows={parentRows}
+                      template={template}
+                      mappingHeaders={activeCountryMappingHeaders}
+                      showExitPrompt={showCountryExitPrompt}
+                      activeSettingsSection={activeCountrySettingsSection}
+                      onChangeDetailsForm={setItemForm}
+                      onActiveSettingsSectionChange={
+                        setActiveCountrySettingsSection
+                      }
+                      onSaveDetailsForm={saveItemForm}
+                      onSaveAndExit={saveMappingsAndCloseCountry}
+                      onDiscardAndExit={discardMappingsAndCloseCountry}
+                      onKeepEditing={() => setShowCountryExitPrompt(false)}
+                      onLoadSample={loadMappingSample}
+                      onLoadSampleText={loadMappingSampleText}
+                      onSaveMapping={(mappingType, mapping) =>
+                        updateCountryReportMapping(
+                          activeCountry.id,
+                          mappingType,
+                          mapping
+                        )
+                      }
+                      onSaveAiNotes={(aiNotes) =>
+                        updateCountryAiNotes(activeCountry.id, aiNotes)
+                      }
+                    />
+                  ) : activeModuleId === countriesModuleId ? (
+                    <CountriesTable
+                      template={template}
+                      itemForm={
+                        itemForm?.mode === "edit-country" ? itemForm : null
+                      }
+                      rowIds={countryRowIds}
+                      sensors={countryRowDndSensors}
+                      onChangeItemForm={setItemForm}
+                      onCancelItemForm={() => setItemForm(null)}
+                      onOpenCountry={openCountry}
+                      onEditCountry={startEditCountry}
+                      onDeleteCountry={deleteCountryRow}
+                      onDragEnd={reorderCountryRow}
+                      onSaveItemForm={saveItemForm}
+                    />
+                  ) : activeModuleId === tasksModuleId ? (
+                    <TaskGroupsPanel
+                      groups={template.taskGroups}
+                      protectedModuleIds={protectedModuleIds}
+                      activeTaskGroupId={activeTaskGroup?.id ?? null}
+                      itemForm={itemForm}
+                      onChangeItemForm={setItemForm}
+                      onCancelItemForm={() => setItemForm(null)}
+                      onSaveItemForm={saveItemForm}
+                      onAddTask={startAddTask}
+                      onEditTask={startEditTask}
+                      onDeleteTask={deleteTask}
+                      onEditGroup={startEditModule}
+                      onDeleteGroup={deleteModule}
+                    />
+                  ) : activeModuleId === netsuiteModuleId ? (
+                    <PricingUploadContent />
+                  ) : null}
+                </div>
+              </section>
+            )}
+          </div>
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }
 
@@ -1765,7 +1782,6 @@ function CountriesTable({
 }) {
   return (
     <DndContext
-      id="template-countries"
       sensors={sensors}
       collisionDetection={closestCenter}
       onDragEnd={onDragEnd}

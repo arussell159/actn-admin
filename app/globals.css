@@ -1,7 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "./app-shell.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -49,6 +48,8 @@
 }
 
 :root {
+  --font-inter: var(--font-ui);
+  --font-ui: Inter, "Segoe UI", Arial, sans-serif;
   --font-mono: "Geist Mono", "Cascadia Code", Consolas, monospace;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -160,7 +161,104 @@
   [role="checkbox"]:not([aria-disabled="true"]):not([data-disabled]) {
     cursor: pointer;
   }
+  html[data-scroll-lock="true"],
+  html[data-scroll-lock="true"] body {
+    height: 100%;
+    overflow: hidden;
+  }
   html {
     @apply font-sans;
+  }
+}
+
+@media (max-width: 767px) {
+  html,
+  body {
+    height: calc(
+      100dvh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
+    overflow: hidden;
+    overscroll-behavior-x: none;
+    overscroll-behavior-y: none;
+    touch-action: pan-y;
+  }
+
+  body,
+  body * {
+    font-size: max(16px, 1em);
+  }
+
+  [data-slot="sidebar-wrapper"] {
+    height: calc(
+      100vh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
+    height: calc(
+      100dvh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
+    min-height: calc(
+      100vh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
+    min-height: calc(
+      100dvh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
+    overflow: hidden;
+    overscroll-behavior-x: none;
+  }
+
+  [data-slot="sidebar-inset"] {
+    box-sizing: border-box;
+    height: calc(
+      100vh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
+    height: calc(
+      100dvh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
+    min-height: calc(
+      100vh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
+    min-height: calc(
+      100dvh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-x: none;
+    overscroll-behavior-y: contain;
+    padding-top: 0;
+    padding-bottom: 0;
+    scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
+    transform: translateY(var(--mobile-pull-distance, 0px));
+    transition: transform 150ms ease-out;
+    -webkit-overflow-scrolling: touch;
+    will-change: transform;
+  }
+
+  [data-slot="sidebar-inset"] > main {
+    min-height: auto;
+    padding-bottom: var(
+      --mobile-page-bottom-padding,
+      calc(6rem + env(safe-area-inset-bottom, 0px))
+    );
+  }
+
+  [data-mobile-note-editor="true"] {
+    position: fixed;
+    inset: var(--mobile-note-viewport-top, 0px) 0 auto;
+    height: var(--mobile-note-viewport-height, 100dvh);
+    min-height: 0 !important;
+    overflow: hidden;
+  }
+
+  [data-mobile-note-editor="true"] [data-slot="sidebar-inset"] {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    transform: none;
+  }
+
+  [data-mobile-note-editor="true"] [data-slot="sidebar-inset"] > main {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    padding-bottom: 0;
   }
 }

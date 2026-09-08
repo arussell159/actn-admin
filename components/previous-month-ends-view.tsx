@@ -9,6 +9,7 @@ import {
   Trash2Icon,
 } from "lucide-react"
 
+import { AppSidebar } from "@/components/app-sidebar"
 import { AppLink } from "@/components/app-link"
 import { PreviousMonthEndsSkeleton } from "@/components/page-skeletons"
 import { SiteHeader } from "@/components/site-header"
@@ -25,6 +26,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import {
   Table,
   TableBody,
@@ -100,107 +102,123 @@ export function PreviousMonthEndsView() {
   }
 
   return (
-    <main className="app-page bg-background">
-      <SiteHeader title="Previous Months" />
-      <div className="grid gap-4 px-4 py-4 lg:px-6">
-        <section className="flex justify-end">
-          <Button className="w-fit" render={<AppLink href="/month-end/new" />}>
-            <PlusIcon />
-            New Month End
-          </Button>
-        </section>
-        {deleteError ? (
-          <p className="text-sm text-destructive">{deleteError}</p>
-        ) : null}
-        {isLoading ? (
-          <PreviousMonthEndsSkeleton />
-        ) : records.length ? (
-          <Table containerClassName="rounded-lg border bg-background">
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Completion Date</TableHead>
-                <TableHead>Last Updated</TableHead>
-                <TableHead aria-label="Actions" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {records.map((monthEnd) => (
-                <TableRow key={monthEnd.period}>
-                  <TableCell className="font-medium">
-                    <AppLink
-                      href={`/previous-month-ends/view?period=${monthEnd.period}`}
-                      className="block"
-                    >
-                      {getMonthEndTitle(monthEnd)}
-                    </AppLink>
-                  </TableCell>
-                  <TableCell>
-                    <AppLink
-                      href={`/previous-month-ends/view?period=${monthEnd.period}`}
-                      className="block"
-                    >
-                      {formatDateTime(monthEnd.completedAt)}
-                    </AppLink>
-                  </TableCell>
-                  <TableCell>
-                    <AppLink
-                      href={`/previous-month-ends/view?period=${monthEnd.period}`}
-                      className="block"
-                    >
-                      {formatDateTime(monthEnd.updatedAt)}
-                    </AppLink>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label={`Actions for ${getMonthEndTitle(monthEnd)}`}
-                          />
-                        }
-                      >
-                        <MoreHorizontalIcon />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="min-w-40">
-                        <DropdownMenuItem
-                          onClick={() =>
-                            router.push(
-                              `/previous-month-ends/view?period=${encodeURIComponent(monthEnd.period)}`
-                            )
-                          }
+    <SidebarProvider
+      style={
+        {
+          "--sidebar-width": "calc(var(--spacing) * 72)",
+          "--header-height": "calc(var(--spacing) * 12)",
+        } as React.CSSProperties
+      }
+    >
+      <AppSidebar variant="inset" />
+      <SidebarInset>
+        <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
+          <SiteHeader title="Previous Months" />
+          <div className="grid gap-4 px-4 py-4 lg:px-6">
+            <section className="flex justify-end">
+              <Button
+                className="w-fit"
+                render={<AppLink href="/month-end/new" />}
+              >
+                <PlusIcon />
+                New Month End
+              </Button>
+            </section>
+            {deleteError ? (
+              <p className="text-sm text-destructive">{deleteError}</p>
+            ) : null}
+            {isLoading ? (
+              <PreviousMonthEndsSkeleton />
+            ) : records.length ? (
+              <Table containerClassName="rounded-lg border bg-background">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Completion Date</TableHead>
+                    <TableHead>Last Updated</TableHead>
+                    <TableHead aria-label="Actions" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {records.map((monthEnd) => (
+                    <TableRow key={monthEnd.period}>
+                      <TableCell className="font-medium">
+                        <AppLink
+                          href={`/previous-month-ends/view?period=${monthEnd.period}`}
+                          className="block"
                         >
-                          <FileTextIcon />
-                          View
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onClick={() => deleteRecord(monthEnd.period)}
+                          {getMonthEndTitle(monthEnd)}
+                        </AppLink>
+                      </TableCell>
+                      <TableCell>
+                        <AppLink
+                          href={`/previous-month-ends/view?period=${monthEnd.period}`}
+                          className="block"
                         >
-                          <Trash2Icon />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        ) : (
-          <Card className="rounded-lg shadow-sm">
-            <CardHeader>
-              <CardTitle>No previous month ends yet</CardTitle>
-              <CardDescription>
-                Closed month-end records will appear here after you save them.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        )}
-      </div>
-    </main>
+                          {formatDateTime(monthEnd.completedAt)}
+                        </AppLink>
+                      </TableCell>
+                      <TableCell>
+                        <AppLink
+                          href={`/previous-month-ends/view?period=${monthEnd.period}`}
+                          className="block"
+                        >
+                          {formatDateTime(monthEnd.updatedAt)}
+                        </AppLink>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            render={
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                aria-label={`Actions for ${getMonthEndTitle(monthEnd)}`}
+                              />
+                            }
+                          >
+                            <MoreHorizontalIcon />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="min-w-40">
+                            <DropdownMenuItem
+                              onClick={() =>
+                                router.push(
+                                  `/previous-month-ends/view?period=${encodeURIComponent(monthEnd.period)}`
+                                )
+                              }
+                            >
+                              <FileTextIcon />
+                              View
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onClick={() => deleteRecord(monthEnd.period)}
+                            >
+                              <Trash2Icon />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <Card className="rounded-lg shadow-sm">
+                <CardHeader>
+                  <CardTitle>No previous month ends yet</CardTitle>
+                  <CardDescription>
+                    Closed month-end records will appear here after you save
+                    them.
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            )}
+          </div>
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }
 

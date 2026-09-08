@@ -1,9 +1,29 @@
-@use "../../../styles/variables";
-@use "../../../styles/keyframe-animations";
+@import "../../../styles/variables";
+@import "../../../styles/keyframe-animations";
 
 $system-font-stack:
   -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui,
   "Helvetica Neue", Arial, sans-serif;
+
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--tt-scrollbar-color);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
 
 .tiptap.ProseMirror {
   font-family: $system-font-stack;
@@ -38,20 +58,10 @@ $system-font-stack:
 
 .simple-editor-search-and-replace {
   position: fixed;
-  top: calc(
-    var(--app-keyboard-top, 0px) + var(--content-top-offset) +
-      var(--tt-toolbar-height) + 0.5rem
-  );
-  right: max(0.5rem, var(--safe-right));
+  top: calc(var(--tt-toolbar-height) + 0.5rem);
+  right: 0.5rem;
   z-index: 51;
-  max-height: calc(
-    var(--app-keyboard-height, var(--app-viewport-height)) - var(
-        --content-top-offset
-      ) - var(--tt-toolbar-height) - var(--content-bottom-offset) -
-      1rem
-  );
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  max-height: calc(100dvh - var(--tt-toolbar-height) - 1rem);
 }
 
 .simple-editor-content {
@@ -96,7 +106,7 @@ $system-font-stack:
   margin: 0 auto;
   flex: 1;
   min-height: 100%;
-  padding: 3rem 3rem 3rem;
+  padding: 3rem 3rem 30vh;
 }
 
 @media screen and (min-width: 768px) {
@@ -118,7 +128,6 @@ $system-font-stack:
 
 @media screen and (max-width: 767px) {
   .simple-editor-wrapper {
-    --tt-toolbar-height: 0px;
     min-height: 0;
     height: 100%;
     position: relative;
@@ -138,7 +147,7 @@ $system-font-stack:
     font-size: 17pt;
     line-height: 1.5;
     min-height: 100%;
-    padding: 0.75rem 1rem 3rem;
+    padding: 0.75rem 1rem calc(7rem + env(safe-area-inset-bottom, 0px));
   }
 
   .simple-editor-content
@@ -178,11 +187,13 @@ $system-font-stack:
 
 @media screen and (max-width: 480px) {
   .simple-editor-search-and-replace {
-    left: max(0.5rem, var(--safe-left));
+    top: 0.5rem;
+    left: 0.5rem;
     width: auto;
+    max-height: calc(100dvh - 1rem);
   }
 
   .simple-editor-content .tiptap.ProseMirror.simple-editor {
-    padding: 0.75rem 1rem 3rem;
+    padding: 0.75rem 1rem calc(7rem + env(safe-area-inset-bottom, 0px));
   }
 }

@@ -6,7 +6,7 @@ export function isStaleAssetError(reason: unknown) {
         ? reason
         : ""
 
-  return /ChunkLoadError|Loading chunk [\w-]+ failed|Failed to load chunk|Failed to fetch dynamically imported module|Importing a module script failed|CSS_CHUNK_LOAD_FAILED|Failed to load module script/i.test(
+  return /ChunkLoadError|Loading chunk [\w-]+ failed|Failed to fetch dynamically imported module|Importing a module script failed|CSS_CHUNK_LOAD_FAILED|Failed to load module script/i.test(
     message
   )
 }

@@ -1,85 +1,214 @@
 "use client"
 
-import { useEffect } from "react"
-import { getAppScroller } from "@/lib/app-scroll"
+import * as React from "react"
+
+type LockableScreenOrientation = ScreenOrientation & {
+  lock?: (orientation: "portrait-primary") => Promise<void>
+}
 
 export function MobileAppGuard() {
-  useEffect(() => {
-    let startX = 0,
-      startY = 0,
-      started = 0
-    let topTap = false
-    let back: HTMLElement | null = null
-    const reset = () => {
-      topTap = false
-      back = null
+  React.useEffect(() => {
+    const coarsePointer = window.matchMedia("(pointer: coarse)")
+    let touchStartX = 0
+    let touchStartY = 0
+    let touchStartTime = 0
+    let topTapCandidate = false
+    let edgeSwipeDistance = 0
+    let edgeSwipeTarget: HTMLElement | null = null
+
+    const visibleBackButton = () =>
+      Array.from(
+        document.querySelectorAll<HTMLElement>("[data-site-header-back]")
+      ).find(
+        (element) =>
+          element.getClientRects().length > 0 &&
+          element.getAttribute("aria-disabled") !== "true" &&
+          !(element instanceof HTMLButtonElement && element.disabled)
+      ) ?? null
+
+    const lockPortrait = () => {
+      if (!coarsePointer.matches) {
+        return
+      }
+
+      const orientation = screen.orientation as LockableScreenOrientation
+      void orientation.lock?.("portrait-primary").catch(() => {
+        // Regular browser tabs can reject orientation locking. Installed
+        // apps also declare portrait-primary in the web app manifest.
+      })
     }
-    const start = (event: TouchEvent) => {
-      reset()
-      if (event.touches.length !== 1) return
-      const target = event.target instanceof Element ? event.target : null
-      if (
-        target?.closest(
-          "a, button, input, textarea, select, [contenteditable], [role=dialog]"
+
+    const preventGesture = (event: Event) => event.preventDefault()
+    const scrollCurrentPageToTop = () => {
+      const scrollableElements = Array.from(
+        document.querySelectorAll<HTMLElement>("*")
+      ).filter((element) => {
+        if (
+          element.scrollTop <= 0 ||
+          element.scrollHeight <= element.clientHeight
+        ) {
+          return false
+        }
+
+        const bounds = element.getBoundingClientRect()
+
+        if (
+          bounds.width <= 0 ||
+          bounds.height <= 0 ||
+          bounds.bottom <= 0 ||
+          bounds.top >= window.innerHeight
+        ) {
+          return false
+        }
+
+        const overflowY = window.getComputedStyle(element).overflowY
+        return overflowY === "auto" || overflowY === "scroll"
+      })
+
+      for (const element of scrollableElements) {
+        element.scrollTo({ top: 0, left: 0, behavior: "smooth" })
+      }
+
+      window.scrollTo({ top: 0, left: 0, behavior: "smooth" })
+      document.scrollingElement?.scrollTo({
+        top: 0,
+        left: 0,
+        behavior: "smooth",
+      })
+    }
+    const handleTouchStart = (event: TouchEvent) => {
+      if (!coarsePointer.matches) {
+        return
+      }
+
+      if (event.touches.length > 1) {
+        topTapCandidate = false
+        edgeSwipeTarget = null
+        edgeSwipeDistance = 0
+        event.preventDefault()
+        return
+      }
+
+      touchStartX = event.touches[0]?.clientX ?? 0
+      touchStartY = event.touches[0]?.clientY ?? 0
+      touchStartTime = performance.now()
+      const topEdge = (window.visualViewport?.offsetTop ?? 0) + 44
+      topTapCandidate =
+        touchStartY <= topEdge &&
+        !(event.target as Element | null)?.closest(
+          "a, button, input, select, textarea, [role='button']"
         )
-      )
-        return
-      startX = event.touches[0].clientX
-      startY = event.touches[0].clientY
-      started = performance.now()
-      topTap = Boolean(target?.closest("[data-app-header]"))
-      // Browsers own their native back swipe. Preserve the app's back gesture
-      // only in standalone mode, and only if it starts inside route content.
-      if (
-        startX <= 28 &&
-        target?.closest("[data-app-scroll]") &&
-        window.matchMedia("(display-mode: standalone)").matches
-      ) {
-        back =
-          Array.from(
-            document.querySelectorAll<HTMLElement>("[data-site-header-back]")
-          ).find((el) => el.getClientRects().length > 0) ?? null
-      }
+      edgeSwipeDistance = 0
+      edgeSwipeTarget = touchStartX <= 28 ? visibleBackButton() : null
     }
-    const move = (event: TouchEvent) => {
-      if (event.touches.length !== 1) {
-        reset()
+    const handleTouchMove = (event: TouchEvent) => {
+      if (!coarsePointer.matches) {
         return
       }
-      const dx = event.touches[0].clientX - startX
-      const dy = Math.abs(event.touches[0].clientY - startY)
-      if (Math.abs(dx) > 8 || dy > 8) topTap = false
-      if (dy > Math.abs(dx) && dy > 12) back = null
-      if (back && dx > 12 && dx > dy && event.cancelable) event.preventDefault()
+
+      if (event.touches.length > 1) {
+        topTapCandidate = false
+        edgeSwipeTarget = null
+        edgeSwipeDistance = 0
+        event.preventDefault()
+        return
+      }
+
+      const touch = event.touches[0]
+      const signedDeltaX = (touch?.clientX ?? 0) - touchStartX
+      const deltaX = Math.abs(signedDeltaX)
+      const deltaY = Math.abs((touch?.clientY ?? 0) - touchStartY)
+
+      if (deltaX > 8 || deltaY > 8) {
+        topTapCandidate = false
+      }
+
+      if (edgeSwipeTarget && deltaY > deltaX && deltaY > 12) {
+        edgeSwipeTarget = null
+        edgeSwipeDistance = 0
+      }
+
+      if (deltaX > 8 && deltaX > deltaY) {
+        event.preventDefault()
+
+        if (edgeSwipeTarget && signedDeltaX > 0) {
+          edgeSwipeDistance = signedDeltaX
+        }
+      }
     }
-    const end = (event: TouchEvent) => {
-      if (topTap && performance.now() - started < 500)
-        getAppScroller()?.scrollTo({
-          top: 0,
-          behavior: window.matchMedia("(prefers-reduced-motion: reduce)")
-            .matches
-            ? "instant"
-            : "smooth",
-        })
-      const touch = event.changedTouches[0]
-      if (
-        back &&
-        touch &&
-        touch.clientX - startX >= Math.min(140, window.innerWidth * 0.35)
-      )
-        back.click()
-      reset()
+    const handleTouchEnd = (event: TouchEvent) => {
+      if (topTapCandidate && performance.now() - touchStartTime < 500) {
+        topTapCandidate = false
+        event.preventDefault()
+        scrollCurrentPageToTop()
+      }
+
+      if (!edgeSwipeTarget) {
+        return
+      }
+
+      const activationDistance = Math.min(140, window.innerWidth * 0.35)
+      const target = edgeSwipeTarget
+
+      edgeSwipeTarget = null
+
+      if (edgeSwipeDistance < activationDistance) {
+        edgeSwipeDistance = 0
+        return
+      }
+
+      edgeSwipeDistance = 0
+      event.preventDefault()
+      target.click()
     }
-    document.addEventListener("touchstart", start, { passive: true })
-    document.addEventListener("touchmove", move, { passive: false })
-    document.addEventListener("touchend", end)
-    document.addEventListener("touchcancel", reset)
+    const handleTouchCancel = () => {
+      topTapCandidate = false
+      edgeSwipeTarget = null
+      edgeSwipeDistance = 0
+    }
+
+    lockPortrait()
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        lockPortrait()
+      }
+    }
+    document.addEventListener("gesturestart", preventGesture, {
+      passive: false,
+    })
+    document.addEventListener("gesturechange", preventGesture, {
+      passive: false,
+    })
+    document.addEventListener("gestureend", preventGesture, {
+      passive: false,
+    })
+    document.addEventListener("touchstart", handleTouchStart, {
+      passive: false,
+    })
+    document.addEventListener("touchmove", handleTouchMove, {
+      passive: false,
+    })
+    document.addEventListener("touchend", handleTouchEnd, {
+      passive: false,
+    })
+    document.addEventListener("touchcancel", handleTouchCancel, {
+      passive: false,
+    })
+    screen.orientation?.addEventListener("change", lockPortrait)
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+
     return () => {
-      document.removeEventListener("touchstart", start)
-      document.removeEventListener("touchmove", move)
-      document.removeEventListener("touchend", end)
-      document.removeEventListener("touchcancel", reset)
+      document.removeEventListener("gesturestart", preventGesture)
+      document.removeEventListener("gesturechange", preventGesture)
+      document.removeEventListener("gestureend", preventGesture)
+      document.removeEventListener("touchstart", handleTouchStart)
+      document.removeEventListener("touchmove", handleTouchMove)
+      document.removeEventListener("touchend", handleTouchEnd)
+      document.removeEventListener("touchcancel", handleTouchCancel)
+      screen.orientation?.removeEventListener("change", lockPortrait)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
     }
   }, [])
+
   return null
 }

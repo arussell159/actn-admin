@@ -8,6 +8,7 @@ import {
   UploadIcon,
 } from "lucide-react"
 
+import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
 import { Button } from "@/components/ui/button"
 import {
@@ -18,6 +19,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import type { QuoteCatalogItem } from "@/lib/quote-items-catalog"
 import { replaceQuoteItemCatalog } from "@/lib/quote-items-db"
 import { parseQuotePricingCsv } from "@/lib/quote-pricing-import"
@@ -28,15 +30,27 @@ function countCountries(items: QuoteCatalogItem[]) {
 
 export function PricingUploadView() {
   return (
-    <main className="app-page bg-background">
-      <SiteHeader title="Pricing Upload" />
-      <div className="grid gap-4 px-4 py-4 lg:px-6">
-        <section>
-          <h1 className="text-2xl font-semibold">Pricing Upload</h1>
-        </section>
-        <PricingUploadContent />
-      </div>
-    </main>
+    <SidebarProvider
+      style={
+        {
+          "--sidebar-width": "calc(var(--spacing) * 72)",
+          "--header-height": "calc(var(--spacing) * 12)",
+        } as React.CSSProperties
+      }
+    >
+      <AppSidebar variant="inset" />
+      <SidebarInset>
+        <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
+          <SiteHeader title="Pricing Upload" />
+          <div className="grid gap-4 px-4 py-4 lg:px-6">
+            <section>
+              <h1 className="text-2xl font-semibold">Pricing Upload</h1>
+            </section>
+            <PricingUploadContent />
+          </div>
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }
 
