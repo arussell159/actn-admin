@@ -641,24 +641,21 @@ function MobileFolderTitlePrompt({
   onCancel: () => void
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background md:hidden">
-      <header className="grid h-[calc(2.5rem+env(safe-area-inset-top,0px))] shrink-0 grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-center px-4 pt-[env(safe-area-inset-top,0px)]">
+    <div className="fixed inset-0 z-50 flex flex-col bg-background pt-[env(safe-area-inset-top,0px)] md:hidden">
+      <header className="grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center px-4">
         <Button
-          variant="outline"
-          size="icon-lg"
-          className={siteHeaderGlassButtonClassName}
+          variant="ghost"
+          size="icon-sm"
+          className="justify-self-start rounded-full bg-background shadow-sm"
           aria-label="Cancel folder"
           onClick={onCancel}
         >
           <XIcon />
         </Button>
-        <div className="text-center text-base font-semibold text-foreground">
-          New Folder
-        </div>
+        <div className="text-sm font-semibold text-foreground">New Folder</div>
         <Button
-          variant="outline"
-          size="icon-lg"
-          className={siteHeaderGlassButtonClassName}
+          size="icon-sm"
+          className="justify-self-end rounded-full bg-yellow-400 text-yellow-950 shadow-sm hover:bg-yellow-300 disabled:opacity-40"
           aria-label="Create folder"
           disabled={!value.trim()}
           onClick={onConfirm}
@@ -1760,41 +1757,9 @@ export function InformationView() {
         `${visualViewport?.offsetTop ?? 0}px`
       )
 
-      // Reuse this existing keyboard resize handler; preserve normal scrolling.
-      const selection = window.getSelection()
-      const scroller = activeShell.querySelector<HTMLElement>(
-        ".simple-editor-content"
-      )
-      if (
-        scroller &&
-        selection?.rangeCount &&
-        scroller.contains(document.activeElement)
-      ) {
-        const range = selection.getRangeAt(0).cloneRange()
-        window.requestAnimationFrame(() => {
-          if (
-            !scroller.isConnected ||
-            !scroller.contains(document.activeElement)
-          )
-            return
-          const selectionBounds = range.getBoundingClientRect()
-          const caret = selectionBounds.height
-            ? selectionBounds
-            : range.startContainer.parentElement?.getBoundingClientRect()
-          if (!caret) return
-          const bounds = scroller.getBoundingClientRect()
-          const top = Math.max(bounds.top, visualViewport?.offsetTop ?? 0) + 16
-          const bottom =
-            Math.min(
-              bounds.bottom,
-              (visualViewport?.offsetTop ?? 0) +
-                (visualViewport?.height ?? window.innerHeight)
-            ) - 24
-          if (caret.height && caret.bottom > bottom)
-            scroller.scrollTop += caret.bottom - bottom
-          else if (caret.top < top) scroller.scrollTop -= top - caret.top
-        })
-      }
+      activeShell
+        .querySelector<HTMLElement>('[data-slot="sidebar-inset"]')
+        ?.scrollTo({ top: 0, left: 0 })
     }
 
     syncMobileEditorViewport()

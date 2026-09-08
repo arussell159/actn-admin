@@ -174,8 +174,9 @@
 @media (max-width: 767px) {
   html,
   body {
-    height: 100vh;
-    height: 100dvh;
+    height: calc(
+      100dvh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
     overflow: hidden;
     overscroll-behavior-x: none;
     overscroll-behavior-y: none;
@@ -188,31 +189,51 @@
   }
 
   [data-slot="sidebar-wrapper"] {
-    height: 100vh;
-    height: 100dvh;
-    min-height: 0;
+    height: calc(
+      100vh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
+    height: calc(
+      100dvh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
+    min-height: calc(
+      100vh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
+    min-height: calc(
+      100dvh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
     overflow: hidden;
     overscroll-behavior-x: none;
   }
 
   [data-slot="sidebar-inset"] {
     box-sizing: border-box;
-    height: 100%;
-    min-height: 0;
+    height: calc(
+      100vh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
+    height: calc(
+      100dvh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
+    min-height: calc(
+      100vh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
+    min-height: calc(
+      100dvh + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)
+    );
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior-x: none;
     overscroll-behavior-y: contain;
     padding-top: 0;
     padding-bottom: 0;
-    scroll-padding-top: calc(2.5rem + env(safe-area-inset-top, 0px));
     scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
+    transform: translateY(var(--mobile-pull-distance, 0px));
+    transition: transform 150ms ease-out;
     -webkit-overflow-scrolling: touch;
+    will-change: transform;
   }
 
   [data-slot="sidebar-inset"] > main {
     min-height: auto;
-    flex-shrink: 0;
     padding-bottom: var(
       --mobile-page-bottom-padding,
       calc(6rem + env(safe-area-inset-bottom, 0px))
