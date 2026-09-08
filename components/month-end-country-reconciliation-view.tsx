@@ -5277,11 +5277,6 @@ function CountryProcessMobileTabs({
             key={step.value}
             value={step.value}
             className="min-h-11 touch-manipulation px-3 text-base transition-colors! duration-75! select-none"
-            onPointerDown={(event) => {
-              if (event.pointerType === "touch") {
-                setDisplayView(step.value)
-              }
-            }}
           >
             {step.label}
           </TabsTrigger>
