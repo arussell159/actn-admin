@@ -5,9 +5,13 @@ import { usePathname, useSearchParams } from "next/navigation"
 
 import { hasMonthEndReturnIntent } from "@/lib/month-end-return-point"
 
-function scrollPageToTop() {
+function scrollOuterViewportToTop() {
   window.scrollTo({ top: 0, left: 0, behavior: "instant" })
   document.scrollingElement?.scrollTo({ top: 0, left: 0, behavior: "instant" })
+}
+
+function scrollPageToTop() {
+  scrollOuterViewportToTop()
 
   document
     .querySelectorAll<HTMLElement>("[data-slot='sidebar-inset']")
@@ -35,11 +39,17 @@ export function RouteScrollReset() {
     const shouldRestoreMonthEndReturn =
       pathname === "/month-end" && hasMonthEndReturnIntent(period)
 
-    if (shouldRestoreMonthEndReturn) {
-      return
-    }
+    // A return to Month End restores the inner app scroller separately. The
+    // outer viewport must still reset or mobile Safari can keep the country
+    // page's visual offset and render the next sticky header above the screen.
+    scrollOuterViewportToTop()
+    const animationFrameId = window.requestAnimationFrame(
+      shouldRestoreMonthEndReturn
+        ? scrollOuterViewportToTop
+        : scrollPageToTop
+    )
 
-    window.requestAnimationFrame(scrollPageToTop)
+    return () => window.cancelAnimationFrame(animationFrameId)
   }, [pathname, period, search])
 
   return null

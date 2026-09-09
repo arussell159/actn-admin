@@ -227,15 +227,23 @@ function getMonthEndScrollY() {
   const sidebarInset = document.querySelector<HTMLElement>(
     "[data-slot='sidebar-inset']"
   )
+
+  if (window.matchMedia("(max-width: 767px)").matches) {
+    return sidebarInset?.scrollTop ?? 0
+  }
+
   const documentScrollY = document.scrollingElement?.scrollTop ?? window.scrollY
 
   return Math.max(window.scrollY, documentScrollY, sidebarInset?.scrollTop ?? 0)
 }
 
 function restoreMonthEndScrollY(scrollY: number) {
-  window.scrollTo({ top: scrollY, left: 0, behavior: "instant" })
+  const isMobile = window.matchMedia("(max-width: 767px)").matches
+  const outerScrollY = isMobile ? 0 : scrollY
+
+  window.scrollTo({ top: outerScrollY, left: 0, behavior: "instant" })
   document.scrollingElement?.scrollTo({
-    top: scrollY,
+    top: outerScrollY,
     left: 0,
     behavior: "instant",
   })
@@ -318,6 +326,7 @@ function MonthEndMetricCard({
         )}
         role={onActivate ? "button" : undefined}
         tabIndex={onActivate ? 0 : undefined}
+        aria-label={onActivate ? `${title}: ${value}` : undefined}
         aria-expanded={onActivate ? isActive : undefined}
         onClick={onActivate}
         onKeyDown={(event) => {
@@ -623,62 +632,51 @@ function MonthEndTaskGroupsList({
   updateTask: (key: string, value: boolean) => void
   isReadOnly?: boolean
 }) {
-  const columns = groups.reduce(
-    (groupColumns, group, index) => {
-      groupColumns[index % groupColumns.length].push(group)
-      return groupColumns
-    },
-    [[], []] as MonthEndTemplate["taskGroups"][]
-  )
-
   return (
-    <div className="grid max-w-5xl gap-5 md:grid-cols-2">
-      {columns.map((column, columnIndex) => (
-        <div key={columnIndex} className="grid content-start gap-5">
-          {column.map((group) => (
-            <Card
-              key={group.id}
-              className={cn(
-                "shadow-none",
-                group.tasks.length > 0 &&
-                  group.tasks.every((task) =>
-                    asBool(checked[taskKey(group.id, task.id)])
-                  ) &&
-                  "border-emerald-300 bg-emerald-100 text-emerald-950 dark:border-emerald-700 dark:bg-emerald-900/35 dark:text-emerald-50"
-              )}
-            >
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg">{group.title}</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-0">
-                {group.tasks.map((task, taskIndex) => {
-                  const key = taskKey(group.id, task.id)
+    <div className="grid max-w-5xl items-start gap-5 md:grid-cols-2">
+      {groups.map((group) => (
+        <Card
+          key={group.id}
+          data-task-group={group.id}
+          className={cn(
+            "gap-0 py-0 shadow-none",
+            group.tasks.length > 0 &&
+              group.tasks.every((task) =>
+                asBool(checked[taskKey(group.id, task.id)])
+              ) &&
+              "border-emerald-300 bg-emerald-100 text-emerald-950 dark:border-emerald-700 dark:bg-emerald-900/35 dark:text-emerald-50"
+          )}
+        >
+          <CardHeader className="px-4 pt-4 pb-2">
+            <CardTitle className="text-lg">{group.title}</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-0 px-0">
+            {group.tasks.map((task, taskIndex) => {
+              const key = taskKey(group.id, task.id)
 
-                  return (
-                    <label
-                      key={task.id}
-                      className={cn(
-                        "flex min-h-11 items-center justify-between gap-3 px-1 py-2 text-sm font-medium hover:bg-muted/60",
-                        taskIndex > 0 && "border-t",
-                        asBool(checked[key]) &&
-                          "bg-emerald-100 hover:bg-emerald-100/80 dark:bg-emerald-900/35 dark:hover:bg-emerald-900/45"
-                      )}
-                    >
-                      <span className="min-w-0 flex-1">{task.label}</span>
-                      <Checkbox
-                        checked={asBool(checked[key])}
-                        disabled={isReadOnly}
-                        onCheckedChange={(value) =>
-                          updateTask(key, value === true)
-                        }
-                      />
-                    </label>
-                  )
-                })}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+              return (
+                <label
+                  key={task.id}
+                  className={cn(
+                    "flex min-h-11 items-center justify-between gap-3 px-4 py-2 text-sm font-medium hover:bg-muted/60",
+                    taskIndex > 0 && "border-t",
+                    asBool(checked[key]) &&
+                      "bg-emerald-100 hover:bg-emerald-100/80 dark:bg-emerald-900/35 dark:hover:bg-emerald-900/45"
+                  )}
+                >
+                  <span className="min-w-0 flex-1">{task.label}</span>
+                  <Checkbox
+                    checked={asBool(checked[key])}
+                    disabled={isReadOnly}
+                    onCheckedChange={(value) =>
+                      updateTask(key, value === true)
+                    }
+                  />
+                </label>
+              )
+            })}
+          </CardContent>
+        </Card>
       ))}
     </div>
   )
@@ -1049,29 +1047,20 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     "prepaid-accounts": 1,
     "bank-reconciliation": 2,
   }
-  const orderedTaskGroups = template.taskGroups
-    .map((group) => ({
-      ...group,
-      tasks: [...group.tasks].sort(
-        (first, second) =>
-          Number(asBool(checked[taskKey(group.id, first.id)])) -
-          Number(asBool(checked[taskKey(group.id, second.id)]))
-      ),
-    }))
-    .sort((first, second) => {
-      const firstIncomplete = first.tasks.filter(
-        (task) => !asBool(checked[taskKey(first.id, task.id)])
-      ).length
-      const secondIncomplete = second.tasks.filter(
-        (task) => !asBool(checked[taskKey(second.id, task.id)])
-      ).length
+  const orderedTaskGroups = [...template.taskGroups].sort((first, second) => {
+    const firstIncomplete = first.tasks.filter(
+      (task) => !asBool(checked[taskKey(first.id, task.id)])
+    ).length
+    const secondIncomplete = second.tasks.filter(
+      (task) => !asBool(checked[taskKey(second.id, task.id)])
+    ).length
 
-      return (
-        secondIncomplete - firstIncomplete ||
-        (supplementalTaskSummaryOrder[first.id] ?? 100) -
-          (supplementalTaskSummaryOrder[second.id] ?? 100)
-      )
-    })
+    return (
+      secondIncomplete - firstIncomplete ||
+      (supplementalTaskSummaryOrder[first.id] ?? 100) -
+        (supplementalTaskSummaryOrder[second.id] ?? 100)
+    )
+  })
   const monthEndSectionItems = [
     { id: "dashboard", label: "Dashboard" },
     { id: "countries", label: countriesModule.tab },
@@ -1797,7 +1786,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                 groups={orderedTaskGroups}
                 checked={checked}
                 updateTask={updateTask}
-                isReadOnly
+                isReadOnly={isClosed}
               />
             </div>
           </CardContent>

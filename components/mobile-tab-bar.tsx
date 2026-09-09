@@ -148,6 +148,8 @@ function normalizeDefaultDockHrefs(hrefs: string[]) {
 
 export function MobileTabBar() {
   const pathname = usePathname()
+  const [isKeyboardOpen, setIsKeyboardOpen] = React.useState(false)
+  const viewportBaselineHeightRef = React.useRef(0)
   const [isMoreOpen, setIsMoreOpen] = React.useState(false)
   const [dockHrefs, setDockHrefs] = React.useState(defaultDockHrefs)
   const [isCustomizing, setIsCustomizing] = React.useState(false)
@@ -192,6 +194,60 @@ export function MobileTabBar() {
     () => false
   )
   const portalTarget = isMounted ? document.body : null
+
+  React.useEffect(() => {
+    const visualViewport = window.visualViewport
+
+    function isEditableElement(element: Element | null) {
+      return Boolean(
+        element?.closest(
+          'input, textarea, select, [contenteditable="true"], [role="textbox"]'
+        )
+      )
+    }
+
+    function syncKeyboardVisibility() {
+      const viewportHeight = visualViewport?.height ?? window.innerHeight
+      const hasEditableFocus = isEditableElement(document.activeElement)
+
+      if (!hasEditableFocus) {
+        viewportBaselineHeightRef.current = Math.max(
+          viewportBaselineHeightRef.current,
+          viewportHeight,
+          window.innerHeight
+        )
+      } else if (!viewportBaselineHeightRef.current) {
+        viewportBaselineHeightRef.current = Math.max(
+          viewportHeight,
+          window.innerHeight
+        )
+      }
+
+      setIsKeyboardOpen(
+        hasEditableFocus &&
+          viewportBaselineHeightRef.current - viewportHeight > 120
+      )
+    }
+
+    function syncAfterFocusChange() {
+      window.setTimeout(syncKeyboardVisibility, 0)
+    }
+
+    syncKeyboardVisibility()
+    window.addEventListener("resize", syncKeyboardVisibility)
+    visualViewport?.addEventListener("resize", syncKeyboardVisibility)
+    visualViewport?.addEventListener("scroll", syncKeyboardVisibility)
+    document.addEventListener("focusin", syncAfterFocusChange)
+    document.addEventListener("focusout", syncAfterFocusChange)
+
+    return () => {
+      window.removeEventListener("resize", syncKeyboardVisibility)
+      visualViewport?.removeEventListener("resize", syncKeyboardVisibility)
+      visualViewport?.removeEventListener("scroll", syncKeyboardVisibility)
+      document.removeEventListener("focusin", syncAfterFocusChange)
+      document.removeEventListener("focusout", syncAfterFocusChange)
+    }
+  }, [])
 
   React.useEffect(() => {
     let isMounted = true
@@ -267,7 +323,7 @@ export function MobileTabBar() {
     )
   }
 
-  if (!portalTarget) {
+  if (!portalTarget || isKeyboardOpen) {
     return null
   }
 

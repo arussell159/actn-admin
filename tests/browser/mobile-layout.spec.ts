@@ -157,7 +157,11 @@ test("desktop new folder exposes a focused name entry", async ({
         )
     )
     .toBe(true)
-  await page.keyboard.type("Desktop named folder")
+  const folderTitle = page.getByRole("textbox", { name: "Folder title" })
+  await folderTitle.fill("Desktop named folder")
+  await page.waitForTimeout(800)
+  await expect(folderTitle).toBeFocused()
+  await expect(folderTitle).toHaveValue("Desktop named folder")
   await page.keyboard.press("Enter")
   await expect(
     page.getByRole("button", { name: "Desktop named folder", exact: true })
@@ -171,6 +175,22 @@ test("desktop new folder exposes a focused name entry", async ({
   await page.keyboard.press("Enter")
   await expect(
     page.getByRole("button", { name: "Nested desktop folder", exact: true })
+  ).toBeVisible()
+  await page
+    .getByRole("button", {
+      name: "Actions for Desktop named folder",
+      exact: true,
+    })
+    .click()
+  await page.getByRole("menuitem", { name: "Rename Folder" }).click()
+  await page
+    .getByRole("textbox", { name: "Folder title" })
+    .fill("Renamed desktop folder")
+  await page.keyboard.press("Enter")
+  await expect(
+    page
+      .getByRole("complementary")
+      .getByRole("button", { name: "Renamed desktop folder", exact: true })
   ).toBeVisible()
 })
 
@@ -278,6 +298,18 @@ test("mobile folder title, save and cancel work with standard header buttons", a
       .first()
   ).toBeVisible()
   await page.getByRole("button", { name: "Notebook actions" }).tap()
+  await page.getByRole("menuitem", { name: "Rename Folder" }).tap()
+  const renameTitle = page.getByRole("textbox", { name: "Folder title" })
+  await expect(renameTitle).toHaveValue("Mobile named folder")
+  await renameTitle.fill("Renamed mobile folder")
+  await page.getByRole("button", { name: "Save folder name" }).tap()
+  await expect(
+    page
+      .getByText("Renamed mobile folder", { exact: true })
+      .filter({ visible: true })
+      .first()
+  ).toBeVisible()
+  await page.getByRole("button", { name: "Notebook actions" }).tap()
   await page.getByRole("menuitem", { name: "Add Folder", exact: true }).tap()
   await cancel.tap()
   await expect(page.getByRole("textbox", { name: "Folder title" })).toHaveCount(
@@ -307,6 +339,7 @@ test("Notes caret remains visible when the keyboard opens and typing continues",
   await page.goto("/information?node=qa-note")
   const editor = page.locator('.tiptap[contenteditable="true"]:visible')
   await editor.tap()
+  await expect(editor).toBeFocused()
   await page.keyboard.press("Control+End")
   await page.keyboard.type(" Before keyboard")
   await page.evaluate(() =>
@@ -315,6 +348,7 @@ test("Notes caret remains visible when the keyboard opens and typing continues",
     ).setKeyboardHeight(Math.max(280, innerHeight - 320))
   )
   await page.waitForTimeout(100)
+  await expect(dock(page)).toHaveCount(0)
   const caret = () =>
     page.evaluate(() => {
       const selection = getSelection()
@@ -362,6 +396,7 @@ test("Notes caret remains visible when the keyboard opens and typing continues",
       window as unknown as { setKeyboardHeight: (height: number) => void }
     ).setKeyboardHeight(innerHeight)
   )
+  await expect(dock(page)).toBeVisible()
   await page.locator(".simple-editor-content:visible").evaluate((element) => {
     element.scrollTop = element.scrollHeight
   })
@@ -371,6 +406,151 @@ test("Notes caret remains visible when the keyboard opens and typing continues",
     lastParagraph!.y + lastParagraph!.height,
     "final note above dock"
   ).toBeLessThanOrEqual(dockBox!.y - 8)
+})
+
+test("Notes task lists render and toggle checkable bullets", async ({
+  page,
+  isMobile,
+}) => {
+  await page.goto("/information?node=qa-note")
+  const editor = page.locator('.tiptap[contenteditable="true"]:visible')
+  await editor.locator("p").last().click()
+  await page.keyboard.press("End")
+  await page.keyboard.press("Enter")
+  await page.keyboard.type("Checkable note task")
+
+  if (!isMobile) {
+    await page.getByRole("button", { name: "List options" }).click()
+    await page.getByRole("menuitem", { name: "Task List" }).click()
+  } else {
+    await page.getByRole("button", { name: "Task List" }).click()
+  }
+
+  const taskItem = editor.locator('ul[data-type="taskList"] > li').last()
+  await expect(taskItem).toContainText("Checkable note task")
+  await expect(taskItem.locator('input[type="checkbox"]')).toBeAttached()
+  const checkmark = taskItem.locator("label span")
+  await expect(checkmark).toHaveCSS("cursor", "pointer")
+  await taskItem.evaluate((element) =>
+    element.scrollIntoView({ block: "center", inline: "nearest" })
+  )
+  await taskItem.locator("label").click()
+  await expect(taskItem).toHaveAttribute("data-checked", "true")
+})
+
+test("Month end header stays pinned when returning from a country", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(!isMobile)
+  await page.goto(
+    "/month-end/country?period=2026-08&country=benin&view=dashboard"
+  )
+  await expect(
+    page.getByRole("button", { name: "Back to month end" })
+  ).toBeVisible()
+  const countryScrollTop = await page.evaluate(() => {
+    sessionStorage.setItem(
+      "month-end:return-point",
+      JSON.stringify({
+        period: "2026-08",
+        countryId: "benin",
+        activeSection: "countries",
+        countrySearchQuery: "",
+        countryTableFilter: "all",
+        scrollY: 320,
+      })
+    )
+    const inset = document.querySelector<HTMLElement>(
+      '[data-slot="sidebar-inset"]'
+    )
+    inset?.scrollTo({ top: inset.scrollHeight, behavior: "instant" })
+    return inset?.scrollTop ?? 0
+  })
+  expect(countryScrollTop).toBeGreaterThan(0)
+
+  await page.getByRole("button", { name: "Back to month end" }).tap()
+  await expect(page).toHaveURL(/\/month-end(?:\?|$)/)
+  await expect(page.locator('[data-slot="skeleton"]')).toHaveCount(0)
+
+  const position = await page.evaluate(() => {
+    const header = [...document.querySelectorAll("header")].find(
+      (element) => element.getBoundingClientRect().height > 0
+    )
+    const inset = document.querySelector<HTMLElement>(
+      '[data-slot="sidebar-inset"]'
+    )
+
+    return {
+      headerTop: header?.getBoundingClientRect().top,
+      insetScrollTop: inset?.scrollTop,
+      windowScrollY: window.scrollY,
+      documentScrollTop: document.scrollingElement?.scrollTop,
+    }
+  })
+
+  expect(position.headerTop).toBe(0)
+  expect(position.insetScrollTop).toBeGreaterThan(0)
+  expect(position.windowScrollY).toBe(0)
+  expect(position.documentScrollTop).toBe(0)
+})
+
+test("Dashboard task detail edits tasks without reordering them", async ({
+  page,
+}) => {
+  await page.goto("/month-end")
+  await expect(page.locator('[data-slot="skeleton"]')).toHaveCount(0)
+  await page.getByRole("button", { name: /^Tasks:/ }).click()
+
+  const visibleGroups = page.locator('[data-task-group]:visible')
+  await expect(visibleGroups.first()).toHaveAttribute(
+    "data-task-group",
+    "bank-reconciliation"
+  )
+
+  const chaseInk = page.getByRole("checkbox", { name: "Chase Ink" })
+  await expect(chaseInk).toBeEnabled()
+  await chaseInk.click()
+  await expect(chaseInk).toBeChecked()
+
+  const bankGroup = page.locator(
+    '[data-task-group="bank-reconciliation"]:visible'
+  )
+  await expect(bankGroup.locator("label > span.min-w-0")).toHaveText([
+    "Chase Ink",
+    "AMEX",
+    "Wells Fargo",
+    "Chase Main",
+    "Chase Sweep",
+  ])
+  await expect(visibleGroups.first()).toHaveAttribute(
+    "data-task-group",
+    "prepaid-accounts"
+  )
+
+  const chaseSweep = page.getByRole("checkbox", { name: "Chase Sweep" })
+  await chaseSweep.click()
+  await expect(chaseSweep).toBeChecked()
+  const completedBottomRow = bankGroup.locator("label").last()
+  const rowAndCard = await completedBottomRow.evaluate((row) => {
+    const rowBounds = row.getBoundingClientRect()
+    const cardBounds = row.closest('[data-slot="card"]')!.getBoundingClientRect()
+
+    return {
+      rowLeft: rowBounds.left,
+      rowRight: rowBounds.right,
+      rowBottom: rowBounds.bottom,
+      cardLeft: cardBounds.left,
+      cardRight: cardBounds.right,
+      cardBottom: cardBounds.bottom,
+      backgroundColor: getComputedStyle(row).backgroundColor,
+    }
+  })
+
+  expect(rowAndCard.rowLeft).toBe(rowAndCard.cardLeft)
+  expect(rowAndCard.rowRight).toBe(rowAndCard.cardRight)
+  expect(rowAndCard.rowBottom).toBe(rowAndCard.cardBottom)
+  expect(rowAndCard.backgroundColor).not.toBe("rgba(0, 0, 0, 0)")
 })
 
 test("Notes controls and mobile menu links respond", async ({

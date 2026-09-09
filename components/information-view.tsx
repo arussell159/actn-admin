@@ -18,6 +18,7 @@ import {
   ListSortAscendingIcon,
   MoreHorizontalIcon,
   PanelTopCloseIcon,
+  PencilIcon,
   PinIcon,
   PinOffIcon,
   PlusIcon,
@@ -631,11 +632,13 @@ function splitEditorTitleAndContent(value: string, fallbackTitle: string) {
 }
 
 function MobileFolderTitlePrompt({
+  mode,
   value,
   onChange,
   onConfirm,
   onCancel,
 }: {
+  mode: "create" | "rename"
   value: string
   onChange: (value: string) => void
   onConfirm: () => void
@@ -647,17 +650,19 @@ function MobileFolderTitlePrompt({
         <Button
           variant="ghost"
           size="icon-sm"
-          className="justify-self-start rounded-full bg-background shadow-sm"
-          aria-label="Cancel folder"
+          className="size-10 justify-self-start rounded-full bg-background shadow-sm"
+          aria-label={mode === "create" ? "Cancel folder" : "Cancel rename"}
           onClick={onCancel}
         >
           <XIcon />
         </Button>
-        <div className="text-sm font-semibold text-foreground">New Folder</div>
+        <div className="text-sm font-semibold text-foreground">
+          {mode === "create" ? "New Folder" : "Rename Folder"}
+        </div>
         <Button
           size="icon-sm"
-          className="justify-self-end rounded-full bg-yellow-400 text-yellow-950 shadow-sm hover:bg-yellow-300 disabled:opacity-40"
-          aria-label="Create folder"
+          className="size-10 justify-self-end rounded-full bg-yellow-400 text-yellow-950 shadow-sm hover:bg-yellow-300 disabled:opacity-40"
+          aria-label={mode === "create" ? "Create folder" : "Save folder name"}
           disabled={!value.trim()}
           onClick={onConfirm}
         >
@@ -1117,6 +1122,7 @@ function MobileNotebookActions({
   onCreateFolder,
   onOpenTrash,
   trashCount,
+  onRename,
   onDelete,
   onMove,
 }: {
@@ -1126,6 +1132,7 @@ function MobileNotebookActions({
   onCreateFolder: () => void
   onOpenTrash: () => void
   trashCount: number
+  onRename: (nodeId: string) => void
   onDelete: (nodeId: string) => void
   onMove: (nodeId: string, parentId?: string) => void
 }) {
@@ -1181,27 +1188,36 @@ function MobileNotebookActions({
           </>
         ) : null}
         {isFolder ? (
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger className="min-h-11! gap-2.5! px-3! py-2! text-base! [&_svg:not([class*='size-'])]:size-5!">
-              Move Folder
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="min-w-52! p-1.5!">
-              {activeNode.parentId ? (
-                <DropdownMenuItem
-                  className="min-h-11! gap-2.5! px-3! py-2! text-base! [&_svg:not([class*='size-'])]:size-5!"
-                  onClick={() => onMove(activeNode.id)}
-                >
-                  Notebook
-                </DropdownMenuItem>
-              ) : null}
-              <MobileMoveFolderMenuItems
-                nodes={nodes}
-                movingFolder={activeNode}
-                blockedIds={blockedMoveIds}
-                onMove={onMove}
-              />
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
+          <>
+            <DropdownMenuItem
+              className="min-h-11! gap-2.5! px-3! py-2! text-base! [&_svg:not([class*='size-'])]:size-5!"
+              onClick={() => onRename(activeNode.id)}
+            >
+              <PencilIcon />
+              Rename Folder
+            </DropdownMenuItem>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className="min-h-11! gap-2.5! px-3! py-2! text-base! [&_svg:not([class*='size-'])]:size-5!">
+                Move Folder
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="min-w-52! p-1.5!">
+                {activeNode.parentId ? (
+                  <DropdownMenuItem
+                    className="min-h-11! gap-2.5! px-3! py-2! text-base! [&_svg:not([class*='size-'])]:size-5!"
+                    onClick={() => onMove(activeNode.id)}
+                  >
+                    Notebook
+                  </DropdownMenuItem>
+                ) : null}
+                <MobileMoveFolderMenuItems
+                  nodes={nodes}
+                  movingFolder={activeNode}
+                  blockedIds={blockedMoveIds}
+                  onMove={onMove}
+                />
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          </>
         ) : null}
         {activeNode ? (
           <DropdownMenuItem
@@ -1235,6 +1251,7 @@ function NoteTree({
   onTitleDraftChange,
   onCommitTitle,
   onCancelTitleEdit,
+  onStartTitleEdit,
   focusableNodeIds = [],
   nodeRefs,
   onFocusNode = () => undefined,
@@ -1258,6 +1275,7 @@ function NoteTree({
   onTitleDraftChange: (value: string) => void
   onCommitTitle: (nodeId: string) => void
   onCancelTitleEdit: () => void
+  onStartTitleEdit: (nodeId: string) => void
   focusableNodeIds?: string[]
   nodeRefs?: React.MutableRefObject<Record<string, HTMLDivElement | null>>
   onFocusNode?: (nodeId: string) => void
@@ -1449,6 +1467,12 @@ function NoteTree({
                         <FolderPlusIcon />
                         Add Folder
                       </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => onStartTitleEdit(node.id)}
+                      >
+                        <PencilIcon />
+                        Rename Folder
+                      </DropdownMenuItem>
                     </>
                   ) : null}
                   <DropdownMenuItem onClick={() => onTogglePin(node.id)}>
@@ -1507,6 +1531,7 @@ function NoteTree({
                 onTitleDraftChange={onTitleDraftChange}
                 onCommitTitle={onCommitTitle}
                 onCancelTitleEdit={onCancelTitleEdit}
+                onStartTitleEdit={onStartTitleEdit}
                 focusableNodeIds={focusableNodeIds}
                 nodeRefs={treeNodeRefs}
                 onFocusNode={onFocusNode}
@@ -1539,6 +1564,12 @@ export function InformationView() {
   const [folderPromptParentId, setFolderPromptParentId] = React.useState<
     string | null
   >(null)
+  const [folderPromptMode, setFolderPromptMode] = React.useState<
+    "create" | "rename"
+  >("create")
+  const [folderPromptNodeId, setFolderPromptNodeId] = React.useState<
+    string | null
+  >(null)
   const [folderPromptTitle, setFolderPromptTitle] = React.useState("")
   const [noteSearch, setNoteSearch] = React.useState("")
   const [isNotebookLoading, setIsNotebookLoading] = React.useState(true)
@@ -1547,6 +1578,7 @@ export function InformationView() {
   const contentDraftRef = React.useRef("")
   const activeIdRef = React.useRef<string | undefined>(undefined)
   const activeNoteSaveTimeoutRef = React.useRef<number | undefined>(undefined)
+  const saveActiveNoteRef = React.useRef<() => void>(() => undefined)
   const desktopSearchInputRef = React.useRef<HTMLInputElement | null>(null)
   const desktopNodeRefs = React.useRef<Record<string, HTMLDivElement | null>>(
     {}
@@ -1571,6 +1603,10 @@ export function InformationView() {
   )
 
   React.useEffect(() => {
+    if (hasLoadedNotes.current) {
+      return
+    }
+
     let isMounted = true
 
     async function loadNotes() {
@@ -1743,6 +1779,43 @@ export function InformationView() {
   }, [])
 
   const activeNode = nodes.find((node) => node.id === activeId)
+
+  React.useEffect(() => {
+    if (!hasLoadedNotes.current || isNotebookLoading) {
+      return
+    }
+
+    const requestedNodeId = searchParams.get("node")
+    const requestedView = searchParams.get("view")
+    const requestedNode = requestedNodeId
+      ? nodesRef.current.find((node) => node.id === requestedNodeId)
+      : undefined
+    const requestedActiveId = requestedNode
+      ? requestedNode.id
+      : requestedView === "notes"
+        ? mobileRootNotesId
+        : requestedView === "trash"
+          ? trashViewId
+          : requestedView === "folders"
+            ? undefined
+            : activeIdRef.current
+
+    if (requestedActiveId === activeIdRef.current) {
+      return
+    }
+
+    saveActiveNoteRef.current()
+    setActiveNodeId(requestedActiveId)
+    setActiveDrafts(
+      requestedNode?.title ??
+        (requestedActiveId === mobileRootNotesId
+          ? "Notes"
+          : requestedActiveId === trashViewId
+            ? "Trash"
+            : ""),
+      requestedNode?.type === "note" ? (requestedNode.content ?? "") : ""
+    )
+  }, [isNotebookLoading, searchParams])
 
   React.useEffect(() => {
     const shell = notebookShellRef.current
@@ -1948,6 +2021,7 @@ export function InformationView() {
   }
 
   function persist(nextNodes: InformationNode[]) {
+    nodesRef.current = nextNodes
     setNodes(nextNodes)
     saveInformationNotes(nextNodes)
   }
@@ -2126,8 +2200,30 @@ export function InformationView() {
       return
     }
 
+    setFolderPromptMode("create")
+    setFolderPromptNodeId(null)
     setFolderPromptParentId(parentId)
     setFolderPromptTitle("")
+  }
+
+  function requestRenameFolder(nodeId: string) {
+    const node = nodesRef.current.find(
+      (item) => item.id === nodeId && item.type === "folder"
+    )
+
+    if (!node) {
+      return
+    }
+
+    if (!isMobileViewport()) {
+      startTreeTitleEdit(nodeId)
+      return
+    }
+
+    setFolderPromptMode("rename")
+    setFolderPromptNodeId(nodeId)
+    setFolderPromptParentId(node.parentId ?? "")
+    setFolderPromptTitle(node.title)
   }
 
   function confirmCreateFolder() {
@@ -2135,13 +2231,19 @@ export function InformationView() {
       return
     }
 
-    startCreate("folder", folderPromptParentId ?? "", folderPromptTitle)
-    setFolderPromptParentId(null)
-    setFolderPromptTitle("")
+    if (folderPromptMode === "rename" && folderPromptNodeId) {
+      saveNodeTitle(folderPromptNodeId, folderPromptTitle)
+    } else {
+      startCreate("folder", folderPromptParentId ?? "", folderPromptTitle)
+    }
+
+    cancelCreateFolder()
   }
 
   function cancelCreateFolder() {
     setFolderPromptParentId(null)
+    setFolderPromptNodeId(null)
+    setFolderPromptMode("create")
     setFolderPromptTitle("")
   }
 
@@ -2206,6 +2308,8 @@ export function InformationView() {
     setTitleDraft(cleanTitle)
   }
 
+  saveActiveNoteRef.current = saveActiveNote
+
   function scheduleActiveNoteSave() {
     if (activeNoteSaveTimeoutRef.current) {
       window.clearTimeout(activeNoteSaveTimeoutRef.current)
@@ -2252,6 +2356,19 @@ export function InformationView() {
     saveNodeTitle(nodeId, treeTitleDraft)
     setEditingTreeNodeId(undefined)
     setTreeTitleDraft("")
+  }
+
+  function startTreeTitleEdit(nodeId: string) {
+    const node = nodesRef.current.find(
+      (item) => item.id === nodeId && item.type === "folder"
+    )
+
+    if (!node) {
+      return
+    }
+
+    setEditingTreeNodeId(nodeId)
+    setTreeTitleDraft(node.title)
   }
 
   function cancelTreeTitleEdit() {
@@ -2440,6 +2557,7 @@ export function InformationView() {
 
       if (
         activeElement?.closest(".simple-editor-content .ProseMirror") ||
+        activeElement?.matches('[aria-label="Folder title"]') ||
         activeNoteSaveTimeoutRef.current
       ) {
         return
@@ -2629,6 +2747,7 @@ export function InformationView() {
                 }
                 onOpenTrash={() => selectTrash()}
                 trashCount={trashedNodes.length}
+                onRename={requestRenameFolder}
                 onDelete={deleteNode}
                 onMove={moveNode}
               />
@@ -2636,6 +2755,7 @@ export function InformationView() {
           />
           {folderPromptParentId !== null ? (
             <MobileFolderTitlePrompt
+              mode={folderPromptMode}
               value={folderPromptTitle}
               onChange={setFolderPromptTitle}
               onConfirm={confirmCreateFolder}
@@ -2763,6 +2883,7 @@ export function InformationView() {
                         onTitleDraftChange={setTreeTitleDraft}
                         onCommitTitle={commitTreeTitle}
                         onCancelTitleEdit={cancelTreeTitleEdit}
+                        onStartTitleEdit={startTreeTitleEdit}
                         focusableNodeIds={desktopVisibleTreeNodeIds}
                         nodeRefs={desktopNodeRefs}
                         onFocusNode={focusDesktopTreeNode}
@@ -2823,6 +2944,7 @@ export function InformationView() {
                               onTitleDraftChange={setTreeTitleDraft}
                               onCommitTitle={commitTreeTitle}
                               onCancelTitleEdit={cancelTreeTitleEdit}
+                              onStartTitleEdit={startTreeTitleEdit}
                             />
                           </div>
                         </details>

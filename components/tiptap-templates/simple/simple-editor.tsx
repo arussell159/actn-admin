@@ -38,6 +38,7 @@ import "@/components/tiptap-node/paragraph-node/paragraph-node.scss"
 // --- Tiptap UI ---
 import { HeadingDropdownMenu } from "@/components/tiptap-ui/heading-dropdown-menu"
 import { ImageUploadButton } from "@/components/tiptap-ui/image-upload-button"
+import { ListButton } from "@/components/tiptap-ui/list-button"
 import { ListDropdownMenu } from "@/components/tiptap-ui/list-dropdown-menu"
 import { BlockquoteButton } from "@/components/tiptap-ui/blockquote-button"
 import { CodeBlockButton } from "@/components/tiptap-ui/code-block-button"
@@ -217,9 +218,38 @@ export function SimpleEditor({
           return
         }
 
-        const caret = currentEditor.view.coordsAtPos(
+        const editorCaret = currentEditor.view.coordsAtPos(
           currentEditor.state.selection.head
         )
+        const selection = currentEditor.view.dom.ownerDocument.getSelection()
+        let selectionCaret: DOMRect | undefined
+
+        if (
+          selection?.rangeCount &&
+          selection.anchorNode &&
+          currentEditor.view.dom.contains(selection.anchorNode)
+        ) {
+          const range = selection.getRangeAt(0).cloneRange()
+
+          if (range.collapsed) {
+            // Collapsed ranges are zero-sized in some mobile engines. Expanding
+            // to the preceding character gives us the painted line's true edge.
+            if (
+              range.startContainer.nodeType === Node.TEXT_NODE &&
+              range.startOffset > 0
+            ) {
+              range.setStart(range.startContainer, range.startOffset - 1)
+            }
+
+            const rangeRect = range.getBoundingClientRect()
+
+            if (rangeRect.height > 0) {
+              selectionCaret = rangeRect
+            }
+          }
+        }
+
+        const caret = selectionCaret ?? editorCaret
         const container = scrollContainer.getBoundingClientRect()
         const visualViewport = window.visualViewport
         const viewportTop = visualViewport?.offsetTop ?? 0
@@ -287,6 +317,9 @@ export function SimpleEditor({
         return
       }
     },
+    onFocus: ({ editor }) => {
+      keepMobileCaretVisible(editor)
+    },
     onUpdate: ({ editor }) => {
       onChange?.(JSON.stringify(editor.getJSON()))
       keepMobileCaretVisible(editor)
@@ -298,6 +331,30 @@ export function SimpleEditor({
     },
   })
 
+  const focusEditorFromPointer = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!isMobile || !editor || editor.isDestroyed || event.button !== 0) {
+        return
+      }
+
+      const target = event.target as HTMLElement
+
+      if (target.closest(".ProseMirror")) {
+        // Focus on pointerdown so mobile Safari opens the keyboard as part of
+        // the user's gesture. The browser can still place the caret afterward.
+        editor.view.focus()
+        return
+      }
+
+      // The scrollable editor surface can extend beyond the ProseMirror node.
+      // Treat taps in that empty space as a request to continue at the end.
+      event.preventDefault()
+      editor.chain().focus("end").run()
+      keepMobileCaretVisible(editor)
+    },
+    [editor, isMobile, keepMobileCaretVisible]
+  )
+
   useEffect(() => {
     return () => {
       if (caretScrollFrameRef.current) {
@@ -305,6 +362,39 @@ export function SimpleEditor({
       }
     }
   }, [])
+
+  useEffect(() => {
+    if (!editor || !isMobile) {
+      return
+    }
+
+    const visualViewport = window.visualViewport
+    const keepCaretVisibleAfterViewportChange = () => {
+      keepMobileCaretVisible(editor)
+    }
+
+    window.addEventListener("resize", keepCaretVisibleAfterViewportChange)
+    visualViewport?.addEventListener(
+      "resize",
+      keepCaretVisibleAfterViewportChange
+    )
+    visualViewport?.addEventListener(
+      "scroll",
+      keepCaretVisibleAfterViewportChange
+    )
+
+    return () => {
+      window.removeEventListener("resize", keepCaretVisibleAfterViewportChange)
+      visualViewport?.removeEventListener(
+        "resize",
+        keepCaretVisibleAfterViewportChange
+      )
+      visualViewport?.removeEventListener(
+        "scroll",
+        keepCaretVisibleAfterViewportChange
+      )
+    }
+  }, [editor, isMobile, keepMobileCaretVisible])
 
   const openSearchAndReplace = useCallback(() => {
     setIsSearchAndReplaceOpen(true)
@@ -375,7 +465,13 @@ export function SimpleEditor({
               isMobile={false}
             />
           </Toolbar>
-        ) : null}
+        ) : (
+          <Toolbar ref={toolbarRef} className="simple-editor-mobile-toolbar">
+            <ToolbarGroup>
+              <ListButton type="taskList" text="Checklist" />
+            </ToolbarGroup>
+          </Toolbar>
+        )}
 
         <SearchAndReplace
           className="simple-editor-search-and-replace"
@@ -390,6 +486,7 @@ export function SimpleEditor({
           editor={editor}
           role="presentation"
           className="simple-editor-content"
+          onPointerDownCapture={focusEditorFromPointer}
         />
       </EditorContext.Provider>
     </div>
