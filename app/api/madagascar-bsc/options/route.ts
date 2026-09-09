@@ -15,7 +15,7 @@ export async function GET() {
         message:
           error instanceof Error
             ? error.message
-            : "Could not read Madagascar options.",
+            : "Could not read certificate options.",
       },
       { status: 500 }
     )

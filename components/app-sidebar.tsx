@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation"
 
 import { AppLink } from "@/components/app-link"
 import { openAppCommandMenuEvent } from "@/lib/app-command-menu"
-import { NavDocuments } from "@/components/nav-documents"
 import { NavUser } from "@/components/nav-user"
 import {
   DropdownMenu,
@@ -34,7 +33,6 @@ import {
   BookOpenTextIcon,
   CalendarClockIcon,
   CalculatorIcon,
-  ChevronRightIcon,
   FileTextIcon,
   FolderIcon,
   HistoryIcon,
@@ -46,7 +44,6 @@ import {
   ScanTextIcon,
   SearchIcon,
   Settings2Icon,
-  ShipWheelIcon,
   SparklesIcon,
 } from "lucide-react"
 import {
@@ -80,16 +77,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const [hasOpenMonthEnd, setHasOpenMonthEnd] = React.useState(true)
   const [activeQuery, setActiveQuery] = React.useState("")
   const activeRoute = pathname === "/" ? "/dashboard" : pathname
-  const [openBscModules, setOpenBscModules] = React.useState<
-    Record<string, boolean>
-  >(() =>
-    Object.fromEntries(
-      bscCountryModules.map((module) => [
-        module.id,
-        activeRoute.startsWith(module.basePath),
-      ])
-    )
-  )
   const monthEndItems = [
     hasOpenMonthEnd
       ? {
@@ -189,6 +176,21 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     )
   }
 
+  function isActiveMonthEndUrl(url: string, name: string) {
+    const [itemPath, itemQuery = ""] = url.split("?")
+    const isCurrentMonthRoute =
+      name === "Current Month" &&
+      itemPath === "/month-end" &&
+      (activeRoute === "/month-end" || activeRoute.startsWith("/month-end/"))
+
+    return (
+      url !== "#" &&
+      (isCurrentMonthRoute ||
+        (activeRoute === itemPath &&
+          (itemQuery ? activeQuery === itemQuery : !activeQuery)))
+    )
+  }
+
   function openSearch() {
     window.dispatchEvent(new Event(openAppCommandMenuEvent))
   }
@@ -234,7 +236,56 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
-        <NavDocuments title="Month End" items={monthEndItems} />
+        <SidebarGroup>
+          <SidebarGroupLabel>Month End</SidebarGroupLabel>
+          <SidebarMenu>
+            {monthEndItems.map((item) => (
+              <SidebarMenuItem key={item.name}>
+                <SidebarMenuButton
+                  isActive={isActiveMonthEndUrl(item.url, item.name)}
+                  render={<AppLink href={item.url} />}
+                >
+                  {item.icon}
+                  <span>{item.name}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
+          </SidebarMenu>
+        </SidebarGroup>
+        {bscCountryModules.map((module) => (
+          <SidebarGroup key={module.id}>
+            <SidebarGroupLabel>{module.label}</SidebarGroupLabel>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={isActiveUrl(`${module.basePath}/new`)}
+                  render={<AppLink href={`${module.basePath}/new`} />}
+                >
+                  <ScanTextIcon />
+                  <span>{module.newRequestLabel}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={isActiveUrl(`${module.basePath}/requests`)}
+                  render={<AppLink href={`${module.basePath}/requests`} />}
+                >
+                  <ListChecksIcon />
+                  <span>{module.requestsLabel}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={isActiveUrl("/knowledge-base")}
+                  render={<AppLink href="/knowledge-base" />}
+                >
+                  <SparklesIcon />
+                  <span>{module.rulesLabel}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroup>
+        ))}
         <SidebarGroup>
           <SidebarGroupLabel>Utilities</SidebarGroupLabel>
           <SidebarMenu>
@@ -293,61 +344,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </SidebarMenuSub>
               ) : null}
             </SidebarMenuItem>
-            {bscCountryModules.map((module) => (
-              <SidebarMenuItem key={module.id}>
-                <SidebarMenuButton
-                  isActive={activeRoute.startsWith(module.basePath)}
-                  aria-expanded={openBscModules[module.id] === true}
-                  onClick={() =>
-                    setOpenBscModules((current) => ({
-                      ...current,
-                      [module.id]: !current[module.id],
-                    }))
-                  }
-                >
-                  <ShipWheelIcon />
-                  <span>{module.label}</span>
-                  <ChevronRightIcon
-                    className={`ml-auto transition-transform ${
-                      openBscModules[module.id] ? "rotate-90" : ""
-                    }`}
-                  />
-                </SidebarMenuButton>
-                {openBscModules[module.id] ? (
-                  <SidebarMenuSub>
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        isActive={isActiveUrl(`${module.basePath}/new`)}
-                        render={<AppLink href={`${module.basePath}/new`} />}
-                      >
-                        <ScanTextIcon />
-                        <span>New Request</span>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        isActive={isActiveUrl(`${module.basePath}/requests`)}
-                        render={
-                          <AppLink href={`${module.basePath}/requests`} />
-                        }
-                      >
-                        <ListChecksIcon />
-                        <span>Requests</span>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        isActive={isActiveUrl(`${module.basePath}/rules`)}
-                        render={<AppLink href={`${module.basePath}/rules`} />}
-                      >
-                        <SparklesIcon />
-                        <span>AI Rules</span>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                  </SidebarMenuSub>
-                ) : null}
-              </SidebarMenuItem>
-            ))}
           </SidebarMenu>
         </SidebarGroup>
         <SidebarGroup>

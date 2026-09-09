@@ -89,6 +89,156 @@ export type MadagascarRule = {
 }
 
 export type MadagascarDropdownOptions = Record<string, string[]>
+export type MadagascarIncotermOption = {
+  order: number
+  haveFreight: boolean
+  haveInsurance: boolean
+  haveOtherCharges: boolean
+  label: string
+  name: string
+  id: number
+}
+
+export const madagascarIncotermOptions: MadagascarIncotermOption[] = [
+  {
+    order: 1,
+    haveFreight: false,
+    haveInsurance: false,
+    haveOtherCharges: false,
+    label: "INCOTERM.EXW",
+    name: "EXW",
+    id: 1,
+  },
+  {
+    order: 2,
+    haveFreight: false,
+    haveInsurance: false,
+    haveOtherCharges: false,
+    label: "INCOTERM.FCA",
+    name: "FCA",
+    id: 2,
+  },
+  {
+    order: 3,
+    haveFreight: false,
+    haveInsurance: false,
+    haveOtherCharges: false,
+    label: "INCOTERM.FAS",
+    name: "FAS",
+    id: 3,
+  },
+  {
+    order: 4,
+    haveFreight: false,
+    haveInsurance: false,
+    haveOtherCharges: false,
+    label: "INCOTERM.FOB",
+    name: "FOB",
+    id: 4,
+  },
+  {
+    order: 5,
+    haveFreight: true,
+    haveInsurance: false,
+    haveOtherCharges: false,
+    label: "INCOTERM.CFR",
+    name: "CFR",
+    id: 5,
+  },
+  {
+    order: 6,
+    haveFreight: true,
+    haveInsurance: false,
+    haveOtherCharges: false,
+    label: "INCOTERM.CPT",
+    name: "CPT",
+    id: 6,
+  },
+  {
+    order: 7,
+    haveFreight: true,
+    haveInsurance: true,
+    haveOtherCharges: false,
+    label: "INCOTERM.CIF",
+    name: "CIF",
+    id: 7,
+  },
+  {
+    order: 8,
+    haveFreight: true,
+    haveInsurance: true,
+    haveOtherCharges: true,
+    label: "INCOTERM.CIP",
+    name: "CIP",
+    id: 8,
+  },
+  {
+    order: 9,
+    haveFreight: true,
+    haveInsurance: false,
+    haveOtherCharges: true,
+    label: "INCOTERM.DPU",
+    name: "DPU",
+    id: 9,
+  },
+  {
+    order: 10,
+    haveFreight: true,
+    haveInsurance: false,
+    haveOtherCharges: true,
+    label: "INCOTERM.DAP",
+    name: "DAP",
+    id: 10,
+  },
+  {
+    order: 11,
+    haveFreight: false,
+    haveInsurance: false,
+    haveOtherCharges: false,
+    label: "INCOTERM.DAPP",
+    name: "DAPP",
+    id: 12,
+  },
+  {
+    order: 12,
+    haveFreight: true,
+    haveInsurance: false,
+    haveOtherCharges: true,
+    label: "INCOTERM.DDP",
+    name: "DDP",
+    id: 11,
+  },
+]
+export const madagascarShipmentMethodOptions = ["Air", "Sea"]
+export const madagascarCargoTypeOptions = [
+  "Car cargo",
+  "Convential / General Cargo",
+  "Dry bulk cargo",
+  "Full container load",
+  "Hazardous cargo",
+  "Liquid bulk cargo",
+  "Less container load",
+  "Refrigerated cargo",
+  "Unknown",
+]
+export const madagascarContainerTypeOptions = [
+  "Reefer",
+  "FlatRack",
+  "HardTop",
+  "Dry",
+  "Isotherm",
+  "Open Top",
+  "Tank",
+  "Ventilated Container",
+  "Open Side / Side Door",
+]
+export const madagascarContainerSizeOptions = [
+  "10 M3",
+  "20 M3",
+  "20 Feet",
+  "40 Feet",
+  "Other",
+]
 
 export const madagascarFieldGroups = [
   {
@@ -269,7 +419,7 @@ export function normalizeMadagascarAnalysis(
         label,
         value: "",
         status: "conflict" as const,
-        note: `${field.note ? `${field.note} ` : ""}The extracted value does not exactly match an allowed Madagascar option.`,
+        note: `${field.note ? `${field.note} ` : ""}The extracted value does not exactly match an allowed certificate option.`,
       }
     }
 
@@ -372,5 +522,5 @@ export function requestReference(analysis: MadagascarAnalysis) {
     (item) => item.key === "billOfLadingReference"
   )
 
-  return field?.value || `Madagascar BSC ${new Date().toLocaleDateString()}`
+  return field?.value || `ECTN Certificate ${new Date().toLocaleDateString()}`
 }

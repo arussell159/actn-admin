@@ -108,7 +108,7 @@ export async function POST(request: Request) {
       headers: {
         "Content-Type":
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="Madagascar-BSC-${safeReference || "request"}.xlsx"`,
+        "Content-Disposition": `attachment; filename="ECTN-Certificate-${safeReference || "certificate"}.xlsx"`,
         "Cache-Control": "no-store",
       },
     })

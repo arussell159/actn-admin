@@ -38,7 +38,6 @@ import "@/components/tiptap-node/paragraph-node/paragraph-node.scss"
 // --- Tiptap UI ---
 import { HeadingDropdownMenu } from "@/components/tiptap-ui/heading-dropdown-menu"
 import { ImageUploadButton } from "@/components/tiptap-ui/image-upload-button"
-import { ListButton } from "@/components/tiptap-ui/list-button"
 import { ListDropdownMenu } from "@/components/tiptap-ui/list-dropdown-menu"
 import { BlockquoteButton } from "@/components/tiptap-ui/blockquote-button"
 import { CodeBlockButton } from "@/components/tiptap-ui/code-block-button"
@@ -331,30 +330,6 @@ export function SimpleEditor({
     },
   })
 
-  const focusEditorFromPointer = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (!isMobile || !editor || editor.isDestroyed || event.button !== 0) {
-        return
-      }
-
-      const target = event.target as HTMLElement
-
-      if (target.closest(".ProseMirror")) {
-        // Focus on pointerdown so mobile Safari opens the keyboard as part of
-        // the user's gesture. The browser can still place the caret afterward.
-        editor.view.focus()
-        return
-      }
-
-      // The scrollable editor surface can extend beyond the ProseMirror node.
-      // Treat taps in that empty space as a request to continue at the end.
-      event.preventDefault()
-      editor.chain().focus("end").run()
-      keepMobileCaretVisible(editor)
-    },
-    [editor, isMobile, keepMobileCaretVisible]
-  )
-
   useEffect(() => {
     return () => {
       if (caretScrollFrameRef.current) {
@@ -465,13 +440,7 @@ export function SimpleEditor({
               isMobile={false}
             />
           </Toolbar>
-        ) : (
-          <Toolbar ref={toolbarRef} className="simple-editor-mobile-toolbar">
-            <ToolbarGroup>
-              <ListButton type="taskList" text="Checklist" />
-            </ToolbarGroup>
-          </Toolbar>
-        )}
+        ) : null}
 
         <SearchAndReplace
           className="simple-editor-search-and-replace"
@@ -486,7 +455,6 @@ export function SimpleEditor({
           editor={editor}
           role="presentation"
           className="simple-editor-content"
-          onPointerDownCapture={focusEditorFromPointer}
         />
       </EditorContext.Provider>
     </div>

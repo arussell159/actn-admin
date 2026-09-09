@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 
 import {
   madagascarFieldCatalog,
+  madagascarIncotermOptions,
   normalizeMadagascarAnalysis,
   type MadagascarAnalysis,
   type MadagascarRule,
@@ -220,7 +221,7 @@ export async function POST(request: Request) {
                   type: "input_text",
                   text: JSON.stringify({
                     task: [
-                      "Classify every uploaded Madagascar BSC document and extract the requested entry data.",
+                      "Classify every uploaded ECTN certificate document and extract the requested entry data.",
                       "Determine consigneeCountry only from the consignee address on the Bill of Lading. Return the full country name, or an empty string if the BL does not establish it.",
                       "Read only the uploaded files. Never invent, assume, autocomplete, or use outside facts for shipment/customer values.",
                       "If a value is absent, return an empty value with status missing. If documents disagree, return status conflict and explain both values.",
@@ -243,6 +244,7 @@ export async function POST(request: Request) {
                     optionalDocumentTypes: ["Freight Invoice"],
                     fields: madagascarFieldCatalog,
                     dropdownOptions: options,
+                    incoterms: madagascarIncotermOptions,
                     officialRules: madagascarOfficialRules,
                     activeAiRules: rules.filter((rule) => rule.enabled),
                     uploadedFileNames: files.map((file) => file.name),
@@ -255,7 +257,7 @@ export async function POST(request: Request) {
           text: {
             format: {
               type: "json_schema",
-              name: "madagascar_bsc_analysis",
+              name: "ectn_certificate_analysis",
               strict: true,
               schema: analysisSchema,
             },
@@ -278,13 +280,16 @@ export async function POST(request: Request) {
       analysis: normalizeMadagascarAnalysis(analysis, options),
     })
   } catch (error) {
+    const message = error instanceof Error ? error.message : ""
+
     return NextResponse.json(
       {
         ok: false,
-        message:
-          error instanceof Error
-            ? error.message
-            : "Could not analyze documents.",
+        message: /fetch failed|network|timeout|ENOTFOUND|ECONNRESET/i.test(
+          message
+        )
+          ? "OpenAI could not be reached from localhost. Check your network or API access and try again."
+          : message || "Could not analyze documents.",
       },
       { status: 500 }
     )

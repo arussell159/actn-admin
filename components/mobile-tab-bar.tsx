@@ -111,10 +111,10 @@ const allModuleItems = [
       match: [`${module.basePath}/requests`],
     },
     {
-      label: `${module.country} AI Rules`,
-      href: `${module.basePath}/rules`,
+      label: "Knowledge Base",
+      href: "/knowledge-base",
       icon: SparklesIcon,
-      match: [`${module.basePath}/rules`],
+      match: ["/knowledge-base"],
     },
   ]),
 ]

@@ -408,23 +408,24 @@ test("Notes caret remains visible when the keyboard opens and typing continues",
   ).toBeLessThanOrEqual(dockBox!.y - 8)
 })
 
-test("Notes task lists render and toggle checkable bullets", async ({
+test("Notes task lists render on desktop and stay hidden from mobile controls", async ({
   page,
   isMobile,
 }) => {
   await page.goto("/information?node=qa-note")
+
+  if (isMobile) {
+    await expect(page.getByRole("button", { name: "Task List" })).toHaveCount(0)
+    return
+  }
+
   const editor = page.locator('.tiptap[contenteditable="true"]:visible')
   await editor.locator("p").last().click()
   await page.keyboard.press("End")
   await page.keyboard.press("Enter")
   await page.keyboard.type("Checkable note task")
-
-  if (!isMobile) {
-    await page.getByRole("button", { name: "List options" }).click()
-    await page.getByRole("menuitem", { name: "Task List" }).click()
-  } else {
-    await page.getByRole("button", { name: "Task List" }).click()
-  }
+  await page.getByRole("button", { name: "List options" }).click()
+  await page.getByRole("menuitem", { name: "Task List" }).click()
 
   const taskItem = editor.locator('ul[data-type="taskList"] > li').last()
   await expect(taskItem).toContainText("Checkable note task")

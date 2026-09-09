@@ -77,6 +77,27 @@ function parseOpenAiJson(payload: unknown) {
     : undefined
 }
 
+function fallbackRuleDecision(rejectionReason: string): {
+  action: "create"
+  relationship: "new_rule"
+  matchedRuleId: null
+  documentType: MadagascarRule["documentType"]
+  title: string
+  instruction: string
+  explanation: string
+} {
+  return {
+    action: "create",
+    relationship: "new_rule",
+    matchedRuleId: null,
+    documentType: "Cross-document",
+    title: "Certificate review note",
+    instruction: rejectionReason,
+    explanation:
+      "OpenAI could not be reached, so the note was saved as a new cross-document rule for review.",
+  }
+}
+
 export async function POST(request: Request) {
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) {
@@ -86,15 +107,17 @@ export async function POST(request: Request) {
     )
   }
 
+  let body: { rejectionReason?: string; rules?: MadagascarRule[] } = {}
+
   try {
-    const body = (await request.json()) as {
+    body = (await request.json()) as {
       rejectionReason?: string
       rules?: MadagascarRule[]
     }
     const rejectionReason = body.rejectionReason?.trim()
     if (!rejectionReason) {
       return NextResponse.json(
-        { ok: false, message: "Enter a rejection reason." },
+        { ok: false, message: "Enter a rejection note." },
         { status: 400 }
       )
     }
@@ -120,7 +143,7 @@ export async function POST(request: Request) {
                   type: "input_text",
                   text: JSON.stringify({
                     task: [
-                      "Treat the existing rules as one polished Madagascar BSC rules document organized by document section, rule heading, and notes.",
+                      "Treat the existing rules as one polished ECTN certificate rules document organized by document section, rule heading, and notes.",
                       "Interpret the new text as an instruction that may add, clarify, expand, reduce, move, or remove rule information.",
                       "Compare meaning across every rule and every document section, not only matching words.",
                       "If it belongs to an existing rule, update that rule into concise polished notes without duplicating information.",
@@ -139,7 +162,7 @@ export async function POST(request: Request) {
           text: {
             format: {
               type: "json_schema",
-              name: "madagascar_bsc_rule_decision",
+              name: "ectn_certificate_rule_decision",
               strict: true,
               schema: ruleSchema,
             },
@@ -170,11 +193,19 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true, decision })
   } catch (error) {
+    const message = error instanceof Error ? error.message : ""
+
+    if (/fetch failed|network|timeout|ENOTFOUND|ECONNRESET/i.test(message)) {
+      return NextResponse.json({
+        ok: true,
+        decision: fallbackRuleDecision(body.rejectionReason?.trim() ?? ""),
+      })
+    }
+
     return NextResponse.json(
       {
         ok: false,
-        message:
-          error instanceof Error ? error.message : "Could not review the rule.",
+        message: message || "Could not review the rule.",
       },
       { status: 500 }
     )

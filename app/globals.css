@@ -171,6 +171,92 @@
   }
 }
 
+@layer components {
+  .ctn-okf-editor-content {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .ctn-okf-editor-content .tiptap.ProseMirror.simple-editor {
+    padding-bottom: 5.5rem;
+  }
+
+  .ctn-knowledge-chat-scroll {
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
+  }
+
+  .ctn-knowledge-chat-scroll::-webkit-scrollbar {
+    display: block;
+    width: 6px;
+  }
+
+  .ctn-knowledge-chat-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .ctn-knowledge-chat-scroll::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: hsl(var(--muted-foreground) / 0.35);
+  }
+
+  .ctn-okf-editor {
+    color: var(--foreground);
+    line-height: 1.65;
+  }
+
+  .ctn-okf-editor:focus {
+    outline: none;
+  }
+
+  .ctn-okf-editor h1 {
+    margin: 0 0 0.5rem;
+    font-size: 1.875rem;
+    font-weight: 700;
+    letter-spacing: 0;
+  }
+
+  .ctn-okf-editor h2 {
+    margin: 2rem 0 0.65rem;
+    border-top: 1px solid var(--border);
+    padding-top: 1.25rem;
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: 0;
+  }
+
+  .ctn-okf-editor p {
+    margin: 0.55rem 0;
+    color: var(--muted-foreground);
+  }
+
+  .ctn-okf-editor strong {
+    color: var(--foreground);
+  }
+
+  .ctn-okf-editor code {
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+    background: var(--muted);
+    padding: 0.125rem 0.375rem;
+    color: var(--foreground);
+    font-size: 0.8125rem;
+  }
+
+  .ctn-okf-editor ul {
+    margin: 0.75rem 0 0;
+    padding-left: 1.25rem;
+  }
+
+  .ctn-okf-editor li {
+    margin: 0.45rem 0;
+    color: var(--foreground);
+  }
+}
+
 @media (max-width: 767px) {
   html,
   body {

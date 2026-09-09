@@ -5,7 +5,12 @@ import path from "node:path"
 import * as XLSX from "xlsx"
 
 import {
+  madagascarCargoTypeOptions,
+  madagascarContainerSizeOptions,
+  madagascarContainerTypeOptions,
+  madagascarIncotermOptions,
   madagascarOfficialRuleDefinitions,
+  madagascarShipmentMethodOptions,
   type MadagascarDropdownOptions,
 } from "@/lib/madagascar-bsc"
 
@@ -35,30 +40,13 @@ export function getMadagascarDropdownOptions() {
       }
 
       return {
-        shipmentMethod: ["Air", "Sea"],
-        cargoType: [
-          "Car cargo",
-          "Convential / General Cargo",
-          "Dry bulk cargo",
-          "Full container load",
-          "Hazardous cargo",
-          "Liquid bulk cargo",
-          "Less container load",
-          "Refrigerated cargo",
-          "Unknown",
-        ],
-        containerType: [
-          "Reefer",
-          "FlatRack",
-          "HardTop",
-          "Dry",
-          "Isotherm",
-          "Open Top",
-          "Tank",
-          "Ventilated Container",
-          "Open Side / Side Door",
-        ],
-        containerSize: ["10 M3", "20 M3", "20 Feet", "40 Feet", "Other"],
+        incoterm: [...madagascarIncotermOptions]
+          .sort((left, right) => left.order - right.order)
+          .map((incoterm) => incoterm.name),
+        shipmentMethod: [...madagascarShipmentMethodOptions],
+        cargoType: [...madagascarCargoTypeOptions],
+        containerType: [...madagascarContainerTypeOptions],
+        containerSize: [...madagascarContainerSizeOptions],
         exporterCountry: countries,
         importerCountry: countries,
         loadingCountry: countries,

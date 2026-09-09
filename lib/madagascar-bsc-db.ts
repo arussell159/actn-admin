@@ -218,6 +218,14 @@ export async function saveMadagascarRequest(
   return savedRequest
 }
 
+export async function deleteMadagascarRequest(id: string) {
+  cacheRequests(
+    loadCachedMadagascarRequests().filter((request) => request.id !== id)
+  )
+  const { error } = await createClient().from(requestTable).delete().eq("id", id)
+  if (error && !/does not exist|schema cache/i.test(error.message)) throw error
+}
+
 export async function downloadMadagascarDocument(document: {
   id: string
   name: string

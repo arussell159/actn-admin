@@ -2762,10 +2762,10 @@ export function InformationView() {
               onCancel={cancelCreateFolder}
             />
           ) : null}
-          <div className="flex min-h-0 flex-1 px-0 py-0 sm:px-4 sm:py-4 lg:px-6">
+          <div className="flex h-[calc(100svh-7rem)] min-h-[36rem] flex-1 px-0 py-0 sm:px-4 sm:py-4 lg:px-6">
             <Card
               className={cn(
-                "min-h-0 flex-1 rounded-none bg-transparent py-0 shadow-none ring-0 sm:rounded-lg sm:bg-card sm:shadow-sm sm:ring-1 md:overflow-visible md:rounded-none md:bg-transparent md:shadow-none md:ring-0",
+                "flex min-h-0 flex-1 rounded-none bg-transparent py-0 shadow-none ring-0 sm:rounded-lg sm:bg-card sm:shadow-sm sm:ring-1 md:overflow-hidden",
                 activeNode?.type === "note" && "lg:overflow-hidden"
               )}
             >
@@ -2905,7 +2905,7 @@ export function InformationView() {
                     </Button>
                   </aside>
 
-                  <section className="flex min-h-0 min-w-0 flex-col p-0 sm:p-5">
+                  <section className="relative flex min-h-0 min-w-0 flex-col overflow-hidden p-0 sm:p-5">
                     <div className="hidden">
                       <div className="flex items-center gap-2">
                         <details
