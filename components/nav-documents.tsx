@@ -52,10 +52,10 @@ export function NavDocuments({
         {items.map((item) => {
           const [itemPath, itemQuery = ""] = item.url.split("?")
           const isCurrentMonthRoute =
-            item.name === "Current Month" &&
-            itemPath === "/month-end" &&
+            item.name === "Month End" &&
             (activeRoute === "/month-end" ||
-              activeRoute.startsWith("/month-end/"))
+              activeRoute === "/previous-month-ends" ||
+              activeRoute.startsWith("/previous-month-ends/"))
           const isActive =
             item.url !== "#" &&
             (isCurrentMonthRoute ||

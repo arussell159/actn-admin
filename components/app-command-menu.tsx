@@ -99,7 +99,11 @@ function filterCommandItems(items: AppCommandItem[], query: string) {
     .map(({ item }) => item)
 }
 
-export function AppCommandMenu({ initiallyOpen = false }: { initiallyOpen?: boolean }) {
+export function AppCommandMenu({
+  initiallyOpen = false,
+}: {
+  initiallyOpen?: boolean
+}) {
   const router = useRouter()
   const [open, setOpen] = React.useState(initiallyOpen)
   const [commandSearch, setCommandSearch] = React.useState("")
@@ -349,7 +353,7 @@ export function AppCommandMenu({ initiallyOpen = false }: { initiallyOpen?: bool
           </CommandGroup>
         ) : null}
         {visibleMonthEndCountryItems.length ? (
-          <CommandGroup heading="Current Month End">
+          <CommandGroup heading="Month End">
             {visibleMonthEndCountryItems.map(renderCommandItem)}
           </CommandGroup>
         ) : null}

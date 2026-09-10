@@ -1,6 +1,10 @@
 "use client"
 
 import * as React from "react"
+import {
+  SummaryField,
+  SummarySelectField,
+} from "@/components/record-summary-fields"
 import { AppLink } from "@/components/app-link"
 import { format } from "date-fns"
 import {
@@ -20,7 +24,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
-  Field,
   FieldGroup,
   FieldLabel,
   FieldSet,
@@ -130,71 +133,6 @@ const certificateStatusTabs = [
 
 function uniqueValues(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)))
-}
-
-function SummaryField({
-  label,
-  value,
-  onChange,
-  onActivate,
-  isEditing,
-}: {
-  label: string
-  value: string
-  onChange: (value: string) => void
-  onActivate: () => void
-  isEditing: boolean
-}) {
-  return (
-    <Field>
-      <FieldLabel>{label}</FieldLabel>
-      <Input
-        value={value}
-        readOnly={!isEditing}
-        onClick={onActivate}
-        onChange={(event) => onChange(event.target.value)}
-        className="cursor-pointer read-only:bg-muted/30"
-      />
-    </Field>
-  )
-}
-
-function SummarySelectField({
-  label,
-  value,
-  onChange,
-  onActivate,
-}: {
-  label: string
-  value: string
-  onChange: (value: string) => void
-  onActivate: () => void
-}) {
-  return (
-    <Field>
-      <FieldLabel>{label}</FieldLabel>
-      <Select
-        value={value}
-        onOpenChange={(open) => {
-          if (open) onActivate()
-        }}
-        onValueChange={(selectedValue) => {
-          onActivate()
-          if (selectedValue) onChange(selectedValue)
-        }}
-      >
-        <SelectTrigger className="cursor-pointer">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            <SelectItem value="Enabled">Enabled</SelectItem>
-            <SelectItem value="Disabled">Disabled</SelectItem>
-          </SelectGroup>
-        </SelectContent>
-      </Select>
-    </Field>
-  )
 }
 
 export function CustomerRecordView({
@@ -598,6 +536,7 @@ export function CustomerRecordView({
                       <FieldSet className="mt-6">
                         <FieldGroup className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
                           <SummarySelectField
+                            values={["Enabled", "Disabled"]}
                             label="Quote Tool"
                             value={draftSummaryDetails.quoteTool}
                             onActivate={() => setIsEditingSummary(true)}
@@ -606,6 +545,7 @@ export function CustomerRecordView({
                             }
                           />
                           <SummarySelectField
+                            values={["Enabled", "Disabled"]}
                             label="Auto Mark Invoice Paid"
                             value={draftSummaryDetails.autoMarkInvoicePaid}
                             onActivate={() => setIsEditingSummary(true)}

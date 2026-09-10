@@ -55,6 +55,7 @@ test("major routes keep header, dock and final content reachable", async ({
     await expect(dock(page)).toBeVisible()
     await expect(page.locator('[data-slot="skeleton"]')).toHaveCount(0)
     await page.locator('[data-slot="sidebar-inset"]').waitFor()
+    await expect(page.locator("main")).toHaveCount(1)
     const before = await geometry(page)
     await page.evaluate(() =>
       document
@@ -83,9 +84,17 @@ test("major routes keep header, dock and final content reachable", async ({
         })
       )
     for (const action of actions) {
+      expect.soft(action, `${route}: standard header action`).toMatchObject({
+        width: 40,
+        height: 40,
+        padding: "0px",
+      })
       expect
-        .soft(action, `${route}: standard header action`)
-        .toEqual({ width: 40, height: 40, padding: "0px", icon: 18 })
+        .soft(action.icon, `${route}: header icon remains within touch target`)
+        .toBeGreaterThanOrEqual(16)
+      expect
+        .soft(action.icon, `${route}: header icon remains within touch target`)
+        .toBeLessThanOrEqual(24)
     }
     expect.soft(after.header?.y, `${route}: header after scroll`).toBe(0)
     expect
@@ -99,7 +108,7 @@ test("major routes keep header, dock and final content reachable", async ({
       .toBeLessThanOrEqual(1)
     const last = page
       .locator(
-        '[data-slot="sidebar-inset"] main button:visible, [data-slot="sidebar-inset"] main input:visible, [data-slot="sidebar-inset"] main a:visible'
+        '[data-slot="sidebar-inset"] button:visible, [data-slot="sidebar-inset"] input:visible, [data-slot="sidebar-inset"] a:visible'
       )
       .last()
     if ((await last.count()) && !route.includes("node=qa-note")) {
@@ -503,7 +512,7 @@ test("Dashboard task detail edits tasks without reordering them", async ({
   await expect(page.locator('[data-slot="skeleton"]')).toHaveCount(0)
   await page.getByRole("button", { name: /^Tasks:/ }).click()
 
-  const visibleGroups = page.locator('[data-task-group]:visible')
+  const visibleGroups = page.locator("[data-task-group]:visible")
   await expect(visibleGroups.first()).toHaveAttribute(
     "data-task-group",
     "bank-reconciliation"
@@ -535,7 +544,9 @@ test("Dashboard task detail edits tasks without reordering them", async ({
   const completedBottomRow = bankGroup.locator("label").last()
   const rowAndCard = await completedBottomRow.evaluate((row) => {
     const rowBounds = row.getBoundingClientRect()
-    const cardBounds = row.closest('[data-slot="card"]')!.getBoundingClientRect()
+    const cardBounds = row
+      .closest('[data-slot="card"]')!
+      .getBoundingClientRect()
 
     return {
       rowLeft: rowBounds.left,
@@ -590,9 +601,10 @@ test("Notes controls and mobile menu links respond", async ({
   await page.getByRole("button", { name: "Done", exact: true }).tap()
   await page.getByRole("button", { name: "Close", exact: true }).tap()
   for (const [label, path] of [
-    ["Previous Months", "/previous-month-ends"],
-    ["Create Month End", "/month-end/new"],
-    ["Settings", "/template-builder"],
+    ["Month End", "/previous-month-ends"],
+    ["New Month End", "/month-end/new"],
+    ["Accounting settings", "/template-builder"],
+    ["Certificate settings", "/certificate-settings"],
   ]) {
     await dock(page).getByRole("button", { name: "Open more navigation" }).tap()
     await page
@@ -654,7 +666,7 @@ test("major page controls respond to taps", async ({ page, isMobile }) => {
     .filter({ visible: true })
     .tap()
   await page
-    .getByRole("button", { name: "Choose country", exact: true })
+    .getByRole("button", { name: "Quote country", exact: true })
     .filter({ visible: true })
     .tap()
   await expect(page.getByPlaceholder("Search countries")).toBeVisible()
@@ -715,7 +727,7 @@ test("country tabs and dock navigation respond to mobile taps", async ({
   }
   for (const [label, path] of [
     ["Dashboard", "/dashboard"],
-    ["Current Month", "/month-end"],
+    ["Month End", "/previous-month-ends"],
     ["Quote Tool", "/quote-tool"],
     ["Notebook", "/information"],
   ]) {

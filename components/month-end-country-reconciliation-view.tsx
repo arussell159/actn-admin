@@ -16,7 +16,7 @@ import {
 } from "lucide-react"
 
 import { AppLink } from "@/components/app-link"
-import { AppSidebar } from "@/components/app-sidebar"
+import { PageFrame } from "@/components/page-frame"
 import { CountryTableFilters } from "@/components/country-table-filters"
 import { HeaderActionMenuTrigger } from "@/components/header-action-menu-trigger"
 import {
@@ -47,7 +47,6 @@ import {
   NavigationMenuItem,
   NavigationMenuList,
 } from "@/components/ui/navigation-menu"
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Table,
@@ -9724,345 +9723,334 @@ export function MonthEndCountryReconciliationView({
   ) : undefined
 
   return (
-    <SidebarProvider
+    <PageFrame
       style={
         {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
           "--mobile-page-bottom-padding":
             "calc(10rem + env(safe-area-inset-bottom, 0px))",
         } as React.CSSProperties
       }
+      insetClassName="md:overflow-y-auto"
+      header={
+        <SiteHeader
+          title={title}
+          leadingContent={countryHeaderLeading}
+          mobileLeadingContent={countryHeaderMobileLeading}
+          actions={countryHeaderActions}
+          bottomContent={countryProcessMenu}
+        />
+      }
     >
-      <AppSidebar variant="inset" />
-      <SidebarInset className="md:overflow-y-auto">
-        <main className="flex min-h-svh flex-col bg-background md:min-h-[calc(100svh-1rem)]">
-          <SiteHeader
-            title={title}
-            leadingContent={countryHeaderLeading}
-            mobileLeadingContent={countryHeaderMobileLeading}
-            actions={countryHeaderActions}
-            bottomContent={countryProcessMenu}
-          />
-          <HiddenFileInput
-            ref={masterInputRef}
-            accept=".csv,text/csv"
-            onFiles={(files) => {
-              const file = files[0]
+      <HiddenFileInput
+        ref={masterInputRef}
+        accept=".csv,text/csv"
+        onFiles={(files) => {
+          const file = files[0]
 
-              if (file) {
-                uploadMasterFile(file)
-              }
-            }}
-          />
-          <HiddenFileInput
-            ref={countryReportInputRef}
-            accept=".csv,.pdf,.xls,.xlsx,text/csv,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            multiple
-            onFiles={uploadCountryReports}
-          />
-          <HiddenFileInput
-            ref={invoiceInputRef}
-            accept=".pdf,.csv,.xls,.xlsx,application/pdf,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          if (file) {
+            uploadMasterFile(file)
+          }
+        }}
+      />
+      <HiddenFileInput
+        ref={countryReportInputRef}
+        accept=".csv,.pdf,.xls,.xlsx,text/csv,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        multiple
+        onFiles={uploadCountryReports}
+      />
+      <HiddenFileInput
+        ref={invoiceInputRef}
+        accept=".pdf,.csv,.xls,.xlsx,application/pdf,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        onFiles={uploadInvoiceFiles}
+      />
+      {countryMobileProcessMenu ? (
+        <div className="overflow-x-auto px-4 pt-4 md:hidden">
+          {countryMobileProcessMenu}
+        </div>
+      ) : null}
+      {uploadError || loadError ? (
+        <div className="px-4 pt-4 lg:px-6">
+          {uploadError ? (
+            <p className="text-sm text-destructive">{uploadError}</p>
+          ) : null}
+          {loadError ? (
+            <p className="text-sm text-destructive">{loadError}</p>
+          ) : null}
+        </div>
+      ) : null}
+      {!hasLoaded ? (
+        resolvedView === "dashboard" ? (
+          <CountryDashboardSkeleton />
+        ) : resolvedView === "journal" ? (
+          <div className="flex flex-1 px-4 py-4 lg:px-6">
+            <CountryJournalBodySkeleton />
+          </div>
+        ) : (
+          <CountryReconciliationSkeleton />
+        )
+      ) : shouldShowFrabemarPackage ? (
+        <FrabemarInvoicePackageStep
+          packageDocument={frabemarPackageDocument}
+          isReadOnly={isMonthClosed}
+          isSaving={isSavingFrabemarInvoices}
+          sharedExchangeRateDisplay={frabemarPackageExchangeRateDisplay}
+          onSave={saveFrabemarInvoicePackage}
+          onSaveSharedExchangeRate={saveFrabemarExchangeRateForPackage}
+          onDownloadAllCommissionInvoices={
+            downloadAllFrabemarCommissionInvoices
+          }
+          onMakeJournalEntries={makeFrabemarPackageJournalEntries}
+        />
+      ) : resolvedView === "dashboard" ? (
+        <CountryReconciliationDashboard
+          countryName={countryDisplayName || country?.name || "Unknown country"}
+          masterRecords={records}
+          countryRecords={countryReportRecords}
+          reconciliation={displayedReconciliation}
+          rolledInternalIds={rolledInternalIds}
+          leftInvoiceRecordIds={leftInvoiceRecordIds}
+          resolvedCountryReportRows={resolvedCountryReportRows}
+          activeSection={activeDashboardSection}
+          onActiveSectionChange={saveCountryDashboardSection}
+        />
+      ) : resolvedView === "journal" ? (
+        country?.invoiceRequired === true && !isInvoiceComplete ? (
+          <InvoiceUploadStep
+            countryName={
+              countryDisplayName || country?.name || "Unknown country"
+            }
+            invoiceDocument={activeInvoiceDocument}
+            isComplete={isInvoiceComplete}
+            isReadOnly={isMonthClosed}
+            isUploading={isUploadingInvoice}
+            congoInvoiceValues={
+              activeCountryId === "republic-of-congo"
+                ? congoInvoiceJournalValues
+                : undefined
+            }
+            visaUsedValue={
+              activeCountryId === "republic-of-congo"
+                ? congoVisaUsedText
+                : undefined
+            }
+            onVisaUsedChange={
+              activeCountryId === "republic-of-congo"
+                ? setCongoVisaUsedText
+                : undefined
+            }
+            onSaveVisaUsed={
+              activeCountryId === "republic-of-congo"
+                ? saveCongoVisaUsed
+                : undefined
+            }
+            onChooseFile={openInvoiceFilePicker}
             onFiles={uploadInvoiceFiles}
+            dashboardHref={countryDashboardHref}
           />
-          {countryMobileProcessMenu ? (
-            <div className="overflow-x-auto px-4 pt-4 md:hidden">
-              {countryMobileProcessMenu}
-            </div>
+        ) : (
+          <JournalEntryPreview
+            countryName={
+              countryDisplayName || country?.name || "Unknown country"
+            }
+            entries={displayedJournalEntries}
+            additionalRows={displayedAdditionalJournalRows}
+            simpleRows={displayedSimpleJournalRows}
+            journalRows={displayedJournalRows}
+            sourceDocumentCount={displayedSourceDocumentCount}
+            isReadOnly={isMonthClosed}
+            pdfDownloadAction={
+              isFrabemarChildCountry
+                ? {
+                    label: "Download PDF",
+                    disabled:
+                      !frabemarCountryConfig?.hasCommission ||
+                      !frabemarCountryJournalValues?.commission ||
+                      !frabemarCountryJournalValues.invoiceNumber,
+                    onClick: () =>
+                      activeCountryId
+                        ? downloadFrabemarCommissionInvoice(activeCountryId)
+                        : Promise.resolve(),
+                  }
+                : undefined
+            }
+            exchangeRateEditor={
+              isFrabemarChildCountry
+                ? {
+                    value: frabemarExchangeRate,
+                    draft: frabemarExchangeRateText,
+                    onDraftChange: (value) => {
+                      setIsFrabemarExchangeRateNeedsAttention(false)
+                      setFrabemarExchangeRateText(value)
+                    },
+                    onSave: saveFrabemarExchangeRate,
+                  }
+                : undefined
+            }
+            exchangeRateNeedsAttention={isFrabemarExchangeRateNeedsAttention}
+            onExchangeRateAttentionHandled={() =>
+              setIsFrabemarExchangeRateNeedsAttention(false)
+            }
+            onMakeJournalEntry={makeJournalEntry}
+          />
+        )
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
+          {isPasteReportOpen && !isMonthClosed ? (
+            <Card className="max-h-[min(70vh,42rem)] overflow-hidden rounded-lg py-0 shadow-sm">
+              <CardContent className="flex max-h-[min(70vh,42rem)] min-h-0 flex-col gap-3 p-3">
+                <Textarea
+                  ref={pasteReportTextareaRef}
+                  value={pastedReportText}
+                  onChange={(event) => {
+                    setPastedReportText(event.target.value)
+                    if (shouldScrollPastedReportRef.current) {
+                      shouldScrollPastedReportRef.current = false
+                      keepPasteReportControlsReachable()
+                    }
+                  }}
+                  onPaste={() => {
+                    shouldScrollPastedReportRef.current = true
+                  }}
+                  placeholder="Paste report data"
+                  className="[field-sizing:fixed] min-h-48 flex-1 resize-none overflow-auto rounded-lg font-mono text-sm"
+                />
+                <div
+                  ref={pasteReportActionsRef}
+                  className="-mx-3 -mb-3 flex shrink-0 justify-end gap-2 border-t bg-card px-3 py-3"
+                >
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setIsPasteReportOpen(false)
+                      setPastedReportText("")
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={uploadPastedCountryReport}
+                    disabled={
+                      !pastedReportText.trim() || isUploadingCountryReport
+                    }
+                  >
+                    <ClipboardPasteIcon />
+                    Import Paste
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           ) : null}
-          {uploadError || loadError ? (
-            <div className="px-4 pt-4 lg:px-6">
-              {uploadError ? (
-                <p className="text-sm text-destructive">{uploadError}</p>
-              ) : null}
-              {loadError ? (
-                <p className="text-sm text-destructive">{loadError}</p>
-              ) : null}
-            </div>
+
+          {isCameroonDmiPasteOpen && !isMonthClosed ? (
+            <Card className="max-h-[min(70vh,42rem)] overflow-hidden rounded-lg py-0 shadow-sm">
+              <CardContent className="flex max-h-[min(70vh,42rem)] min-h-0 flex-col gap-3 p-3">
+                <Textarea
+                  value={cameroonDmiPasteText}
+                  onChange={(event) =>
+                    setCameroonDmiPasteText(event.target.value)
+                  }
+                  placeholder="Paste Cameroon DMI report data"
+                  className="[field-sizing:fixed] min-h-48 flex-1 resize-none overflow-auto rounded-lg font-mono text-sm"
+                />
+                <div className="-mx-3 -mb-3 flex shrink-0 justify-end gap-2 border-t bg-card px-3 py-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setIsCameroonDmiPasteOpen(false)
+                      setCameroonDmiPasteText("")
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={saveCameroonDmiPaste}
+                    disabled={
+                      !cameroonDmiPasteText.trim() || isSavingCameroonDmiPaste
+                    }
+                  >
+                    <ClipboardPasteIcon />
+                    Apply DMI
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           ) : null}
+
           {!hasLoaded ? (
-            resolvedView === "dashboard" ? (
-              <CountryDashboardSkeleton />
-            ) : resolvedView === "journal" ? (
-              <div className="flex flex-1 px-4 py-4 lg:px-6">
-                <CountryJournalBodySkeleton />
-              </div>
-            ) : (
-              <CountryReconciliationSkeleton />
-            )
-          ) : shouldShowFrabemarPackage ? (
-            <FrabemarInvoicePackageStep
-              packageDocument={frabemarPackageDocument}
-              isReadOnly={isMonthClosed}
-              isSaving={isSavingFrabemarInvoices}
-              sharedExchangeRateDisplay={frabemarPackageExchangeRateDisplay}
-              onSave={saveFrabemarInvoicePackage}
-              onSaveSharedExchangeRate={saveFrabemarExchangeRateForPackage}
-              onDownloadAllCommissionInvoices={
-                downloadAllFrabemarCommissionInvoices
-              }
-              onMakeJournalEntries={makeFrabemarPackageJournalEntries}
+            <CountryReconciliationSkeleton />
+          ) : requiresCountryReport && !hasCountryReport && !isMonthClosed ? (
+            <CountryReportUploadStep
+              countryReportLabel={countryReportLabel}
+              masterCount={records.length}
+              isUploading={isUploadingCountryReport}
+              canPasteReport={canPasteReport}
+              isAntaserPackage={activeCountryId?.startsWith("antaser")}
+              onChooseFile={openCountryReportFilePicker}
+              onPasteReport={() => {
+                if (!isMonthClosed) {
+                  setIsPasteReportOpen(true)
+                }
+              }}
+              onFiles={uploadCountryReports}
             />
-          ) : resolvedView === "dashboard" ? (
-            <CountryReconciliationDashboard
-              countryName={
-                countryDisplayName || country?.name || "Unknown country"
-              }
-              masterRecords={records}
+          ) : requiresCountryReport && !hasCountryReport ? (
+            <div className="rounded-lg border bg-background p-4 text-sm text-muted-foreground">
+              Reopen this month to upload a country report.
+            </div>
+          ) : hasCountryReport || hasMasterRecords ? (
+            <ReconciliationWorkbench
               countryRecords={countryReportRecords}
-              reconciliation={displayedReconciliation}
+              masterRecords={sortedRecords}
+              matchedRecords={displayedReconciliation.matched}
+              missingCountryRecordIds={missingCountryRecordIds}
+              missingMasterRecordIds={missingMasterRecordIds}
               rolledInternalIds={rolledInternalIds}
               leftInvoiceRecordIds={leftInvoiceRecordIds}
               resolvedCountryReportRows={resolvedCountryReportRows}
-              activeSection={activeDashboardSection}
-              onActiveSectionChange={saveCountryDashboardSection}
+              showCountryColumn={showCountryColumn}
+              onDropMasterFile={uploadMasterFile}
+              onDropCountryFiles={uploadCountryReports}
+              canEditCountryData={requiresCountryReport}
+              isReadOnly={isReconciliationComplete || isMonthClosed}
+              canUnreconcile={!isReconciliationComplete && !isMonthClosed}
+              showOnlyMatched={isReconciliationComplete}
+              countryId={activeCountryId}
+              countryName={
+                countryDisplayName || country?.name || "Unknown country"
+              }
+              countryRecordCount={countryReportRecords.length}
+              masterRecordCount={
+                records.length -
+                displayedReconciliation.linkedMasterRecordIds.size
+              }
+              matchedCountryCount={reconciliationCounts.country}
+              matchedMasterCount={reconciliationCounts.master}
+              onRollInvoices={rollInvoices}
+              onLeaveInvoices={leaveInvoices}
+              onReconcileSelectedPair={reconcileSelectedPair}
+              onReconcileCountryRows={reconcileCountryRows}
+              onUnreconcileMatchedRows={unreconcileMatchedRows}
+              onPasteDmiReport={
+                activeCountryId === "cameroon" &&
+                hasCountryReport &&
+                !isMonthClosed
+                  ? () => setIsCameroonDmiPasteOpen(true)
+                  : undefined
+              }
+              onProceed={proceedFromReconciliation}
+              onMoveInvoicesToOot={
+                activeCountryId === "angola"
+                  ? moveInvoicesToAngolaOot
+                  : undefined
+              }
             />
-          ) : resolvedView === "journal" ? (
-            country?.invoiceRequired === true && !isInvoiceComplete ? (
-              <InvoiceUploadStep
-                countryName={
-                  countryDisplayName || country?.name || "Unknown country"
-                }
-                invoiceDocument={activeInvoiceDocument}
-                isComplete={isInvoiceComplete}
-                isReadOnly={isMonthClosed}
-                isUploading={isUploadingInvoice}
-                congoInvoiceValues={
-                  activeCountryId === "republic-of-congo"
-                    ? congoInvoiceJournalValues
-                    : undefined
-                }
-                visaUsedValue={
-                  activeCountryId === "republic-of-congo"
-                    ? congoVisaUsedText
-                    : undefined
-                }
-                onVisaUsedChange={
-                  activeCountryId === "republic-of-congo"
-                    ? setCongoVisaUsedText
-                    : undefined
-                }
-                onSaveVisaUsed={
-                  activeCountryId === "republic-of-congo"
-                    ? saveCongoVisaUsed
-                    : undefined
-                }
-                onChooseFile={openInvoiceFilePicker}
-                onFiles={uploadInvoiceFiles}
-                dashboardHref={countryDashboardHref}
-              />
-            ) : (
-              <JournalEntryPreview
-                countryName={
-                  countryDisplayName || country?.name || "Unknown country"
-                }
-                entries={displayedJournalEntries}
-                additionalRows={displayedAdditionalJournalRows}
-                simpleRows={displayedSimpleJournalRows}
-                journalRows={displayedJournalRows}
-                sourceDocumentCount={displayedSourceDocumentCount}
-                isReadOnly={isMonthClosed}
-                pdfDownloadAction={
-                  isFrabemarChildCountry
-                    ? {
-                        label: "Download PDF",
-                        disabled:
-                          !frabemarCountryConfig?.hasCommission ||
-                          !frabemarCountryJournalValues?.commission ||
-                          !frabemarCountryJournalValues.invoiceNumber,
-                        onClick: () =>
-                          activeCountryId
-                            ? downloadFrabemarCommissionInvoice(activeCountryId)
-                            : Promise.resolve(),
-                      }
-                    : undefined
-                }
-                exchangeRateEditor={
-                  isFrabemarChildCountry
-                    ? {
-                        value: frabemarExchangeRate,
-                        draft: frabemarExchangeRateText,
-                        onDraftChange: (value) => {
-                          setIsFrabemarExchangeRateNeedsAttention(false)
-                          setFrabemarExchangeRateText(value)
-                        },
-                        onSave: saveFrabemarExchangeRate,
-                      }
-                    : undefined
-                }
-                exchangeRateNeedsAttention={
-                  isFrabemarExchangeRateNeedsAttention
-                }
-                onExchangeRateAttentionHandled={() =>
-                  setIsFrabemarExchangeRateNeedsAttention(false)
-                }
-                onMakeJournalEntry={makeJournalEntry}
-              />
-            )
           ) : (
-            <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
-              {isPasteReportOpen && !isMonthClosed ? (
-                <Card className="max-h-[min(70vh,42rem)] overflow-hidden rounded-lg py-0 shadow-sm">
-                  <CardContent className="flex max-h-[min(70vh,42rem)] min-h-0 flex-col gap-3 p-3">
-                    <Textarea
-                      ref={pasteReportTextareaRef}
-                      value={pastedReportText}
-                      onChange={(event) => {
-                        setPastedReportText(event.target.value)
-                        if (shouldScrollPastedReportRef.current) {
-                          shouldScrollPastedReportRef.current = false
-                          keepPasteReportControlsReachable()
-                        }
-                      }}
-                      onPaste={() => {
-                        shouldScrollPastedReportRef.current = true
-                      }}
-                      placeholder="Paste report data"
-                      className="[field-sizing:fixed] min-h-48 flex-1 resize-none overflow-auto rounded-lg font-mono text-sm"
-                    />
-                    <div
-                      ref={pasteReportActionsRef}
-                      className="-mx-3 -mb-3 flex shrink-0 justify-end gap-2 border-t bg-card px-3 py-3"
-                    >
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setIsPasteReportOpen(false)
-                          setPastedReportText("")
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        onClick={uploadPastedCountryReport}
-                        disabled={
-                          !pastedReportText.trim() || isUploadingCountryReport
-                        }
-                      >
-                        <ClipboardPasteIcon />
-                        Import Paste
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : null}
-
-              {isCameroonDmiPasteOpen && !isMonthClosed ? (
-                <Card className="max-h-[min(70vh,42rem)] overflow-hidden rounded-lg py-0 shadow-sm">
-                  <CardContent className="flex max-h-[min(70vh,42rem)] min-h-0 flex-col gap-3 p-3">
-                    <Textarea
-                      value={cameroonDmiPasteText}
-                      onChange={(event) =>
-                        setCameroonDmiPasteText(event.target.value)
-                      }
-                      placeholder="Paste Cameroon DMI report data"
-                      className="[field-sizing:fixed] min-h-48 flex-1 resize-none overflow-auto rounded-lg font-mono text-sm"
-                    />
-                    <div className="-mx-3 -mb-3 flex shrink-0 justify-end gap-2 border-t bg-card px-3 py-3">
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setIsCameroonDmiPasteOpen(false)
-                          setCameroonDmiPasteText("")
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        onClick={saveCameroonDmiPaste}
-                        disabled={
-                          !cameroonDmiPasteText.trim() ||
-                          isSavingCameroonDmiPaste
-                        }
-                      >
-                        <ClipboardPasteIcon />
-                        Apply DMI
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : null}
-
-              {!hasLoaded ? (
-                <CountryReconciliationSkeleton />
-              ) : requiresCountryReport &&
-                !hasCountryReport &&
-                !isMonthClosed ? (
-                <CountryReportUploadStep
-                  countryReportLabel={countryReportLabel}
-                  masterCount={records.length}
-                  isUploading={isUploadingCountryReport}
-                  canPasteReport={canPasteReport}
-                  isAntaserPackage={activeCountryId?.startsWith("antaser")}
-                  onChooseFile={openCountryReportFilePicker}
-                  onPasteReport={() => {
-                    if (!isMonthClosed) {
-                      setIsPasteReportOpen(true)
-                    }
-                  }}
-                  onFiles={uploadCountryReports}
-                />
-              ) : requiresCountryReport && !hasCountryReport ? (
-                <div className="rounded-lg border bg-background p-4 text-sm text-muted-foreground">
-                  Reopen this month to upload a country report.
-                </div>
-              ) : hasCountryReport || hasMasterRecords ? (
-                <ReconciliationWorkbench
-                  countryRecords={countryReportRecords}
-                  masterRecords={sortedRecords}
-                  matchedRecords={displayedReconciliation.matched}
-                  missingCountryRecordIds={missingCountryRecordIds}
-                  missingMasterRecordIds={missingMasterRecordIds}
-                  rolledInternalIds={rolledInternalIds}
-                  leftInvoiceRecordIds={leftInvoiceRecordIds}
-                  resolvedCountryReportRows={resolvedCountryReportRows}
-                  showCountryColumn={showCountryColumn}
-                  onDropMasterFile={uploadMasterFile}
-                  onDropCountryFiles={uploadCountryReports}
-                  canEditCountryData={requiresCountryReport}
-                  isReadOnly={isReconciliationComplete || isMonthClosed}
-                  canUnreconcile={!isReconciliationComplete && !isMonthClosed}
-                  showOnlyMatched={isReconciliationComplete}
-                  countryId={activeCountryId}
-                  countryName={
-                    countryDisplayName || country?.name || "Unknown country"
-                  }
-                  countryRecordCount={countryReportRecords.length}
-                  masterRecordCount={
-                    records.length -
-                    displayedReconciliation.linkedMasterRecordIds.size
-                  }
-                  matchedCountryCount={reconciliationCounts.country}
-                  matchedMasterCount={reconciliationCounts.master}
-                  onRollInvoices={rollInvoices}
-                  onLeaveInvoices={leaveInvoices}
-                  onReconcileSelectedPair={reconcileSelectedPair}
-                  onReconcileCountryRows={reconcileCountryRows}
-                  onUnreconcileMatchedRows={unreconcileMatchedRows}
-                  onPasteDmiReport={
-                    activeCountryId === "cameroon" &&
-                    hasCountryReport &&
-                    !isMonthClosed
-                      ? () => setIsCameroonDmiPasteOpen(true)
-                      : undefined
-                  }
-                  onProceed={proceedFromReconciliation}
-                  onMoveInvoicesToOot={
-                    activeCountryId === "angola"
-                      ? moveInvoicesToAngolaOot
-                      : undefined
-                  }
-                />
-              ) : (
-                <div className="rounded-lg border bg-background p-4 text-sm text-muted-foreground">
-                  Upload both reports to build this reconciliation view.
-                </div>
-              )}
+            <div className="rounded-lg border bg-background p-4 text-sm text-muted-foreground">
+              Upload both reports to build this reconciliation view.
             </div>
           )}
-        </main>
-      </SidebarInset>
-    </SidebarProvider>
+        </div>
+      )}
+    </PageFrame>
   )
 }

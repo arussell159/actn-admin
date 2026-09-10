@@ -83,6 +83,7 @@ export function SiteHeader({
   mobileTrailingContent,
   actions,
   bottomContent,
+  headingAs = "h1",
 }: {
   title?: string
   titleContent?: ReactNode
@@ -91,9 +92,11 @@ export function SiteHeader({
   mobileTrailingContent?: ReactNode
   actions?: ReactNode
   bottomContent?: ReactNode
+  headingAs?: "h1" | "div"
 }) {
   useMobileScrollLock()
   const heading = titleContent ?? title
+  const Heading = headingAs
 
   return (
     <>
@@ -126,13 +129,13 @@ export function SiteHeader({
               />
             </div>
           ) : null}
-          <h1 className="min-w-0 truncate text-base font-medium">{heading}</h1>
+          <Heading className="min-w-0 truncate text-base font-medium">{heading}</Heading>
           {actions ? (
             <div className="flex shrink-0 items-center gap-2">{actions}</div>
           ) : null}
         </div>
         {bottomContent ? (
-          <div className="relative z-10 hidden h-9 border-b px-4 md:block lg:px-6">
+          <div className="relative z-10 hidden min-h-9 border-b px-4 md:block lg:px-6">
             {bottomContent}
           </div>
         ) : null}
@@ -144,9 +147,9 @@ export function SiteHeader({
           ) : (
             <span aria-hidden="true" />
           )}
-          <h1 className="truncate text-center text-base font-semibold">
+          <Heading className="truncate text-center text-base font-semibold">
             {heading}
-          </h1>
+          </Heading>
           {mobileTrailingContent ? (
             <div className="grid size-10 place-items-center">
               {mobileTrailingContent}

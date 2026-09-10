@@ -1,0 +1,55 @@
+.notebook-tree,
+.okf-notebook {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    system-ui, "Helvetica Neue", Arial, sans-serif;
+}
+
+.okf-notebook {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--background);
+}
+
+.okf-notebook-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
+}
+
+.okf-notebook-document {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 3rem 3rem 30vh;
+}
+
+.okf-notebook-document h1 {
+  font-size: 40px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.okf-notebook-document article h2 {
+  font-size: 32px;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+@media (max-width: 767px) {
+  .okf-notebook-document {
+    padding: 0.75rem 1rem calc(7rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .okf-notebook-document h1 {
+    font-size: 30pt;
+  }
+  .okf-notebook-document article h2 {
+    font-size: 22pt;
+  }
+}

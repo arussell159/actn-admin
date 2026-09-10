@@ -1,6 +1,7 @@
 "use client"
 
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu"
+import { useRef } from "react"
 import { cn } from "@/lib/tiptap-utils"
 import { CheckIcon } from "@/components/tiptap-icons/check-icon"
 
@@ -40,8 +41,11 @@ function DropdownMenuContent({
   className,
   align = "start",
   sideOffset = 4,
+  onEscapeKeyDown,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+  const escaped = useRef(false)
   return (
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
@@ -49,7 +53,16 @@ function DropdownMenuContent({
         sideOffset={sideOffset}
         align={align}
         className={cn("tiptap-dropdown-menu-content", className)}
-        onCloseAutoFocus={(e) => e.preventDefault()}
+        onEscapeKeyDown={(event) => {
+          escaped.current = true
+          onEscapeKeyDown?.(event)
+        }}
+        onCloseAutoFocus={(event) => {
+          // Commands focus the editor themselves; Escape returns to the trigger.
+          if (!escaped.current) event.preventDefault()
+          escaped.current = false
+          onCloseAutoFocus?.(event)
+        }}
         {...props}
       />
     </DropdownMenuPrimitive.Portal>

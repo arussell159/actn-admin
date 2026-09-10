@@ -1,50 +1,17 @@
 import {
   BookOpenTextIcon,
-  CalendarClockIcon,
   CalculatorIcon,
   HistoryIcon,
+  LibraryBigIcon,
+  LayoutTemplateIcon,
   PlusIcon,
   Settings2Icon,
 } from "lucide-react"
+import { certificateLayoutsHref } from "@/lib/certificate-layout/routes"
 
-export const appCommandPages = [
+export const settingsPages = [
   {
-    title: "Current Month",
-    href: "/month-end",
-    section: "Month End",
-    keywords: ["month end", "dashboard", "current"],
-    icon: CalendarClockIcon,
-  },
-  {
-    title: "Previous Months",
-    href: "/previous-month-ends",
-    section: "Month End",
-    keywords: ["history", "archive", "closed"],
-    icon: HistoryIcon,
-  },
-  {
-    title: "Create Month End",
-    href: "/month-end/new",
-    section: "Month End",
-    keywords: ["new", "period", "open"],
-    icon: PlusIcon,
-  },
-  {
-    title: "Notebook",
-    href: "/information",
-    section: "Utilities",
-    keywords: ["notes", "folders", "information"],
-    icon: BookOpenTextIcon,
-  },
-  {
-    title: "Quote Tool",
-    href: "/quote-tool",
-    section: "Utilities",
-    keywords: ["quote", "pricing", "calculator"],
-    icon: CalculatorIcon,
-  },
-  {
-    title: "Settings",
+    title: "Accounting",
     href: "/template-builder",
     section: "Settings",
     keywords: [
@@ -58,4 +25,50 @@ export const appCommandPages = [
     ],
     icon: Settings2Icon,
   },
+  {
+    title: "Certificate",
+    href: certificateLayoutsHref(),
+    section: "Settings",
+    keywords: ["certificate", "layouts", "fields", "sections", "country"],
+    icon: LayoutTemplateIcon,
+  },
+]
+
+export const appCommandPages = [
+  {
+    title: "Month End",
+    href: "/previous-month-ends",
+    section: "Accounting",
+    keywords: ["month end", "history", "archive", "open", "closed"],
+    icon: HistoryIcon,
+  },
+  {
+    title: "New Month End",
+    href: "/month-end/new",
+    section: "Accounting",
+    keywords: ["new", "period", "open"],
+    icon: PlusIcon,
+  },
+  {
+    title: "Notebook",
+    href: "/information",
+    section: "Utilities",
+    keywords: ["notes", "folders", "information"],
+    icon: BookOpenTextIcon,
+  },
+  {
+    title: "Knowledge Base",
+    href: "/knowledge-base",
+    section: "Utilities",
+    keywords: ["knowledge", "requirements", "rules", "documents"],
+    icon: LibraryBigIcon,
+  },
+  {
+    title: "Quote Tool",
+    href: "/quote-tool",
+    section: "Utilities",
+    keywords: ["quote", "pricing", "calculator"],
+    icon: CalculatorIcon,
+  },
+  ...settingsPages,
 ]

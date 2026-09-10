@@ -10,6 +10,7 @@
 
 # testing
 /coverage
+/.okf-development/
 
 # next.js
 /.next/

@@ -55,14 +55,16 @@ export function CountryTableFilters({
             aria-label={searchAriaLabel}
           />
           {searchQuery ? (
-            <button
+            <Button
               type="button"
-              className="absolute top-1/2 right-2 grid size-6 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30 focus-visible:outline-none"
+              variant="ghost"
+              size="icon-xs"
+              className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground"
               aria-label={`Clear ${searchAriaLabel.toLowerCase()}`}
               onClick={() => onSearchQueryChange("")}
             >
               <XIcon className="size-4" />
-            </button>
+            </Button>
           ) : null}
         </div>
         <div
@@ -78,15 +80,18 @@ export function CountryTableFilters({
             const isSelected = selectedFilter === option.id
 
             return (
-              <button
+              <Button
                 key={option.id}
                 type="button"
+                variant="ghost"
+                size="sm"
                 className={cn(
-                  "h-7 rounded-md text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground",
+                  "h-7 rounded-md text-sm text-muted-foreground",
                   mobileFiltersFullWidth
                     ? "flex-1 px-4 text-center md:flex-none md:px-3"
                     : "px-3",
-                  isSelected && "bg-background text-foreground shadow-xs"
+                  isSelected &&
+                    "bg-background text-foreground shadow-xs hover:bg-background"
                 )}
                 aria-pressed={isSelected}
                 onClick={() => onSelectedFilterChange(option.id)}
@@ -100,11 +105,11 @@ export function CountryTableFilters({
                   option.label
                 )}
                 {option.count === undefined ? null : (
-                  <span className="ml-1.5 hidden min-w-5 rounded-full bg-muted-foreground/15 px-1.5 py-0.5 text-xs leading-none tabular-nums md:inline-flex md:justify-center">
+                  <span className="hidden text-xs tabular-nums md:inline">
                     {option.count}
                   </span>
                 )}
-              </button>
+              </Button>
             )
           })}
         </div>

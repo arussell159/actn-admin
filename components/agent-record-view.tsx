@@ -1,6 +1,10 @@
 "use client"
 
 import * as React from "react"
+import {
+  SummaryField,
+  SummarySelectField,
+} from "@/components/record-summary-fields"
 import { AppLink } from "@/components/app-link"
 import { format } from "date-fns"
 import { ArrowLeftIcon } from "lucide-react"
@@ -10,16 +14,7 @@ import { ClassicDataTable } from "@/components/classic-data-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Field, FieldGroup, FieldLabel, FieldSet } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { FieldGroup, FieldSet } from "@/components/ui/field"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 export type AgentShipmentRow = {
@@ -43,76 +38,6 @@ type AgentSummaryDetails = {
   role: string
   accountActive: string
   requestEligibility: string
-}
-
-function SummaryField({
-  label,
-  value,
-  onChange,
-  onActivate,
-  isEditing,
-}: {
-  label: string
-  value: string
-  onChange: (value: string) => void
-  onActivate: () => void
-  isEditing: boolean
-}) {
-  return (
-    <Field>
-      <FieldLabel>{label}</FieldLabel>
-      <Input
-        value={value}
-        readOnly={!isEditing}
-        onClick={onActivate}
-        onChange={(event) => onChange(event.target.value)}
-        className="cursor-pointer read-only:bg-muted/30"
-      />
-    </Field>
-  )
-}
-
-function SummarySelectField({
-  label,
-  value,
-  values,
-  onChange,
-  onActivate,
-}: {
-  label: string
-  value: string
-  values: string[]
-  onChange: (value: string) => void
-  onActivate: () => void
-}) {
-  return (
-    <Field>
-      <FieldLabel>{label}</FieldLabel>
-      <Select
-        value={value}
-        onOpenChange={(open) => {
-          if (open) onActivate()
-        }}
-        onValueChange={(selectedValue) => {
-          onActivate()
-          if (selectedValue) onChange(selectedValue)
-        }}
-      >
-        <SelectTrigger className="cursor-pointer">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            {values.map((option) => (
-              <SelectItem key={option} value={option}>
-                {option}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
-    </Field>
-  )
 }
 
 export function AgentRecordView({

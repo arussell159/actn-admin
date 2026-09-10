@@ -2,6 +2,7 @@
 
 import * as React from "react"
 
+import { Button } from "@/components/ui/button"
 import { repairApplication } from "@/lib/pwa-recovery"
 
 export function AppErrorRecovery({
@@ -39,21 +40,18 @@ export function AppErrorRecovery({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-            onClick={onRetry}
-          >
+          <Button type="button" size="lg" onClick={onRetry}>
             Try again
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className="rounded-md border px-4 py-2 text-sm font-medium"
+            variant="outline"
+            size="lg"
             disabled={isRepairing}
             onClick={repair}
           >
             {isRepairing ? "Repairing…" : "Repair app"}
-          </button>
+          </Button>
         </div>
       </section>
     </main>

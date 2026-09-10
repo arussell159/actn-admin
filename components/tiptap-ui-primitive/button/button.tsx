@@ -7,7 +7,9 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@/components/tiptap-ui-primitive/tooltip"
+  TooltipProvider,
+} from "@/components/ui/tooltip"
+import { Button as SharedButton } from "@/components/ui/button"
 
 // --- Icons ---
 import { CheckIcon } from "@/components/tiptap-icons/check-icon"
@@ -106,44 +108,40 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       </>
     )
 
-    if (!tooltip || !showTooltip) {
-      return (
-        <button
-          data-slot="tiptap-button"
-          className={cn("tiptap-button", className)}
-          ref={ref}
-          data-style={buttonStyle}
-          data-size={buttonSize}
-          data-variant={isCheckVariant ? "check" : undefined}
-          role={buttonRole}
-          aria-checked={buttonAriaChecked}
-          {...props}
-        >
-          {content}
-        </button>
-      )
-    }
-
+    const button = (
+      <SharedButton
+        variant={buttonStyle === "primary" ? "default" : "ghost"}
+        size={
+          buttonSize === "small"
+            ? "xs"
+            : buttonSize === "large"
+              ? "lg"
+              : "default"
+        }
+        data-slot="tiptap-button"
+        className={cn("tiptap-button active:translate-y-0", className)}
+        ref={ref}
+        data-style={buttonStyle}
+        data-size={buttonSize}
+        data-variant={isCheckVariant ? "check" : undefined}
+        role={buttonRole}
+        aria-checked={buttonAriaChecked}
+        {...props}
+      >
+        {content}
+      </SharedButton>
+    )
+    if (!tooltip || !showTooltip) return button
     return (
-      <Tooltip delay={200}>
-        <TooltipTrigger
-          data-slot="tiptap-button"
-          className={cn("tiptap-button", className)}
-          ref={ref}
-          data-style={buttonStyle}
-          data-size={buttonSize}
-          data-variant={isCheckVariant ? "check" : undefined}
-          role={buttonRole}
-          aria-checked={buttonAriaChecked}
-          {...props}
-        >
-          {content}
-        </TooltipTrigger>
-        <TooltipContent>
-          {tooltip}
-          <ShortcutDisplay shortcuts={shortcuts} />
-        </TooltipContent>
-      </Tooltip>
+      <TooltipProvider delay={200}>
+        <Tooltip>
+          <TooltipTrigger render={button} data-slot="tiptap-button" />
+          <TooltipContent>
+            {tooltip}
+            <ShortcutDisplay shortcuts={shortcuts} />
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     )
   }
 )

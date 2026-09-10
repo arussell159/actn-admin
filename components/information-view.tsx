@@ -26,17 +26,21 @@ import {
   Trash2Icon,
   XIcon,
 } from "lucide-react"
-
-import { AppSidebar } from "@/components/app-sidebar"
+import {
+  NotebookLayout,
+  NotebookActionTooltip,
+  NotebookBreadcrumbs,
+  NotebookTreeCaret,
+  type NotebookBreadcrumbItem,
+} from "@/components/notebook-layout"
+import { KnowledgeBaseAiManager } from "@/components/knowledge-base-ai-manager"
 import { NotebookSkeleton } from "@/components/page-skeletons"
 import {
-  SiteHeader,
   SiteHeaderBackButton,
   siteHeaderGlassButtonClassName,
 } from "@/components/site-header"
 import { SimpleEditor } from "@/components/tiptap-templates/simple/simple-editor"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,17 +54,18 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import {
   createInformationId,
   getInformationNotes,
   informationUpdatedEvent,
+  knowledgeBaseUpdatedEvent,
   loadInformationNotes,
   loadTrashedInformationNotes,
   saveInformationNotes,
   saveTrashedInformationNotes,
   type InformationNode,
   type InformationNodeType,
+  type InformationNotesScope,
   type TrashedInformationNode,
 } from "@/lib/information-notes"
 import { cn } from "@/lib/utils"
@@ -98,153 +103,6 @@ type InformationSortOrder =
   | "updated-asc"
   | "created-desc"
   | "created-asc"
-
-type NotebookBreadcrumbItem = {
-  id: string
-  label: string
-  onSelect?: () => void
-}
-
-function NotebookBreadcrumbs({ items }: { items: NotebookBreadcrumbItem[] }) {
-  const containerRef = React.useRef<HTMLSpanElement>(null)
-  const itemsRef = React.useRef(items)
-  const itemSignature = items
-    .map((item) => `${item.id}:${item.label}`)
-    .join("|")
-  const [layout, setLayout] = React.useState({
-    startIndex: Math.max(0, items.length - 2),
-    truncatedIndex: -1,
-    truncatedWidth: 0,
-  })
-
-  itemsRef.current = items
-
-  React.useLayoutEffect(() => {
-    const container = containerRef.current
-
-    if (!container) {
-      return
-    }
-
-    const updateLayout = () => {
-      const currentItems = itemsRef.current
-
-      if (currentItems.length < 2) {
-        return
-      }
-
-      const canvas = document.createElement("canvas")
-      const context = canvas.getContext("2d")
-      const computedStyle = window.getComputedStyle(container)
-
-      if (context) {
-        context.font = computedStyle.font
-      }
-
-      const measureLabel = (label: string) =>
-        Math.ceil(context?.measureText(label).width ?? label.length * 5.5) + 2
-      const availableWidth = Math.max(0, container.clientWidth - 16)
-      const separatorWidth = 10
-      const currentIndex = currentItems.length - 1
-      let usedWidth = measureLabel(currentItems[currentIndex].label)
-      let startIndex = currentIndex
-      let truncatedIndex = -1
-      let truncatedWidth = 0
-
-      for (let index = currentIndex - 1; index >= 0; index -= 1) {
-        const remainingWidth = availableWidth - usedWidth - separatorWidth
-
-        if (remainingWidth <= 0) {
-          break
-        }
-
-        const labelWidth = measureLabel(currentItems[index].label)
-
-        if (labelWidth <= remainingWidth) {
-          startIndex = index
-          usedWidth += separatorWidth + labelWidth
-          continue
-        }
-
-        if (index === currentIndex - 1 && remainingWidth >= 24) {
-          startIndex = index
-          truncatedIndex = index
-          truncatedWidth = remainingWidth
-        }
-
-        break
-      }
-
-      setLayout((current) =>
-        current.startIndex === startIndex &&
-        current.truncatedIndex === truncatedIndex &&
-        current.truncatedWidth === truncatedWidth
-          ? current
-          : { startIndex, truncatedIndex, truncatedWidth }
-      )
-    }
-
-    updateLayout()
-    const observer = new ResizeObserver(updateLayout)
-    observer.observe(container)
-
-    return () => observer.disconnect()
-  }, [itemSignature])
-
-  if (items.length === 1) {
-    return <span>{items[0].label}</span>
-  }
-
-  const visibleItems = items.slice(layout.startIndex)
-
-  return (
-    <span
-      ref={containerRef}
-      className="mx-auto flex w-full max-w-60 min-w-0 items-center justify-center gap-1 overflow-hidden px-2 text-[10px] leading-5 font-normal text-muted-foreground/70 md:mx-0 md:max-w-none md:justify-start md:px-0 md:text-xs"
-      aria-label="Notebook breadcrumb"
-    >
-      {visibleItems.map((item, visibleIndex) => {
-        const index = layout.startIndex + visibleIndex
-        const isCurrent = index === items.length - 1
-        const content = item.onSelect ? (
-          <button
-            type="button"
-            className="block max-w-full truncate rounded-sm pb-0.5 text-[10px] leading-5 font-normal text-muted-foreground/70 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 md:text-xs"
-            onClick={item.onSelect}
-          >
-            {item.label}
-          </button>
-        ) : (
-          <span className="block max-w-full truncate pb-0.5 text-[10px] leading-5 font-normal text-muted-foreground/70 md:text-xs">
-            {item.label}
-          </span>
-        )
-
-        return (
-          <React.Fragment key={item.id}>
-            {visibleIndex ? (
-              <span className="shrink-0 text-muted-foreground/50">/</span>
-            ) : null}
-            <span
-              className={cn(
-                "min-w-0 overflow-hidden",
-                isCurrent ? "shrink-0 whitespace-nowrap" : "shrink-0 truncate"
-              )}
-              style={
-                index === layout.truncatedIndex
-                  ? { width: layout.truncatedWidth }
-                  : undefined
-              }
-              title={item.label}
-            >
-              {content}
-            </span>
-          </React.Fragment>
-        )
-      })}
-    </span>
-  )
-}
 
 const informationSortOptions: {
   value: InformationSortOrder
@@ -314,10 +172,12 @@ function isMobileViewport() {
   )
 }
 
-function loadDesktopNotebookState(): DesktopNotebookState | null {
+function loadDesktopNotebookState(
+  storageKey = desktopNotebookStateStorageKey
+): DesktopNotebookState | null {
   return readJsonBrowserStorage({
     kind: "localStorage",
-    key: desktopNotebookStateStorageKey,
+    key: storageKey,
     fallback: null,
     validate: (value): value is DesktopNotebookState =>
       Boolean(value) &&
@@ -328,22 +188,23 @@ function loadDesktopNotebookState(): DesktopNotebookState | null {
   })
 }
 
-function saveDesktopNotebookState(state: DesktopNotebookState) {
+function saveDesktopNotebookState(
+  state: DesktopNotebookState,
+  storageKey = desktopNotebookStateStorageKey
+) {
   if (typeof window === "undefined" || !isDesktopViewport()) {
     return
   }
 
-  writeBrowserStorage(
-    "localStorage",
-    desktopNotebookStateStorageKey,
-    JSON.stringify(state)
-  )
+  writeBrowserStorage("localStorage", storageKey, JSON.stringify(state))
 }
 
-function loadMobileNotebookLocation(): MobileNotebookLocation | null {
+function loadMobileNotebookLocation(
+  storageKey = lastMobileLocationStorageKey
+): MobileNotebookLocation | null {
   return readJsonBrowserStorage({
     kind: "localStorage",
-    key: lastMobileLocationStorageKey,
+    key: storageKey,
     fallback: null,
     validate: (value): value is MobileNotebookLocation => {
       if (!value || typeof value !== "object") {
@@ -363,16 +224,15 @@ function loadMobileNotebookLocation(): MobileNotebookLocation | null {
   })
 }
 
-function saveMobileNotebookLocation(location: MobileNotebookLocation) {
+function saveMobileNotebookLocation(
+  location: MobileNotebookLocation,
+  storageKey = lastMobileLocationStorageKey
+) {
   if (typeof window === "undefined" || !isMobileViewport()) {
     return
   }
 
-  writeBrowserStorage(
-    "localStorage",
-    lastMobileLocationStorageKey,
-    JSON.stringify(location)
-  )
+  writeBrowserStorage("localStorage", storageKey, JSON.stringify(location))
 }
 
 function descendantsOf(nodes: InformationNode[], nodeId: string) {
@@ -1308,7 +1168,7 @@ function NoteTree({
           <div key={node.id}>
             <div
               className={cn(
-                "group flex min-h-12 items-center gap-2 rounded-lg px-1.5 py-1 transition-colors outline-none hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)] focus-visible:bg-accent/70 lg:min-h-0 lg:gap-0 lg:rounded-md lg:px-1 lg:py-0 lg:hover:bg-muted/70",
+                "group flex min-h-12 items-center gap-2 rounded-lg px-1.5 py-1 transition-colors outline-none hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)] focus-visible:ring-2 focus-visible:ring-ring/40 lg:min-h-0 lg:gap-0 lg:rounded-md lg:px-1 lg:py-0 lg:hover:bg-muted/70",
                 activeId === node.id &&
                   "bg-[color-mix(in_oklch,var(--muted),var(--foreground)_10%)] lg:bg-muted"
               )}
@@ -1383,23 +1243,11 @@ function NoteTree({
               }}
             >
               {isFolder ? (
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="size-9 shrink-0 rounded-sm hover:bg-transparent lg:size-5"
-                  aria-label={
-                    isCollapsed
-                      ? `Expand ${node.title}`
-                      : `Collapse ${node.title}`
-                  }
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onToggleCollapse(node.id)
-                  }}
-                  tabIndex={-1}
-                >
-                  {isCollapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
-                </Button>
+                <NotebookTreeCaret
+                  collapsed={isCollapsed}
+                  label={node.title}
+                  onToggle={() => onToggleCollapse(node.id)}
+                />
               ) : (
                 <span
                   className="size-9 shrink-0 lg:size-5"
@@ -1547,7 +1395,27 @@ function NoteTree({
   )
 }
 
-export function InformationView() {
+export function InformationView({
+  scope = "notebook",
+}: {
+  scope?: InformationNotesScope
+}) {
+  const isKnowledgeBase = scope === "knowledge-base"
+  const basePath = isKnowledgeBase ? "/knowledge-base" : "/information"
+  const rootLabel = isKnowledgeBase ? "Knowledge Base" : "Notebook"
+  const itemLabel = isKnowledgeBase ? "page" : "note"
+  const updatedEvent = isKnowledgeBase
+    ? knowledgeBaseUpdatedEvent
+    : informationUpdatedEvent
+  const desktopStateKey = isKnowledgeBase
+    ? "actn-knowledge-base-desktop-state-v1"
+    : desktopNotebookStateStorageKey
+  const mobileLocationKey = isKnowledgeBase
+    ? "actn-knowledge-base-mobile-location-v1"
+    : lastMobileLocationStorageKey
+  const lastMobileItemKey = isKnowledgeBase
+    ? "actn-knowledge-base-last-mobile-page-v1"
+    : lastMobileNoteStorageKey
   const router = useRouter()
   const searchParams = useSearchParams()
   const [nodes, setNodes] = React.useState<InformationNode[]>([])
@@ -1611,9 +1479,9 @@ export function InformationView() {
 
     async function loadNotes() {
       setIsNotebookLoading(true)
-      const cachedTrash = loadTrashedInformationNotes()
+      const cachedTrash = loadTrashedInformationNotes(scope)
       const cachedTrashIds = new Set(cachedTrash.map((node) => node.id))
-      const cachedNodes = loadInformationNotes().filter(
+      const cachedNodes = loadInformationNotes(scope).filter(
         (node) => !cachedTrashIds.has(node.id)
       )
 
@@ -1624,8 +1492,8 @@ export function InformationView() {
         setIsNotebookLoading(false)
       }
 
-      const loadedNodes = await getInformationNotes()
-      const loadedTrash = loadTrashedInformationNotes()
+      const loadedNodes = await getInformationNotes(scope)
+      const loadedTrash = loadTrashedInformationNotes(scope)
       const trashedIds = new Set(loadedTrash.map((node) => node.id))
       const loaded = loadedNodes.filter((node) => !trashedIds.has(node.id))
       const requestedNode = searchParams.get("node") ?? undefined
@@ -1638,20 +1506,20 @@ export function InformationView() {
           : undefined
       const desktopState =
         !requestedNode && !requestedView && isDesktopViewport()
-          ? loadDesktopNotebookState()
+          ? loadDesktopNotebookState(desktopStateKey)
           : null
       const isMobile =
         typeof window !== "undefined" &&
         window.matchMedia("(max-width: 767px)").matches
       const rememberedLocation =
         !requestedNode && !requestedView && isMobile
-          ? loadMobileNotebookLocation()
+          ? loadMobileNotebookLocation(mobileLocationKey)
           : null
       const rememberedNodeId =
         rememberedLocation?.type === "node"
           ? rememberedLocation.nodeId
           : !rememberedLocation && !requestedNode && !requestedView && isMobile
-            ? readBrowserStorage("localStorage", lastMobileNoteStorageKey)
+            ? readBrowserStorage("localStorage", lastMobileItemKey)
             : undefined
       const rememberedNode = rememberedNodeId
         ? loaded.find((node) => node.id === rememberedNodeId)
@@ -1760,7 +1628,13 @@ export function InformationView() {
     return () => {
       isMounted = false
     }
-  }, [searchParams])
+  }, [
+    desktopStateKey,
+    lastMobileItemKey,
+    mobileLocationKey,
+    scope,
+    searchParams,
+  ])
 
   React.useEffect(() => {
     nodesRef.current = nodes
@@ -1870,12 +1744,15 @@ export function InformationView() {
       return
     }
 
-    saveDesktopNotebookState({
-      activeId,
-      collapsedFolderIds: [...collapsedFolderIds],
-      selectionByNoteId: selectionByNoteIdRef.current,
-    })
-  }, [activeId, collapsedFolderIds])
+    saveDesktopNotebookState(
+      {
+        activeId,
+        collapsedFolderIds: [...collapsedFolderIds],
+        selectionByNoteId: selectionByNoteIdRef.current,
+      },
+      desktopStateKey
+    )
+  }, [activeId, collapsedFolderIds, desktopStateKey])
 
   React.useEffect(() => {
     if (!hasLoadedNotes.current || !isMobileViewport()) {
@@ -1883,15 +1760,27 @@ export function InformationView() {
     }
 
     if (activeId === undefined) {
-      saveMobileNotebookLocation({ type: "view", view: "folders" })
+      saveMobileNotebookLocation(
+        { type: "view", view: "folders" },
+        mobileLocationKey
+      )
     } else if (activeId === mobileRootNotesId) {
-      saveMobileNotebookLocation({ type: "view", view: "notes" })
+      saveMobileNotebookLocation(
+        { type: "view", view: "notes" },
+        mobileLocationKey
+      )
     } else if (activeId === trashViewId) {
-      saveMobileNotebookLocation({ type: "view", view: "trash" })
+      saveMobileNotebookLocation(
+        { type: "view", view: "trash" },
+        mobileLocationKey
+      )
     } else if (activeNode) {
-      saveMobileNotebookLocation({ type: "node", nodeId: activeNode.id })
+      saveMobileNotebookLocation(
+        { type: "node", nodeId: activeNode.id },
+        mobileLocationKey
+      )
     }
-  }, [activeId, activeNode])
+  }, [activeId, activeNode, mobileLocationKey])
   const visibleNodes = React.useMemo(() => {
     const query = noteSearch.trim().toLowerCase()
 
@@ -2023,12 +1912,12 @@ export function InformationView() {
   function persist(nextNodes: InformationNode[]) {
     nodesRef.current = nextNodes
     setNodes(nextNodes)
-    saveInformationNotes(nextNodes)
+    saveInformationNotes(nextNodes, scope)
   }
 
   function persistTrash(nextTrashedNodes: TrashedInformationNode[]) {
     setTrashedNodes(nextTrashedNodes)
-    saveTrashedInformationNotes(nextTrashedNodes)
+    saveTrashedInformationNotes(nextTrashedNodes, scope)
   }
 
   function updateInformationRoute(
@@ -2059,22 +1948,28 @@ export function InformationView() {
     saveActiveNote()
 
     if (!nodeId) {
-      saveMobileNotebookLocation({ type: "view", view: "folders" })
+      saveMobileNotebookLocation(
+        { type: "view", view: "folders" },
+        mobileLocationKey
+      )
       setActiveNodeId(undefined)
       setActiveDrafts("", "")
       mobileNoteSelectorRef.current?.removeAttribute("open")
       updateInformationRoute(
-        isMobileViewport() ? "/information?view=folders" : "/information",
+        isMobileViewport() ? `${basePath}?view=folders` : basePath,
         mode
       )
-      window.dispatchEvent(new Event("information-notes:navigation"))
+      window.dispatchEvent(new Event(`${scope}:navigation`))
       return
     }
 
     const node = nodes.find((item) => item.id === nodeId)
 
     if (node) {
-      saveMobileNotebookLocation({ type: "node", nodeId: node.id })
+      saveMobileNotebookLocation(
+        { type: "node", nodeId: node.id },
+        mobileLocationKey
+      )
     }
     setActiveNodeId(node?.id ?? nodeId)
     setActiveDrafts(
@@ -2083,10 +1978,10 @@ export function InformationView() {
     )
     mobileNoteSelectorRef.current?.removeAttribute("open")
     updateInformationRoute(
-      `/information?node=${encodeURIComponent(nodeId)}`,
+      `${basePath}?node=${encodeURIComponent(nodeId)}`,
       mode
     )
-    window.dispatchEvent(new Event("information-notes:navigation"))
+    window.dispatchEvent(new Event(`${scope}:navigation`))
     if (node?.type === "note" && !isMobileViewport()) {
       setEditorFocusSignal((signal) => signal + 1)
     }
@@ -2094,22 +1989,28 @@ export function InformationView() {
 
   function selectRootNotes(mode: "push" | "replace" = "push") {
     saveActiveNote()
-    saveMobileNotebookLocation({ type: "view", view: "notes" })
+    saveMobileNotebookLocation(
+      { type: "view", view: "notes" },
+      mobileLocationKey
+    )
     setActiveNodeId(mobileRootNotesId)
     setActiveDrafts("Notes", "")
     mobileNoteSelectorRef.current?.removeAttribute("open")
-    updateInformationRoute("/information?view=notes", mode)
-    window.dispatchEvent(new Event("information-notes:navigation"))
+    updateInformationRoute(`${basePath}?view=notes`, mode)
+    window.dispatchEvent(new Event(`${scope}:navigation`))
   }
 
   function selectTrash(mode: "push" | "replace" = "push") {
     saveActiveNote()
-    saveMobileNotebookLocation({ type: "view", view: "trash" })
+    saveMobileNotebookLocation(
+      { type: "view", view: "trash" },
+      mobileLocationKey
+    )
     setActiveNodeId(trashViewId)
     setActiveDrafts("Trash", "")
     mobileNoteSelectorRef.current?.removeAttribute("open")
-    updateInformationRoute("/information?view=trash", mode)
-    window.dispatchEvent(new Event("information-notes:navigation"))
+    updateInformationRoute(`${basePath}?view=trash`, mode)
+    window.dispatchEvent(new Event(`${scope}:navigation`))
   }
 
   function startCreate(
@@ -2124,7 +2025,11 @@ export function InformationView() {
 
     const title =
       titleOverride?.trim() ||
-      (type === "folder" ? "Untitled Folder" : "Untitled Note")
+      (type === "folder"
+        ? "Untitled Folder"
+        : isKnowledgeBase
+          ? "Untitled Page"
+          : "Untitled Note")
     const timestamp = new Date().toISOString()
     const node: InformationNode = {
       id: createInformationId(title),
@@ -2166,7 +2071,10 @@ export function InformationView() {
       })
     }
     setNoteSearch("")
-    saveMobileNotebookLocation({ type: "node", nodeId: node.id })
+    saveMobileNotebookLocation(
+      { type: "node", nodeId: node.id },
+      mobileLocationKey
+    )
     setActiveNodeId(node.id)
     setActiveDrafts(node.title, node.content ?? "")
     setEditingTreeNodeId(type === "folder" ? node.id : undefined)
@@ -2174,8 +2082,8 @@ export function InformationView() {
     if (type === "note" && !isMobileViewport()) {
       setEditorFocusSignal((signal) => signal + 1)
     }
-    updateInformationRoute(`/information?node=${encodeURIComponent(node.id)}`)
-    window.dispatchEvent(new Event("information-notes:navigation"))
+    updateInformationRoute(`${basePath}?node=${encodeURIComponent(node.id)}`)
+    window.dispatchEvent(new Event(`${scope}:navigation`))
   }
 
   function activeCreateParentId() {
@@ -2461,16 +2369,22 @@ export function InformationView() {
     persistTrash(nextTrashedNodes)
     persist(nextNodes)
     if (nextActive) {
-      saveMobileNotebookLocation({ type: "node", nodeId: nextActive.id })
+      saveMobileNotebookLocation(
+        { type: "node", nodeId: nextActive.id },
+        mobileLocationKey
+      )
     } else {
-      saveMobileNotebookLocation({ type: "view", view: "notes" })
+      saveMobileNotebookLocation(
+        { type: "view", view: "notes" },
+        mobileLocationKey
+      )
     }
     setActiveNodeId(nextActive?.id)
     setActiveDrafts(nextActive?.title ?? "", nextActive?.content ?? "")
     updateInformationRoute(
       nextActive
-        ? `/information?node=${encodeURIComponent(nextActive.id)}`
-        : "/information?view=notes",
+        ? `${basePath}?node=${encodeURIComponent(nextActive.id)}`
+        : `${basePath}?view=notes`,
       "replace"
     )
   }
@@ -2521,7 +2435,7 @@ export function InformationView() {
     setActiveNodeId(restoredRoot.id)
     setActiveDrafts(restoredRoot.title, restoredRoot.content ?? "")
     updateInformationRoute(
-      `/information?node=${encodeURIComponent(restoredRoot.id)}`
+      `${basePath}?node=${encodeURIComponent(restoredRoot.id)}`
     )
   }
 
@@ -2563,17 +2477,17 @@ export function InformationView() {
         return
       }
 
-      const loaded = await getInformationNotes()
+      const loaded = await getInformationNotes(scope)
       // A stale response must not put locally deleted folders back in the tree.
       const trashedIds = new Set(
-        loadTrashedInformationNotes().map((node) => node.id)
+        loadTrashedInformationNotes(scope).map((node) => node.id)
       )
       setNodes(loaded.filter((node) => !trashedIds.has(node.id)))
     }
 
-    window.addEventListener(informationUpdatedEvent, refresh)
-    return () => window.removeEventListener(informationUpdatedEvent, refresh)
-  }, [])
+    window.addEventListener(updatedEvent, refresh)
+    return () => window.removeEventListener(updatedEvent, refresh)
+  }, [scope, updatedEvent])
 
   React.useEffect(() => {
     if (activeNode?.type !== "note") {
@@ -2649,8 +2563,8 @@ export function InformationView() {
 
   const notebookBreadcrumbItems: NotebookBreadcrumbItem[] = [
     {
-      id: "notebook",
-      label: "Notebook",
+      id: scope,
+      label: rootLabel,
       onSelect:
         activeNode || activeId ? () => selectNode("", "replace") : undefined,
     },
@@ -2687,398 +2601,359 @@ export function InformationView() {
       : undefined
 
   return (
-    <SidebarProvider
+    <NotebookLayout
       ref={notebookShellRef}
-      data-mobile-note-editor={activeNode?.type === "note" ? "true" : undefined}
-      className={cn(
-        "min-h-[calc(100dvh+env(safe-area-inset-top,0px)+env(safe-area-inset-bottom,0px))] md:min-h-svh md:bg-sidebar",
-        activeNode?.type === "note" ? "bg-background" : "bg-muted/60"
-      )}
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
+      activeDocument={activeNode?.type === "note"}
+      header={{
+        titleContent: <NotebookBreadcrumbs items={notebookBreadcrumbItems} />,
+        actions: isKnowledgeBase ? (
+          <KnowledgeBaseAiManager
+            nodes={nodes}
+            onApply={(nextNodes, firstUpdatedId) => {
+              persist(nextNodes)
+              if (firstUpdatedId) selectNode(firstUpdatedId)
+            }}
+          />
+        ) : undefined,
+        mobileLeadingContent: mobileHeaderBackAction ? (
+          <SiteHeaderBackButton
+            label="Back to notes"
+            onClick={mobileHeaderBackAction}
+          />
+        ) : undefined,
+        mobileTrailingContent: (
+          <MobileNotebookActions
+            activeNode={activeNode}
+            nodes={nodes}
+            onCreateNote={() =>
+              startCreate(
+                "note",
+                activeNode?.type === "folder" ? activeNode.id : ""
+              )
+            }
+            onCreateFolder={() =>
+              requestCreateFolder(
+                activeNode?.type === "folder" ? activeNode.id : ""
+              )
+            }
+            onOpenTrash={() => selectTrash()}
+            trashCount={trashedNodes.length}
+            onRename={requestRenameFolder}
+            onDelete={deleteNode}
+            onMove={moveNode}
+          />
+        ),
+      }}
+      headerOverlay={
+        folderPromptParentId !== null ? (
+          <MobileFolderTitlePrompt
+            mode={folderPromptMode}
+            value={folderPromptTitle}
+            onChange={setFolderPromptTitle}
+            onConfirm={confirmCreateFolder}
+            onCancel={cancelCreateFolder}
+          />
+        ) : null
+      }
+      loading={isNotebookLoading ? <NotebookSkeleton /> : undefined}
+      navigation={
+        <>
+          <div className="mb-3 flex items-center justify-center gap-1 text-muted-foreground">
+            <NotebookActionTooltip label={`Create new ${itemLabel}`}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="size-8 rounded-md hover:bg-muted hover:text-foreground"
+                aria-label={`Create new ${itemLabel}`}
+                onClick={() => startCreateAtActiveFocus("note")}
+              >
+                <FilePlus2Icon />
+              </Button>
+            </NotebookActionTooltip>
+            <NotebookActionTooltip label="Create new folder">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="size-8 rounded-md hover:bg-muted hover:text-foreground"
+                aria-label="Create new folder"
+                onClick={() => startCreateAtActiveFocus("folder")}
+              >
+                <FolderPlusIcon />
+              </Button>
+            </NotebookActionTooltip>
+            <DropdownMenu>
+              <NotebookActionTooltip label={`Sort: ${currentSortOption.label}`}>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="size-8 rounded-md hover:bg-muted hover:text-foreground"
+                      aria-label={`Sort: ${currentSortOption.label}`}
+                    />
+                  }
+                >
+                  <ListSortAscendingIcon />
+                </DropdownMenuTrigger>
+              </NotebookActionTooltip>
+              <DropdownMenuContent align="start" className="min-w-52">
+                <DropdownMenuRadioGroup
+                  value={informationSortOrder}
+                  onValueChange={(value) =>
+                    setInformationSortOrder(value as InformationSortOrder)
+                  }
+                >
+                  {informationSortOptions.map((option) => (
+                    <DropdownMenuRadioItem
+                      key={option.value}
+                      value={option.value}
+                    >
+                      {option.value === "name-asc" ? (
+                        <ArrowDownAZIcon />
+                      ) : option.value === "name-desc" ? (
+                        <ArrowDownZAIcon />
+                      ) : (
+                        <ClockIcon />
+                      )}
+                      {option.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <NotebookActionTooltip label={`Reveal active ${itemLabel}`}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="size-8 rounded-md hover:bg-muted hover:text-foreground"
+                aria-label={`Reveal active ${itemLabel}`}
+                onClick={revealActiveNote}
+              >
+                <PanelTopCloseIcon />
+              </Button>
+            </NotebookActionTooltip>
+            <NotebookActionTooltip label="Collapse all">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="size-8 rounded-md hover:bg-muted hover:text-foreground"
+                aria-label="Collapse all"
+                onClick={collapseAllFolders}
+              >
+                <ListCollapseIcon />
+              </Button>
+            </NotebookActionTooltip>
+          </div>
+          <div className="grid min-h-0 flex-1 content-start gap-4 overflow-auto">
+            <Input
+              ref={desktopSearchInputRef}
+              value={noteSearch}
+              onChange={(event) => setNoteSearch(event.target.value)}
+              onKeyDown={handleDesktopSearchKeyDown}
+              placeholder={
+                isKnowledgeBase ? "Search knowledge base" : "Search notebook"
+              }
+              className="focus-visible:ring-inset"
+            />
+
+            <NoteTree
+              nodes={visibleNodes}
+              allNodes={nodes}
+              activeId={activeId}
+              onSelect={selectNode}
+              onCreate={startCreate}
+              onDelete={deleteNode}
+              onTogglePin={togglePin}
+              onMove={moveNode}
+              collapsedFolderIds={collapsedFolderIds}
+              sortOrder={informationSortOrder}
+              onToggleCollapse={toggleFolderCollapse}
+              editingNodeId={editingTreeNodeId}
+              titleDraft={treeTitleDraft}
+              onTitleDraftChange={setTreeTitleDraft}
+              onCommitTitle={commitTreeTitle}
+              onCancelTitleEdit={cancelTreeTitleEdit}
+              onStartTitleEdit={startTreeTitleEdit}
+              focusableNodeIds={desktopVisibleTreeNodeIds}
+              nodeRefs={desktopNodeRefs}
+              onFocusNode={focusDesktopTreeNode}
+              onOpenNoteForTyping={focusDesktopEditor}
+            />
+          </div>
+          <Button
+            variant={activeId === trashViewId ? "secondary" : "ghost"}
+            className="mt-4 h-9 justify-start gap-2 rounded-md px-2 text-sm font-normal"
+            onClick={() => selectTrash()}
+          >
+            <Trash2Icon className="size-4" />
+            <span className="min-w-0 flex-1 text-left">Trash</span>
+            {trashedNodes.length ? (
+              <span className="text-xs text-muted-foreground">
+                {trashedNodes.length}
+              </span>
+            ) : null}
+          </Button>
+        </>
       }
     >
-      <AppSidebar variant="inset" />
-      <SidebarInset
-        className={cn(
-          "min-h-[calc(100dvh+env(safe-area-inset-top,0px)+env(safe-area-inset-bottom,0px))] md:min-h-0 md:bg-background",
-          activeNode?.type === "note"
-            ? "bg-background lg:h-[calc(100svh-1rem)] lg:overflow-hidden"
-            : "bg-muted/60"
-        )}
-      >
-        <main
-          className={cn(
-            "flex min-h-[calc(100dvh+env(safe-area-inset-top,0px)+env(safe-area-inset-bottom,0px))] flex-1 flex-col md:min-h-[calc(100svh-1rem)] md:bg-background",
-            activeNode?.type === "note"
-              ? "bg-background lg:h-full lg:min-h-0 lg:overflow-hidden"
-              : "bg-muted/60"
-          )}
-        >
-          <SiteHeader
-            titleContent={
-              <NotebookBreadcrumbs items={notebookBreadcrumbItems} />
-            }
-            mobileLeadingContent={
-              mobileHeaderBackAction ? (
-                <SiteHeaderBackButton
-                  label="Back to notes"
-                  onClick={mobileHeaderBackAction}
-                />
-              ) : undefined
-            }
-            mobileTrailingContent={
-              <MobileNotebookActions
-                activeNode={activeNode}
-                nodes={nodes}
-                onCreateNote={() =>
-                  startCreate(
-                    "note",
-                    activeNode?.type === "folder" ? activeNode.id : ""
-                  )
-                }
-                onCreateFolder={() =>
-                  requestCreateFolder(
-                    activeNode?.type === "folder" ? activeNode.id : ""
-                  )
-                }
-                onOpenTrash={() => selectTrash()}
-                trashCount={trashedNodes.length}
-                onRename={requestRenameFolder}
-                onDelete={deleteNode}
-                onMove={moveNode}
-              />
-            }
+      {isKnowledgeBase ? (
+        <div className="fixed right-4 bottom-20 z-40 md:hidden">
+          <KnowledgeBaseAiManager
+            nodes={nodes}
+            onApply={(nextNodes, firstUpdatedId) => {
+              persist(nextNodes)
+              if (firstUpdatedId) selectNode(firstUpdatedId)
+            }}
           />
-          {folderPromptParentId !== null ? (
-            <MobileFolderTitlePrompt
-              mode={folderPromptMode}
-              value={folderPromptTitle}
-              onChange={setFolderPromptTitle}
-              onConfirm={confirmCreateFolder}
-              onCancel={cancelCreateFolder}
-            />
-          ) : null}
-          <div className="flex h-[calc(100svh-7rem)] min-h-[36rem] flex-1 px-0 py-0 sm:px-4 sm:py-4 lg:px-6">
-            <Card
-              className={cn(
-                "flex min-h-0 flex-1 rounded-none bg-transparent py-0 shadow-none ring-0 sm:rounded-lg sm:bg-card sm:shadow-sm sm:ring-1 md:overflow-hidden",
-                activeNode?.type === "note" && "lg:overflow-hidden"
-              )}
+        </div>
+      ) : null}
+      <div className="hidden">
+        <div className="flex items-center gap-2">
+          <details ref={mobileNoteSelectorRef} className="group min-w-0 flex-1">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg border bg-background px-4 text-base font-medium marker:hidden">
+              <span className="min-w-0 truncate">
+                {activeNode?.title ?? rootLabel}
+              </span>
+              <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="mt-3 max-h-[52svh] overflow-auto rounded-lg border bg-background p-4 shadow-md">
+              <Input
+                value={noteSearch}
+                onChange={(event) => setNoteSearch(event.target.value)}
+                placeholder={
+                  isKnowledgeBase ? "Search knowledge base" : "Search notebook"
+                }
+                className="mb-3"
+              />
+              <NoteTree
+                nodes={visibleNodes}
+                allNodes={nodes}
+                activeId={activeId}
+                onSelect={selectNode}
+                onCreate={startCreate}
+                onDelete={deleteNode}
+                onTogglePin={togglePin}
+                onMove={moveNode}
+                collapsedFolderIds={collapsedFolderIds}
+                sortOrder={informationSortOrder}
+                onToggleCollapse={toggleFolderCollapse}
+                editingNodeId={editingTreeNodeId}
+                titleDraft={treeTitleDraft}
+                onTitleDraftChange={setTreeTitleDraft}
+                onCommitTitle={commitTreeTitle}
+                onCancelTitleEdit={cancelTreeTitleEdit}
+                onStartTitleEdit={startTreeTitleEdit}
+              />
+            </div>
+          </details>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  size="icon-sm"
+                  className="size-10"
+                  aria-label="Create note or folder"
+                />
+              }
             >
-              {isNotebookLoading ? (
-                <NotebookSkeleton />
-              ) : (
-                <CardContent className="grid min-h-0 flex-1 gap-0 p-0 lg:grid-cols-[20rem_minmax(0,1fr)]">
-                  <aside className="notebook-tree hidden min-h-0 flex-col border-b p-5 lg:flex lg:border-r lg:border-b-0 lg:text-sm">
-                    <div className="mb-3 flex items-center justify-center gap-1 text-muted-foreground">
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className="size-8 rounded-md hover:bg-muted hover:text-foreground"
-                        aria-label="Create new note"
-                        title="Create new note"
-                        onClick={() => startCreateAtActiveFocus("note")}
-                      >
-                        <FilePlus2Icon />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className="size-8 rounded-md hover:bg-muted hover:text-foreground"
-                        aria-label="Create new folder"
-                        title="Create new folder"
-                        onClick={() => startCreateAtActiveFocus("folder")}
-                      >
-                        <FolderPlusIcon />
-                      </Button>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger
-                          render={
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              className="size-8 rounded-md hover:bg-muted hover:text-foreground"
-                              aria-label={`Sort: ${currentSortOption.label}`}
-                              title={`Sort: ${currentSortOption.label}`}
-                            />
-                          }
-                        >
-                          <ListSortAscendingIcon />
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start" className="min-w-52">
-                          <DropdownMenuRadioGroup
-                            value={informationSortOrder}
-                            onValueChange={(value) =>
-                              setInformationSortOrder(
-                                value as InformationSortOrder
-                              )
-                            }
-                          >
-                            {informationSortOptions.map((option) => (
-                              <DropdownMenuRadioItem
-                                key={option.value}
-                                value={option.value}
-                              >
-                                {option.value === "name-asc" ? (
-                                  <ArrowDownAZIcon />
-                                ) : option.value === "name-desc" ? (
-                                  <ArrowDownZAIcon />
-                                ) : (
-                                  <ClockIcon />
-                                )}
-                                {option.label}
-                              </DropdownMenuRadioItem>
-                            ))}
-                          </DropdownMenuRadioGroup>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className="size-8 rounded-md hover:bg-muted hover:text-foreground"
-                        aria-label="Reveal active note"
-                        title="Reveal active note"
-                        onClick={revealActiveNote}
-                      >
-                        <PanelTopCloseIcon />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className="size-8 rounded-md hover:bg-muted hover:text-foreground"
-                        aria-label="Collapse all"
-                        title="Collapse all"
-                        onClick={collapseAllFolders}
-                      >
-                        <ListCollapseIcon />
-                      </Button>
-                    </div>
-                    <div className="grid min-h-0 flex-1 content-start gap-4 overflow-auto">
-                      <Input
-                        ref={desktopSearchInputRef}
-                        value={noteSearch}
-                        onChange={(event) => setNoteSearch(event.target.value)}
-                        onKeyDown={handleDesktopSearchKeyDown}
-                        placeholder="Search notebook"
-                      />
+              <PlusIcon />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-44">
+              <DropdownMenuItem onClick={() => startCreate("note")}>
+                <FilePlus2Icon />
+                Add Note
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => startCreate("folder")}>
+                <FolderPlusIcon />
+                Add Folder
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
 
-                      <NoteTree
-                        nodes={visibleNodes}
-                        allNodes={nodes}
-                        activeId={activeId}
-                        onSelect={selectNode}
-                        onCreate={startCreate}
-                        onDelete={deleteNode}
-                        onTogglePin={togglePin}
-                        onMove={moveNode}
-                        collapsedFolderIds={collapsedFolderIds}
-                        sortOrder={informationSortOrder}
-                        onToggleCollapse={toggleFolderCollapse}
-                        editingNodeId={editingTreeNodeId}
-                        titleDraft={treeTitleDraft}
-                        onTitleDraftChange={setTreeTitleDraft}
-                        onCommitTitle={commitTreeTitle}
-                        onCancelTitleEdit={cancelTreeTitleEdit}
-                        onStartTitleEdit={startTreeTitleEdit}
-                        focusableNodeIds={desktopVisibleTreeNodeIds}
-                        nodeRefs={desktopNodeRefs}
-                        onFocusNode={focusDesktopTreeNode}
-                        onOpenNoteForTyping={focusDesktopEditor}
-                      />
-                    </div>
-                    <Button
-                      variant={activeId === trashViewId ? "secondary" : "ghost"}
-                      className="mt-4 h-9 justify-start gap-2 rounded-md px-2 text-sm font-normal"
-                      onClick={() => selectTrash()}
-                    >
-                      <Trash2Icon className="size-4" />
-                      <span className="min-w-0 flex-1 text-left">Trash</span>
-                      {trashedNodes.length ? (
-                        <span className="text-xs text-muted-foreground">
-                          {trashedNodes.length}
-                        </span>
-                      ) : null}
-                    </Button>
-                  </aside>
+      {activeId === trashViewId ? (
+        <TrashDashboard trashedNodes={trashedNodes} onRestore={restoreNode} />
+      ) : activeNode?.type === "note" ? (
+        <div className="min-h-0 flex-1 overflow-hidden bg-background pt-2 sm:-m-5 sm:pt-0">
+          <SimpleEditor
+            key={activeNode.id}
+            focusSignal={editorFocusSignal}
+            restoreSelectionSignal={editorRestoreSelectionSignal}
+            restoredSelection={
+              selectionByNoteIdRef.current[activeNode.id] ??
+              selectionByNoteId[activeNode.id]
+            }
+            value={editorContentWithTitle(titleDraft, contentDraft)}
+            onChange={updateActiveNoteContent}
+            onSelectionChange={(selection) => {
+              if (!isDesktopViewport()) {
+                return
+              }
 
-                  <section className="relative flex min-h-0 min-w-0 flex-col overflow-hidden p-0 sm:p-5">
-                    <div className="hidden">
-                      <div className="flex items-center gap-2">
-                        <details
-                          ref={mobileNoteSelectorRef}
-                          className="group min-w-0 flex-1"
-                        >
-                          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg border bg-background px-4 text-base font-medium marker:hidden">
-                            <span className="min-w-0 truncate">
-                              {activeNode?.title ?? "Notebook"}
-                            </span>
-                            <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
-                          </summary>
-                          <div className="mt-3 max-h-[52svh] overflow-auto rounded-lg border bg-background p-4 shadow-md">
-                            <Input
-                              value={noteSearch}
-                              onChange={(event) =>
-                                setNoteSearch(event.target.value)
-                              }
-                              placeholder="Search notebook"
-                              className="mb-3"
-                            />
-                            <NoteTree
-                              nodes={visibleNodes}
-                              allNodes={nodes}
-                              activeId={activeId}
-                              onSelect={selectNode}
-                              onCreate={startCreate}
-                              onDelete={deleteNode}
-                              onTogglePin={togglePin}
-                              onMove={moveNode}
-                              collapsedFolderIds={collapsedFolderIds}
-                              sortOrder={informationSortOrder}
-                              onToggleCollapse={toggleFolderCollapse}
-                              editingNodeId={editingTreeNodeId}
-                              titleDraft={treeTitleDraft}
-                              onTitleDraftChange={setTreeTitleDraft}
-                              onCommitTitle={commitTreeTitle}
-                              onCancelTitleEdit={cancelTreeTitleEdit}
-                              onStartTitleEdit={startTreeTitleEdit}
-                            />
-                          </div>
-                        </details>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger
-                            render={
-                              <Button
-                                size="icon-sm"
-                                className="size-10"
-                                aria-label="Create note or folder"
-                              />
-                            }
-                          >
-                            <PlusIcon />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="min-w-44">
-                            <DropdownMenuItem
-                              onClick={() => startCreate("note")}
-                            >
-                              <FilePlus2Icon />
-                              Add Note
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => startCreate("folder")}
-                            >
-                              <FolderPlusIcon />
-                              Add Folder
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </div>
-
-                    {activeId === trashViewId ? (
-                      <TrashDashboard
-                        trashedNodes={trashedNodes}
-                        onRestore={restoreNode}
-                      />
-                    ) : activeNode?.type === "note" ? (
-                      <div className="min-h-0 flex-1 overflow-hidden bg-background pt-2 sm:-m-5 sm:pt-0">
-                        <SimpleEditor
-                          key={activeNode.id}
-                          focusSignal={editorFocusSignal}
-                          restoreSelectionSignal={editorRestoreSelectionSignal}
-                          restoredSelection={
-                            selectionByNoteIdRef.current[activeNode.id] ??
-                            selectionByNoteId[activeNode.id]
-                          }
-                          value={editorContentWithTitle(
-                            titleDraft,
-                            contentDraft
-                          )}
-                          onChange={updateActiveNoteContent}
-                          onSelectionChange={(selection) => {
-                            if (!isDesktopViewport()) {
-                              return
-                            }
-
-                            selectionByNoteIdRef.current = {
-                              ...selectionByNoteIdRef.current,
-                              [activeNode.id]: selection,
-                            }
-                          }}
-                        />
-                      </div>
-                    ) : activeNode?.type === "folder" ? (
-                      <>
-                        <MobileFolderNotesScreen
-                          folder={activeNode}
-                          nodes={nodes}
-                          notes={activeFolderNotes}
-                          onOpenNote={selectNode}
-                          onDelete={deleteNode}
-                          onMove={moveNode}
-                        />
-                        <div className="hidden px-3 pt-3 pb-3 sm:px-0 sm:pt-0 sm:pb-0 md:block">
-                          <FolderDashboard
-                            folder={activeNode}
-                            nodes={nodes}
-                            onOpenNote={selectNode}
-                          />
-                        </div>
-                      </>
-                    ) : activeId === mobileRootNotesId ? (
-                      <>
-                        <MobileFolderNotesScreen
-                          nodes={nodes}
-                          notes={activeFolderNotes}
-                          onOpenNote={selectNode}
-                          onDelete={deleteNode}
-                          onMove={moveNode}
-                        />
-                        <div className="hidden px-3 pb-3 sm:px-0 sm:pb-0 md:block">
-                          <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
-                            <HomeIcon className="size-8" />
-                            <p>
-                              Select a note from the tree or create a new one.
-                            </p>
-                          </div>
-                        </div>
-                      </>
-                    ) : nodes.length ? (
-                      <>
-                        <MobileFoldersScreen
-                          nodes={nodes}
-                          onOpenFolder={selectNode}
-                          onOpenRootNotes={selectRootNotes}
-                        />
-                        <div className="hidden px-3 pb-3 sm:px-0 sm:pb-0 md:block">
-                          <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
-                            <HomeIcon className="size-8" />
-                            <p>
-                              Select a note from the tree or create a new one.
-                            </p>
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="px-3 pb-3 sm:px-0 sm:pb-0">
-                        <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
-                          <HomeIcon className="size-8" />
-                          <p>
-                            Select a note from the tree or create a new one.
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </section>
-                </CardContent>
-              )}
-            </Card>
+              selectionByNoteIdRef.current = {
+                ...selectionByNoteIdRef.current,
+                [activeNode.id]: selection,
+              }
+            }}
+          />
+        </div>
+      ) : activeNode?.type === "folder" ? (
+        <>
+          <MobileFolderNotesScreen
+            folder={activeNode}
+            nodes={nodes}
+            notes={activeFolderNotes}
+            onOpenNote={selectNode}
+            onDelete={deleteNode}
+            onMove={moveNode}
+          />
+          <div className="hidden px-3 pt-3 pb-3 sm:px-0 sm:pt-0 sm:pb-0 md:block">
+            <FolderDashboard
+              folder={activeNode}
+              nodes={nodes}
+              onOpenNote={selectNode}
+            />
           </div>
-        </main>
-      </SidebarInset>
-    </SidebarProvider>
+        </>
+      ) : activeId === mobileRootNotesId ? (
+        <>
+          <MobileFolderNotesScreen
+            nodes={nodes}
+            notes={activeFolderNotes}
+            onOpenNote={selectNode}
+            onDelete={deleteNode}
+            onMove={moveNode}
+          />
+          <div className="hidden px-3 pb-3 sm:px-0 sm:pb-0 md:block">
+            <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
+              <HomeIcon className="size-8" />
+              <p>Select a note from the tree or create a new one.</p>
+            </div>
+          </div>
+        </>
+      ) : nodes.length ? (
+        <>
+          <MobileFoldersScreen
+            nodes={nodes}
+            onOpenFolder={selectNode}
+            onOpenRootNotes={selectRootNotes}
+          />
+          <div className="hidden px-3 pb-3 sm:px-0 sm:pb-0 md:block">
+            <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
+              <HomeIcon className="size-8" />
+              <p>Select a note from the tree or create a new one.</p>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="px-3 pb-3 sm:px-0 sm:pb-0">
+          <div className="flex min-h-80 flex-col items-center justify-center gap-3 rounded-lg border border-dashed text-center text-muted-foreground">
+            <HomeIcon className="size-8" />
+            <p>Select a note from the tree or create a new one.</p>
+          </div>
+        </div>
+      )}
+    </NotebookLayout>
   )
 }

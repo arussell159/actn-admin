@@ -91,7 +91,9 @@ function suggestedPeriod(existingRecords: MonthEndRecord[]) {
     .sort()
     .at(-1)
 
-  return latestPeriod ? periodParts(getNextPeriod(latestPeriod)) : defaultPeriodParts()
+  return latestPeriod
+    ? periodParts(getNextPeriod(latestPeriod))
+    : defaultPeriodParts()
 }
 
 function normalizeMatch(value: string) {
@@ -243,7 +245,11 @@ function getCreateErrorMessage(error: unknown) {
     .filter(Boolean)
     .join(" ")
 
-  if (/row-level security|permission denied|violates row-level/i.test(errorMessage)) {
+  if (
+    /row-level security|permission denied|violates row-level/i.test(
+      errorMessage
+    )
+  ) {
     return "Supabase blocked this month-end write. Make sure you are signed in and the month_end_records table allows authenticated users to insert and update."
   }
 
@@ -251,7 +257,11 @@ function getCreateErrorMessage(error: unknown) {
     return "You are not signed in with a valid Supabase session. Sign out, sign back in, and try again."
   }
 
-  if (/Missing NEXT_PUBLIC_SUPABASE_URL|PUBLISHABLE_KEY|ANON_KEY/i.test(errorMessage)) {
+  if (
+    /Missing NEXT_PUBLIC_SUPABASE_URL|PUBLISHABLE_KEY|ANON_KEY/i.test(
+      errorMessage
+    )
+  ) {
     return "Supabase is not configured for this app."
   }
 
@@ -294,9 +304,7 @@ export function NewMonthEndForm({
     }
 
     setCreateError("")
-    const nextFiles = await Promise.all(
-      fileList.map(readReportFile)
-    )
+    const nextFiles = await Promise.all(fileList.map(readReportFile))
 
     setUploadedFiles(nextFiles)
   }
@@ -316,7 +324,9 @@ export function NewMonthEndForm({
 
       const template = await getMonthEndTemplate()
       const masterFile = uploadedFiles.find((file) => file.kind === "master")
-      const exchangeFile = uploadedFiles.find((file) => file.kind === "exchange")
+      const exchangeFile = uploadedFiles.find(
+        (file) => file.kind === "exchange"
+      )
 
       if (uploadedFiles.some((file) => file.kind === "unknown")) {
         setCreateError(
@@ -345,7 +355,10 @@ export function NewMonthEndForm({
             period,
           })
         : []
-      Object.assign(checked, getMasterTransactionDateCheckedValues(masterRecords))
+      Object.assign(
+        checked,
+        getMasterTransactionDateCheckedValues(masterRecords)
+      )
       const record: MonthEndRecord = {
         id: period,
         period,
@@ -371,7 +384,7 @@ export function NewMonthEndForm({
   return (
     <Card className="rounded-lg shadow-sm">
       <CardHeader>
-        <CardTitle>Create Month End</CardTitle>
+        <CardTitle>New Month End</CardTitle>
         <CardDescription>
           Choose the month and upload the prepaid exchange rate report if you
           have it.

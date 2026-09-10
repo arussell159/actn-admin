@@ -456,8 +456,9 @@ export function PreviousMonthEndsSkeleton({
         </section>
       ) : null}
       <div className="overflow-hidden rounded-lg border bg-background">
-        <div className="grid grid-cols-[minmax(0,1fr)_12rem_12rem_3rem] border-b px-2 text-sm font-medium">
+        <div className="grid grid-cols-[minmax(0,1fr)_8rem_12rem_12rem_3rem] border-b px-2 text-sm font-medium">
           <div className="h-10 py-3">Name</div>
+          <div className="h-10 py-3">Status</div>
           <div className="h-10 py-3">Completion Date</div>
           <div className="h-10 py-3">Last Updated</div>
           <div className="h-10 py-3" />
@@ -466,9 +467,10 @@ export function PreviousMonthEndsSkeleton({
           {Array.from({ length: 7 }).map((_, rowIndex) => (
             <div
               key={rowIndex}
-              className="grid grid-cols-[minmax(0,1fr)_12rem_12rem_3rem] items-center gap-3 px-2 py-3"
+              className="grid grid-cols-[minmax(0,1fr)_8rem_12rem_12rem_3rem] items-center gap-3 px-2 py-3"
             >
               <Skeleton className="h-4 w-36 rounded-md" />
+              <Skeleton className="h-5 w-16 rounded-full" />
               <Skeleton className="h-4 w-28 rounded-md" />
               <Skeleton className="h-4 w-28 rounded-md" />
               <Skeleton className="ml-auto size-7 rounded-md" />

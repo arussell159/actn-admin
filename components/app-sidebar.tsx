@@ -31,20 +31,18 @@ import {
 } from "@/components/ui/sidebar"
 import {
   BookOpenTextIcon,
-  CalendarClockIcon,
   CalculatorIcon,
   FileTextIcon,
   FolderIcon,
   HistoryIcon,
   LayoutDashboardIcon,
+  LibraryBigIcon,
   ListChecksIcon,
   MoreHorizontalIcon,
   PinOffIcon,
   PlusIcon,
   ScanTextIcon,
   SearchIcon,
-  Settings2Icon,
-  SparklesIcon,
 } from "lucide-react"
 import {
   getPinnedInformationNodes,
@@ -52,8 +50,8 @@ import {
   informationUpdatedEvent,
   saveInformationNotes,
 } from "@/lib/information-notes"
-import { listMonthEndRecords } from "@/lib/month-end-db"
 import { bscCountryModules } from "@/lib/bsc-country-modules"
+import { settingsPages } from "@/lib/app-routes"
 
 const data = {
   user: {
@@ -61,35 +59,25 @@ const data = {
     email: "monthend@africactn.com",
     avatar: "/avatars/shadcn.jpg",
   },
-  dashboard: [
-    {
-      name: "Previous Months",
-      url: "/previous-month-ends",
-      icon: <HistoryIcon />,
-    },
-  ],
 }
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname()
   const [pinnedItems, setPinnedItems] = React.useState<
     { id: string; name: string; url: string; icon: React.ReactNode }[]
   >([])
-  const [hasOpenMonthEnd, setHasOpenMonthEnd] = React.useState(true)
   const [activeQuery, setActiveQuery] = React.useState("")
   const activeRoute = pathname === "/" ? "/dashboard" : pathname
   const monthEndItems = [
-    hasOpenMonthEnd
-      ? {
-          name: "Current Month",
-          url: "/month-end",
-          icon: <CalendarClockIcon />,
-        }
-      : {
-          name: "Create Month End",
-          url: "/month-end/new",
-          icon: <PlusIcon />,
-        },
-    ...data.dashboard,
+    {
+      name: "New Month End",
+      url: "/month-end/new",
+      icon: <PlusIcon />,
+    },
+    {
+      name: "Month End",
+      url: "/previous-month-ends",
+      icon: <HistoryIcon />,
+    },
   ]
 
   React.useEffect(() => {
@@ -135,25 +123,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       window.removeEventListener(informationUpdatedEvent, syncPinnedItems)
   }, [])
 
-  React.useEffect(() => {
-    if (window.matchMedia("(max-width: 767px)").matches) {
-      return
-    }
-
-    async function syncMonthEndItems() {
-      try {
-        const records = await listMonthEndRecords()
-        setHasOpenMonthEnd(records.some((record) => record.status === "Open"))
-      } catch {}
-    }
-
-    syncMonthEndItems()
-    window.addEventListener("month-end:records-updated", syncMonthEndItems)
-
-    return () =>
-      window.removeEventListener("month-end:records-updated", syncMonthEndItems)
-  }, [])
-
   async function unpinItem(nodeId: string) {
     const notes = await getInformationNotes()
 
@@ -178,14 +147,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   function isActiveMonthEndUrl(url: string, name: string) {
     const [itemPath, itemQuery = ""] = url.split("?")
-    const isCurrentMonthRoute =
-      name === "Current Month" &&
-      itemPath === "/month-end" &&
-      (activeRoute === "/month-end" || activeRoute.startsWith("/month-end/"))
+    const isMonthEndRoute =
+      name === "Month End" &&
+      (activeRoute === "/month-end" ||
+        activeRoute === "/previous-month-ends" ||
+        activeRoute.startsWith("/previous-month-ends/"))
 
     return (
       url !== "#" &&
-      (isCurrentMonthRoute ||
+      (isMonthEndRoute ||
         (activeRoute === itemPath &&
           (itemQuery ? activeQuery === itemQuery : !activeQuery)))
     )
@@ -237,7 +207,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </SidebarMenu>
         </SidebarGroup>
         <SidebarGroup>
-          <SidebarGroupLabel>Month End</SidebarGroupLabel>
+          <SidebarGroupLabel>Accounting</SidebarGroupLabel>
           <SidebarMenu>
             {monthEndItems.map((item) => (
               <SidebarMenuItem key={item.name}>
@@ -272,15 +242,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 >
                   <ListChecksIcon />
                   <span>{module.requestsLabel}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={isActiveUrl("/knowledge-base")}
-                  render={<AppLink href="/knowledge-base" />}
-                >
-                  <SparklesIcon />
-                  <span>{module.rulesLabel}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -344,20 +305,38 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </SidebarMenuSub>
               ) : null}
             </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={isActiveUrl("/knowledge-base")}
+                render={<AppLink href="/knowledge-base" />}
+              >
+                <LibraryBigIcon />
+                <span>Knowledge Base</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
         <SidebarGroup>
           <SidebarGroupLabel>Settings</SidebarGroupLabel>
           <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                isActive={isActiveUrl("/template-builder")}
-                render={<AppLink href="/template-builder" />}
-              >
-                <Settings2Icon />
-                <span>Settings</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+            {settingsPages.map((item) => (
+              <SidebarMenuItem key={item.href}>
+                <SidebarMenuButton
+                  isActive={activeRoute === item.href}
+                  render={
+                    <AppLink
+                      href={item.href}
+                      aria-current={
+                        activeRoute === item.href ? "page" : undefined
+                      }
+                    />
+                  }
+                >
+                  <item.icon />
+                  <span>{item.title}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
           </SidebarMenu>
         </SidebarGroup>
       </SidebarContent>

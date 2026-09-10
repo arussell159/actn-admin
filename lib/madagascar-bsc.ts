@@ -3,8 +3,59 @@ export type MadagascarDocumentType =
   | "Commercial Invoice"
   | "Packing List"
   | "Export/Customs Declaration"
+  | "Export Declaration"
+  | "Customs Declaration"
+  | "Certificate of Origin"
   | "Freight Invoice"
   | "Unknown"
+
+const documentTypeAbbreviations: Record<string, string> = {
+  "bill of lading": "BL",
+  "commercial invoice": "CI",
+  "freight invoice": "FI",
+  "export declaration": "ED",
+  "export/customs declaration": "ED",
+  "customs declaration": "ED",
+  "packing list": "PL",
+  fdi: "FDI",
+  "certificate of origin": "COO",
+  "certificate of insurance": "COI",
+  du: "DU",
+  cnca: "CNCA",
+}
+
+export function documentTypeAbbreviation(documentType: string) {
+  const normalized = documentType.trim().toLowerCase()
+  const configured = documentTypeAbbreviations[normalized]
+  if (configured) return configured
+
+  if (/^[a-z0-9]{2,5}$/i.test(documentType.trim())) {
+    return documentType.trim().toUpperCase()
+  }
+
+  const acronym = normalized
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word && !["a", "an", "and", "of", "the"].includes(word))
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase()
+
+  return acronym || "DOC"
+}
+
+export function certificateDocumentDownloadName(
+  documentType: string,
+  billOfLadingNumber: string,
+  originalFileName: string
+) {
+  const extension = originalFileName.match(/\.[a-z0-9]{1,10}$/i)?.[0] ?? ""
+  const safeBillOfLadingNumber = billOfLadingNumber
+    .trim()
+    .replace(/[^a-z0-9_-]+/gi, "_")
+    .replace(/^_+|_+$/g, "")
+
+  return `${documentTypeAbbreviation(documentType)}_${safeBillOfLadingNumber || "UNKNOWN"}${extension}`
+}
 
 export type MadagascarValueStatus =
   "extracted" | "derived" | "missing" | "conflict"
@@ -44,6 +95,8 @@ export type MadagascarInvoiceValue = {
 }
 
 export type MadagascarAnalysis = {
+  okf?: import("./okf/schema").KnowledgeReview
+  okfOverrides?: Record<string, import("./okf/schema").ReviewFinding>
   consigneeCountry: string
   documents: {
     fileName: string
@@ -478,12 +531,7 @@ export function normalizeMadagascarAnalysis(
     }
   })
 
-  const requiredDocumentTypes: MadagascarDocumentType[] = [
-    "Bill of Lading",
-    "Commercial Invoice",
-    "Packing List",
-    "Export/Customs Declaration",
-  ]
+  const requiredDocumentTypes: MadagascarDocumentType[] = []
   const classifiedDocumentTypes = new Set(
     value.documents.map((document) => document.documentType)
   )

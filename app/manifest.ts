@@ -24,9 +24,9 @@ export default function manifest(): MetadataRoute.Manifest {
         url: "/dashboard",
       },
       {
-        name: "Previous Months",
-        short_name: "Previous",
-        description: "Open closed month-end records.",
+        name: "Month End",
+        short_name: "Month End",
+        description: "Open month-end records.",
         url: "/previous-month-ends",
       },
       {

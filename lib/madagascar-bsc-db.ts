@@ -1,6 +1,9 @@
 "use client"
 
 import { createClient } from "@/lib/client"
+import { isOkfDevelopment } from "@/lib/okf/development-access"
+const localDevelopment = () =>
+  typeof window !== "undefined" && isOkfDevelopment(window.location.host)
 import {
   createMadagascarId,
   madagascarOfficialRuleDefinitions,
@@ -60,7 +63,11 @@ export function loadCachedMadagascarRequests() {
 
   return requests.map((request) => ({
     ...request,
-    country: request.country || request.analysis?.consigneeCountry || "Unknown",
+    country:
+      request.country ||
+      (request.analysis?.okf?.observations.country.status === "supported"
+        ? request.analysis.okf.observations.country.name
+        : "Unknown"),
   }))
 }
 
@@ -134,7 +141,11 @@ function toRequest(row: RequestRow): MadagascarRequest {
   return {
     id: row.id,
     reference: row.reference,
-    country: row.country || row.analysis?.consigneeCountry || "Unknown",
+    country:
+      row.country ||
+      (row.analysis?.okf?.observations.country.status === "supported"
+        ? row.analysis.okf.observations.country.name
+        : "Unknown"),
     status: row.status,
     documents: row.documents ?? [],
     analysis: row.analysis,
@@ -160,13 +171,42 @@ export async function listMadagascarRequests() {
   const cached = loadCachedMadagascarRequests()
 
   try {
-    const { data, error } = await createClient()
-      .from(requestTable)
-      .select("*")
-      .order("created_at", { ascending: false })
+    const { data, error } = localDevelopment()
+      ? await fetch("/api/okf/local-requests").then(async (response) => {
+          const result = await response.json()
+          if (!response.ok) throw Error(result.message)
+          return { data: result.rows, error: null }
+        })
+      : await createClient()
+          .from(requestTable)
+          .select("*")
+          .order("created_at", { ascending: false })
 
     if (error) throw error
-    const requests = ((data ?? []) as RequestRow[]).map(toRequest)
+    const remote = ((data ?? []) as RequestRow[]).map(toRequest)
+    // Older installations saved requests locally before the durable table existed.
+    // Keep those requests visible and copy only absent IDs into the existing store.
+    const recovered: MadagascarRequest[] = []
+    for (const request of cached.filter(
+      (item) => !remote.some((row) => row.id === item.id)
+    )) {
+      const files = await Promise.all(
+        request.documents.map(async (document) => {
+          const blob = await loadDocumentBlob(document.id).catch(
+            () => undefined
+          )
+          return blob
+            ? new File([blob], document.name, { type: document.type })
+            : undefined
+        })
+      )
+      recovered.push(
+        await saveMadagascarRequest(request, files).catch(() => request)
+      )
+    }
+    const requests = [...remote, ...recovered].sort((a, b) =>
+      b.createdAt.localeCompare(a.createdAt)
+    )
     cacheRequests(requests)
     return requests
   } catch {
@@ -176,8 +216,31 @@ export async function listMadagascarRequests() {
 
 export async function saveMadagascarRequest(
   request: MadagascarRequest,
-  files: File[]
+  files: (File | undefined)[]
 ) {
+  if (localDevelopment()) {
+    const body = new FormData()
+    body.set("request", JSON.stringify(request))
+    for (const [index, file] of files.entries())
+      if (file) {
+        body.set("file:" + index, file)
+        await saveDocumentBlob(request.documents[index].id, file).catch(
+          () => undefined
+        )
+      }
+    const response = await fetch("/api/okf/local-requests", {
+      method: "POST",
+      body,
+    })
+    const result = await response.json()
+    if (!response.ok) throw Error(result.message)
+    const saved = result.request as MadagascarRequest
+    cacheRequests([
+      saved,
+      ...loadCachedMadagascarRequests().filter((r) => r.id !== request.id),
+    ])
+    return saved
+  }
   const client = createClient()
   const documents = await Promise.all(
     request.documents.map(async (document, index) => {
@@ -211,9 +274,11 @@ export async function saveMadagascarRequest(
     updated_at: savedRequest.updatedAt,
   })
 
-  if (error && !/does not exist|schema cache/i.test(error.message)) {
-    throw error
-  }
+  if (error) throw error
+  if (files.some((file, index) => file && !documents[index]?.storagePath))
+    throw new Error(
+      "The request is saved, but some documents could not be stored in the backend. Their local copies are preserved."
+    )
 
   return savedRequest
 }
@@ -222,18 +287,37 @@ export async function deleteMadagascarRequest(id: string) {
   cacheRequests(
     loadCachedMadagascarRequests().filter((request) => request.id !== id)
   )
-  const { error } = await createClient().from(requestTable).delete().eq("id", id)
+  if (localDevelopment()) {
+    const response = await fetch(
+      "/api/okf/local-requests?id=" + encodeURIComponent(id),
+      { method: "DELETE" }
+    )
+    if (!response.ok) throw Error("Could not delete local request.")
+    return
+  }
+  const { error } = await createClient()
+    .from(requestTable)
+    .delete()
+    .eq("id", id)
   if (error && !/does not exist|schema cache/i.test(error.message)) throw error
 }
 
-export async function downloadMadagascarDocument(document: {
-  id: string
-  name: string
-  storagePath: string
-}) {
+export async function downloadMadagascarDocument(
+  document: {
+    id: string
+    name: string
+    storagePath: string
+  },
+  downloadName = document.name
+) {
   let data: Blob | undefined
 
-  if (document.storagePath) {
+  if (localDevelopment() && document.storagePath.startsWith("development/")) {
+    const response = await fetch(
+      "/api/okf/local-requests?document=" + encodeURIComponent(document.id)
+    )
+    if (response.ok) data = await response.blob()
+  } else if (document.storagePath) {
     const result = await createClient()
       .storage.from(storageBucket)
       .download(document.storagePath)
@@ -246,7 +330,7 @@ export async function downloadMadagascarDocument(document: {
   const url = URL.createObjectURL(data)
   const anchor = window.document.createElement("a")
   anchor.href = url
-  anchor.download = document.name
+  anchor.download = downloadName
   anchor.click()
   URL.revokeObjectURL(url)
 }

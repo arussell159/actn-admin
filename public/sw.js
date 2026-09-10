@@ -1,6 +1,9 @@
 const CACHE_PREFIX = "actn-admin-"
 const CACHE_NAME = "actn-admin-shell-v18"
 const OFFLINE_URL = "/offline.html"
+const IS_LOCALHOST = ["localhost", "127.0.0.1", "::1"].includes(
+  self.location.hostname
+)
 const SHELL_ASSETS = [
   OFFLINE_URL,
   "/manifest.webmanifest",
@@ -17,6 +20,11 @@ function isSameOriginGet(request) {
 }
 
 self.addEventListener("install", (event) => {
+  if (IS_LOCALHOST) {
+    event.waitUntil(self.skipWaiting())
+    return
+  }
+
   event.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
       // One missing optional icon must not prevent the new worker installing.
@@ -39,7 +47,11 @@ self.addEventListener("activate", (event) => {
     caches.keys().then(async (keys) => {
       await Promise.all(
         keys
-          .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
+          .filter(
+            (key) =>
+              key.startsWith(CACHE_PREFIX) &&
+              (IS_LOCALHOST || key !== CACHE_NAME)
+          )
           .map((key) => caches.delete(key))
       )
       await self.clients.claim()
@@ -58,6 +70,12 @@ self.addEventListener("message", (event) => {
 })
 
 self.addEventListener("fetch", (event) => {
+  // A production worker can remain registered when a developer later opens
+  // localhost. Never mask local compilation errors with the offline PWA shell.
+  if (IS_LOCALHOST) {
+    return
+  }
+
   const { request } = event
 
   if (!isSameOriginGet(request)) {

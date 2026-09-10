@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises"
 import test from "node:test"
 import vm from "node:vm"
 
-async function loadWorker({ fetchImpl, cacheMatch } = {}) {
+async function loadWorker({ fetchImpl, cacheMatch, hostname = "app.test" } = {}) {
   const listeners = new Map()
   const deletedCaches = []
   let claimed = false
@@ -37,7 +37,10 @@ async function loadWorker({ fetchImpl, cacheMatch } = {}) {
       match: cacheMatch ?? (async () => undefined),
     },
     self: {
-      location: { origin: "https://app.test" },
+      location: {
+        origin: hostname === "app.test" ? "https://app.test" : `http://${hostname}:3000`,
+        hostname,
+      },
       clients: {
         claim: async () => {
           claimed = true
@@ -75,6 +78,24 @@ test("Next.js chunks are never pinned in Cache Storage", async () => {
       method: "GET",
       mode: "cors",
       url: "https://app.test/_next/static/chunks/app.js",
+    },
+    respondWith(value) {
+      responsePromise = value
+    },
+  })
+
+  assert.equal(responsePromise, undefined)
+})
+
+test("localhost navigation is never intercepted by the PWA worker", async () => {
+  const worker = await loadWorker({ hostname: "localhost" })
+  let responsePromise
+
+  worker.listeners.get("fetch")({
+    request: {
+      method: "GET",
+      mode: "navigate",
+      url: "http://localhost:3000/dashboard",
     },
     respondWith(value) {
       responsePromise = value

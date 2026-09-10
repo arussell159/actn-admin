@@ -6,16 +6,14 @@ import dynamic from "next/dynamic"
 import { usePathname } from "next/navigation"
 import {
   BookOpenTextIcon,
-  CalendarClockIcon,
   CalculatorIcon,
   LayoutDashboardIcon,
+  LibraryBigIcon,
   ListChecksIcon,
   HistoryIcon,
   MenuIcon,
   PlusIcon,
-  Settings2Icon,
   ScanTextIcon,
-  SparklesIcon,
 } from "lucide-react"
 
 import { AppLink } from "@/components/app-link"
@@ -43,6 +41,7 @@ import {
 } from "@/lib/browser-storage"
 import { cn } from "@/lib/utils"
 import { bscCountryModules } from "@/lib/bsc-country-modules"
+import { settingsPages } from "@/lib/app-routes"
 
 const MobileNavCustomizer = dynamic(
   () =>
@@ -62,16 +61,10 @@ const allModuleItems = [
     match: ["/", "/dashboard"],
   },
   {
-    label: "Current Month",
-    href: "/month-end",
-    icon: CalendarClockIcon,
-    match: ["/month-end", "/month-end/country"],
-  },
-  {
-    label: "Previous Months",
+    label: "Month End",
     href: "/previous-month-ends",
     icon: HistoryIcon,
-    match: ["/previous-month-ends"],
+    match: ["/previous-month-ends", "/month-end", "/month-end/country"],
   },
   {
     label: "Quote Tool",
@@ -86,16 +79,16 @@ const allModuleItems = [
     match: ["/information"],
   },
   {
-    label: "Create Month End",
+    label: "New Month End",
     href: "/month-end/new",
     icon: PlusIcon,
     match: ["/month-end/new"],
   },
   {
-    label: "Settings",
-    href: "/template-builder",
-    icon: Settings2Icon,
-    match: ["/template-builder"],
+    label: "Knowledge Base",
+    href: "/knowledge-base",
+    icon: LibraryBigIcon,
+    match: ["/knowledge-base"],
   },
   ...bscCountryModules.flatMap((module) => [
     {
@@ -110,18 +103,18 @@ const allModuleItems = [
       icon: ListChecksIcon,
       match: [`${module.basePath}/requests`],
     },
-    {
-      label: "Knowledge Base",
-      href: "/knowledge-base",
-      icon: SparklesIcon,
-      match: ["/knowledge-base"],
-    },
   ]),
+  ...settingsPages.map((item) => ({
+    label: item.title,
+    href: item.href,
+    icon: item.icon,
+    match: [item.href],
+  })),
 ]
 
 const defaultDockHrefs = [
   "/dashboard",
-  "/month-end",
+  "/previous-month-ends",
   "/quote-tool",
   "/information",
 ]
@@ -139,11 +132,15 @@ function isActivePath(pathname: string, matches: string[]) {
 }
 
 function normalizeDefaultDockHrefs(hrefs: string[]) {
-  const dockWithoutPreviousMonths = hrefs.filter(
-    (href) => href !== "/previous-month-ends" && href !== "/dashboard"
+  const remainingHrefs = hrefs.filter(
+    (href) => href !== "/dashboard" && href !== "/previous-month-ends"
   )
 
-  return ["/dashboard", ...dockWithoutPreviousMonths].slice(0, maxDockItems)
+  return [
+    "/dashboard",
+    "/previous-month-ends",
+    ...new Set(remainingHrefs),
+  ].slice(0, maxDockItems)
 }
 
 export function MobileTabBar() {
@@ -161,7 +158,9 @@ export function MobileTabBar() {
   const moreItems = allModuleItems.filter(
     (item) => !dockHrefs.includes(item.href)
   )
-  const isMoreActive = moreItems.some((item) => pathname.startsWith(item.href))
+  const isMoreActive = moreItems.some((item) =>
+    isActivePath(pathname, item.match)
+  )
   const activeDockIndex = dockItems.findIndex((item) =>
     isActivePath(pathname, item.match)
   )
@@ -449,10 +448,21 @@ export function MobileTabBar() {
                     return (
                       <React.Fragment key={item.href}>
                         {index > 0 ? <Separator /> : null}
+                        {settingsPages.some(
+                          (entry) => entry.href === item.href
+                        ) &&
+                        !settingsPages.some(
+                          (entry) => entry.href === moreItems[index - 1]?.href
+                        ) ? (
+                          <p className="px-3 pt-4 pb-1 text-xs font-medium text-muted-foreground">
+                            Settings
+                          </p>
+                        ) : null}
                         <SheetClose
                           render={
                             <AppLink
                               href={item.href}
+                              aria-current={isActive ? "page" : undefined}
                               onClick={prepareActiveIndicatorTransition}
                             />
                           }

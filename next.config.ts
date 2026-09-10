@@ -10,6 +10,7 @@ const applicationDocumentRoutes = [
   "/pricing-upload",
   "/quote-tool",
   "/template-builder",
+  "/certificate-settings",
 ]
 
 const nextConfig: NextConfig = {
