@@ -6,6 +6,7 @@ import {
 } from "@/lib/browser-storage"
 import { createInitialPages } from "@/lib/okf/seed"
 import type { KnowledgePage } from "@/lib/okf/schema"
+import type { VisibleCorrectionLearning } from "@/lib/okf/correction-learning"
 
 export type InformationNodeType = "folder" | "note"
 
@@ -42,7 +43,7 @@ const scopeConfig = {
   },
 } as const
 
-const knowledgeBaseExampleVersionKey = "africa-ctn-knowledge-base-examples-v2"
+const knowledgeBaseExampleVersionKey = "africa-ctn-knowledge-base-examples-v3"
 
 export const informationUpdatedEvent = "information-notes:updated"
 export const knowledgeBaseUpdatedEvent = "knowledge-base-notes:updated"
@@ -133,6 +134,45 @@ function editorDocument(blocks: { heading?: string; text?: string }[]) {
 }
 
 function countryExampleNodes(timestamp: string): InformationNode[] {
+  const sharedFolderId = "knowledge-country-shared"
+  const sharedNodes: InformationNode[] = [
+    {
+      id: sharedFolderId,
+      type: "folder",
+      title: "Shared",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    {
+      id: `${sharedFolderId}-upload-ai-instructions`,
+      parentId: sharedFolderId,
+      type: "note",
+      title: "Document Upload & AI Instructions",
+      content: editorDocument([
+        {
+          text: "These instructions define how uploaded shipment documents are reviewed and how extracted values become a certificate draft. Country-specific published knowledge overrides shared guidance when it explicitly differs.",
+        },
+        {
+          heading: "Upload workflow",
+          text: "Upload the shipment documents together as one certificate request. AI classifies the documents, separates shipments using explicit shipment references, and identifies the certificate country from the consignee name and address on the Bill of Lading. It must not substitute the notify party, a port, a transit country, or an address from another document.",
+        },
+        {
+          heading: "Extraction instructions",
+          text: "Read original PDFs with document-aware AI and retain the supporting filename, page and short evidence excerpt. Use the published country requirements, document instructions and Certificate Settings field mappings. Return a blank or unresolved value when the evidence is missing or ambiguous; never invent a value, source, date or certainty.",
+        },
+        {
+          heading: "Normalization",
+          text: "Normalize dates to YYYY-MM-DD. Return ISO currency codes instead of symbols. Preserve forward slashes in references and remove decorative labels or hyphens. Infer Incoterms, shipment method, cargo type, container details, loading country and measurements only when the relevant evidence and field instruction support the result.",
+        },
+        {
+          heading: "Review",
+          text: "Populate the certificate using the published layout, then let staff review extracted fields from top to bottom. Flag missing, conflicting or unsupported values for correction. Uploaded evidence and AI output do not publish or change country knowledge automatically.",
+        },
+      ]),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+  ]
   const countries = [
     {
       id: "madagascar",
@@ -166,64 +206,67 @@ function countryExampleNodes(timestamp: string): InformationNode[] {
     },
   ]
 
-  return countries.flatMap((country) => {
-    const folderId = `knowledge-country-${country.id}`
-    return [
-      {
-        id: folderId,
-        type: "folder" as const,
-        title: country.name,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      },
-      {
-        id: `${folderId}-overview`,
-        parentId: folderId,
-        type: "note" as const,
-        title: "Overview",
-        content: editorDocument([
-          { text: country.summary },
-          {
-            heading: "Maintenance status",
-            text: "AI maintained · Human reviewed before changes are applied",
-          },
-        ]),
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      },
-      {
-        id: `${folderId}-requirements`,
-        parentId: folderId,
-        type: "note" as const,
-        title: "Requirements",
-        content: editorDocument([{ text: country.requirements }]),
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      },
-      {
-        id: `${folderId}-procedure`,
-        parentId: folderId,
-        type: "note" as const,
-        title: "Procedure",
-        content: editorDocument([{ text: country.procedure }]),
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      },
-      {
-        id: `${folderId}-sources`,
-        parentId: folderId,
-        type: "note" as const,
-        title: "Sources",
-        content: editorDocument([
-          {
-            text: "AI records the evidence used for operational claims here. Add source material through AI Update; do not treat this starter text as a source.",
-          },
-        ]),
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      },
-    ]
-  })
+  return [
+    ...sharedNodes,
+    ...countries.flatMap((country) => {
+      const folderId = `knowledge-country-${country.id}`
+      return [
+        {
+          id: folderId,
+          type: "folder" as const,
+          title: country.name,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        {
+          id: `${folderId}-overview`,
+          parentId: folderId,
+          type: "note" as const,
+          title: "Overview",
+          content: editorDocument([
+            { text: country.summary },
+            {
+              heading: "Maintenance status",
+              text: "AI maintained · Human reviewed before changes are applied",
+            },
+          ]),
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        {
+          id: `${folderId}-requirements`,
+          parentId: folderId,
+          type: "note" as const,
+          title: "Requirements",
+          content: editorDocument([{ text: country.requirements }]),
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        {
+          id: `${folderId}-procedure`,
+          parentId: folderId,
+          type: "note" as const,
+          title: "Procedure",
+          content: editorDocument([{ text: country.procedure }]),
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        {
+          id: `${folderId}-sources`,
+          parentId: folderId,
+          type: "note" as const,
+          title: "Sources",
+          content: editorDocument([
+            {
+              text: "AI records the evidence used for operational claims here. Add source material through AI Update; do not treat this starter text as a source.",
+            },
+          ]),
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ]
+    }),
+  ]
 }
 
 function mergeCountryExamples(nodes: InformationNode[]) {
@@ -262,14 +305,172 @@ function mergeCountryExamples(nodes: InformationNode[]) {
   return next
 }
 
-function hasCountryExamples(nodes: InformationNode[]) {
+export function mergeCorrectionLearningNotes(
+  nodes: InformationNode[],
+  learnings: VisibleCorrectionLearning[]
+) {
+  if (!learnings.length) return nodes
+  const next = [...nodes]
+  const byCountry = new Map<string, VisibleCorrectionLearning[]>()
+  for (const learning of learnings)
+    byCountry.set(learning.country, [
+      ...(byCountry.get(learning.country) ?? []),
+      learning,
+    ])
+  for (const [country, countryLearnings] of byCountry) {
+    const parent = next.find(
+      (node) =>
+        node.type === "folder" &&
+        !node.parentId &&
+        node.title.toLocaleLowerCase() === country.toLocaleLowerCase()
+    )
+    if (!parent) continue
+    const id = `${parent.id}-ai-learning`
+    const existingIndex = next.findIndex(
+      (node) =>
+        node.id === id ||
+        (node.parentId === parent.id && node.title === "AI Learning")
+    )
+    const timestamp = now()
+    const note: InformationNode = {
+      id: existingIndex >= 0 ? next[existingIndex].id : id,
+      parentId: parent.id,
+      type: "note",
+      title: "AI Learning",
+      content: editorDocument([
+        {
+          text: "Verified field-source corrections from completed certificate reviews. These compact rules guide future extraction; the original correction records remain in the OKF audit history.",
+        },
+        {
+          heading: "Verified field sources",
+          text: countryLearnings
+            .sort((left, right) =>
+              right.createdAt.localeCompare(left.createdAt)
+            )
+            .map(
+              (learning) =>
+                `${learning.label} — ${learning.documentType}${learning.page ? `, page ${learning.page}` : ""} — ${learning.supportingText || learning.matchedValue} — learned ${learning.createdAt.slice(0, 10)}`
+            )
+            .join("\n"),
+        },
+      ]),
+      createdAt: existingIndex >= 0 ? next[existingIndex].createdAt : timestamp,
+      updatedAt: timestamp,
+    }
+    if (existingIndex >= 0) next[existingIndex] = note
+    else next.push(note)
+  }
+  return next
+}
+
+export function mergeLayoutCountryNotes(
+  nodes: InformationNode[],
+  countries: string[]
+) {
+  const next = [...nodes]
+  for (const country of [...new Set(countries)].sort()) {
+    const timestamp = now()
+    let countryNode = next.find(
+      (node) =>
+        node.type === "folder" &&
+        !node.parentId &&
+        node.title.toLocaleLowerCase() === country.toLocaleLowerCase()
+    )
+    if (!countryNode) {
+      const countryId = `knowledge-country-${country
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")}`
+      countryNode = {
+        id: countryId,
+        type: "folder",
+        title: country,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }
+      next.push(
+        countryNode,
+        {
+          id: `${countryId}-overview`,
+          parentId: countryId,
+          type: "note",
+          title: "Overview",
+          content: editorDocument([
+            {
+              text: `${country} certificate knowledge linked to its current Certificate Settings layout. AI will expand these pages as staff-approved requirements, procedures, sources and field corrections are collected.`,
+            },
+            {
+              heading: "Maintenance status",
+              text: "AI maintained · Human reviewed before changes are applied",
+            },
+          ]),
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        ...["Requirements", "Procedure", "Sources"].map((title) => ({
+          id: `${countryId}-${title.toLowerCase()}`,
+          parentId: countryId,
+          type: "note" as const,
+          title,
+          content: editorDocument([
+            {
+              text:
+                title === "Sources"
+                  ? "Verified evidence and source references for this country will be maintained here."
+                  : `No verified ${title.toLowerCase()} have been added yet.`,
+            },
+          ]),
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        }))
+      )
+    }
+    if (
+      !next.some(
+        (node) =>
+          node.parentId === countryNode.id && node.title === "AI Learning"
+      )
+    )
+      next.push({
+        id: `${countryNode.id}-ai-learning`,
+        parentId: countryNode.id,
+        type: "note",
+        title: "AI Learning",
+        content: editorDocument([
+          {
+            text: "No verified field-source corrections have been learned yet. When a corrected value is found in an uploaded document—or you answer a source question—the verified guidance will appear here.",
+          },
+        ]),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+  }
+  return next
+}
+
+function hasKnowledgeBaseExamples(nodes: InformationNode[]) {
   const countryFolders = new Set(
     nodes
       .filter((node) => node.type === "folder" && !node.parentId)
       .map((node) => node.title.toLocaleLowerCase())
   )
-  return ["madagascar", "djibouti", "somalia"].every((country) =>
-    countryFolders.has(country)
+  const sharedFolder = nodes.find(
+    (node) =>
+      node.type === "folder" &&
+      !node.parentId &&
+      node.title.toLocaleLowerCase() === "shared"
+  )
+  const hasUploadInstructions = nodes.some(
+    (node) =>
+      node.type === "note" &&
+      node.parentId === sharedFolder?.id &&
+      node.title === "Document Upload & AI Instructions"
+  )
+  return (
+    hasUploadInstructions &&
+    ["madagascar", "djibouti", "somalia"].every((country) =>
+      countryFolders.has(country)
+    )
   )
 }
 
@@ -464,6 +665,48 @@ async function loadPublishedKnowledgeBaseNotes() {
   }
 }
 
+async function loadDynamicOkfIndex() {
+  try {
+    const response = await fetch("/api/okf", { cache: "no-store" })
+    const result = (await response.json()) as {
+      ok?: boolean
+      sourceLearnings?: VisibleCorrectionLearning[]
+      layoutCountries?: string[]
+    }
+    return response.ok && result.ok
+      ? {
+          sourceLearnings: Array.isArray(result.sourceLearnings)
+            ? result.sourceLearnings
+            : [],
+          layoutCountries: Array.isArray(result.layoutCountries)
+            ? result.layoutCountries
+            : [],
+        }
+      : { sourceLearnings: [], layoutCountries: [] }
+  } catch {
+    return { sourceLearnings: [], layoutCountries: [] }
+  }
+}
+
+async function mergeDynamicOkfNotes(
+  nodes: InformationNode[],
+  dynamicIndex: Awaited<ReturnType<typeof loadDynamicOkfIndex>>
+) {
+  return mergeCorrectionLearningNotes(
+    mergeLayoutCountryNotes(nodes, dynamicIndex.layoutCountries),
+    dynamicIndex.sourceLearnings
+  )
+}
+
+export async function mergeLiveKnowledgeBaseNotes(nodes: InformationNode[]) {
+  const visibleNotes = await mergeDynamicOkfNotes(
+    nodes,
+    await loadDynamicOkfIndex()
+  )
+  cacheInformationNotes(visibleNotes, "knowledge-base")
+  return visibleNotes
+}
+
 function pageArray(value: unknown): KnowledgePage[] | null {
   if (!Array.isArray(value)) return null
   return value.every(
@@ -587,13 +830,18 @@ export async function getInformationNotes(
   let localNotes = loadInformationNotes(scope)
   const needsExampleMigration =
     scope === "knowledge-base" &&
-    readBrowserStorage("localStorage", knowledgeBaseExampleVersionKey) !== "2"
+    readBrowserStorage("localStorage", knowledgeBaseExampleVersionKey) !== "3"
 
   if (needsExampleMigration) {
     localNotes = mergeCountryExamples(localNotes)
     cacheInformationNotes(localNotes, scope)
-    writeBrowserStorage("localStorage", knowledgeBaseExampleVersionKey, "2")
+    writeBrowserStorage("localStorage", knowledgeBaseExampleVersionKey, "3")
   }
+
+  const dynamicIndexPromise =
+    scope === "knowledge-base"
+      ? loadDynamicOkfIndex()
+      : Promise.resolve({ sourceLearnings: [], layoutCountries: [] })
 
   try {
     const supabase = createPublicClient()
@@ -604,7 +852,7 @@ export async function getInformationNotes(
       .order("created_at", { ascending: true })
 
     if (error) {
-      return localNotes
+      return mergeDynamicOkfNotes(localNotes, await dynamicIndexPromise)
     }
 
     let notes = (data ?? []).map((row) =>
@@ -617,22 +865,27 @@ export async function getInformationNotes(
           ? ((await loadPublishedKnowledgeBaseNotes()) ?? localNotes)
           : localNotes
       saveDatabaseInformationNotes(initialNotes, scope)
-      return initialNotes
+      return mergeDynamicOkfNotes(initialNotes, await dynamicIndexPromise)
     }
 
     if (
       scope === "knowledge-base" &&
       (needsExampleMigration ||
-        (hasCountryExamples(localNotes) && !hasCountryExamples(notes)))
+        (hasKnowledgeBaseExamples(localNotes) &&
+          !hasKnowledgeBaseExamples(notes)))
     ) {
       notes = mergeCountryExamples(notes)
       void saveDatabaseInformationNotes(notes, scope)
     }
 
-    cacheInformationNotes(notes, scope)
-    return notes
+    const visibleNotes = await mergeDynamicOkfNotes(
+      notes,
+      await dynamicIndexPromise
+    )
+    cacheInformationNotes(visibleNotes, scope)
+    return visibleNotes
   } catch {
-    return localNotes
+    return mergeDynamicOkfNotes(localNotes, await dynamicIndexPromise)
   }
 }
 

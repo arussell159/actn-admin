@@ -24,6 +24,27 @@ const documentTypeAbbreviations: Record<string, string> = {
   cnca: "CNCA",
 }
 
+const certificateDocumentTypeOrder: Record<string, number> = {
+  "bill of lading": 0,
+  "commercial invoice": 1,
+  "freight invoice": 2,
+  "packing list": 3,
+  "export declaration": 4,
+  "export/customs declaration": 4,
+  "customs declaration": 4,
+  du: 5,
+  fdi: 6,
+  "certificate of origin": 7,
+  "certificate of insurance": 8,
+}
+
+export function certificateDocumentTypeRank(documentType: string) {
+  return (
+    certificateDocumentTypeOrder[documentType.trim().toLowerCase()] ??
+    Number.MAX_SAFE_INTEGER
+  )
+}
+
 export function documentTypeAbbreviation(documentType: string) {
   const normalized = documentType.trim().toLowerCase()
   const configured = documentTypeAbbreviations[normalized]

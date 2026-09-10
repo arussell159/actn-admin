@@ -5,7 +5,10 @@ export default defineConfig({
   outputDir: "./node_modules/.cache/okf-browser-results",
   reporter: "list",
   workers: 1,
-  use: { baseURL: "http://localhost:3000", serviceWorkers: "block" },
+  use: {
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000",
+    serviceWorkers: "block",
+  },
   projects: [
     {
       name: "desktop",

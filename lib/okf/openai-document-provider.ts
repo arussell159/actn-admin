@@ -98,6 +98,30 @@ export type InspectedDocument = {
   analysis: DocumentAnalysis
 }
 
+export type CorrectionSourceCandidate = {
+  target: string
+  label: string
+  documentType: string
+  filename: string
+  page: number | null
+  supportingText: string
+  matchedValue: string
+  confidence: number
+}
+
+const correctionVerificationSchema = z.object({
+  matches: z.array(
+    z.object({
+      target: z.string(),
+      found: z.boolean(),
+      page: nullablePage,
+      supportingText: nullableString,
+      matchedValue: nullableString,
+      confidence: z.number().min(0).max(1),
+    })
+  ),
+})
+
 function documentTypeExtractionSchema(fields: ExtractionField[]) {
   const ids = [...new Set(fields.map((field) => field.id))]
   if (!ids.length) return analysisSchema
@@ -684,6 +708,77 @@ export async function classifyDocuments(
       }
     })
   )
+}
+
+export async function verifyCorrectionSources(
+  documents: Array<{ file: File; documentType: string }>,
+  corrections: Array<{ target: string; label: string; value: string }>,
+  signal?: AbortSignal
+): Promise<CorrectionSourceCandidate[]> {
+  if (!documents.length || !corrections.length) return []
+  validatePdfFiles(documents.map(({ file }) => file))
+  const allowedTargets = new Set(corrections.map(({ target }) => target))
+  const results = await Promise.all(
+    documents.map(async ({ file, documentType }) => {
+      try {
+        const result = await structuredResponse({
+          schema: correctionVerificationSchema,
+          schemaName: "correction_source_verification",
+          instructions: `${systemInstruction} Verify whether each staff-corrected field value is visibly supported by this one ${documentType}. Search the entire document, including rated or charges sections. Numeric formatting, currency symbols and thousands separators may differ, but the value and meaning must match. Do not infer that a value belongs to a field merely because the same number appears elsewhere. Set found only with direct evidence, include its one-based page and a short verbatim supporting excerpt, and return every requested target once.`,
+          data: {
+            originalFilename: file.name,
+            expectedDocumentType: documentType,
+            correctedFields: corrections,
+          },
+          file,
+          model: baseModel(),
+          reasoningEffort: "none",
+          signal,
+          operation: "verify_correction_source",
+          filename: file.name,
+          escalated: false,
+          escalationReasons: [],
+        })
+        const labels = new Map(
+          corrections.map(({ target, label }) => [target, label])
+        )
+        return result.matches.flatMap((match) =>
+          allowedTargets.has(match.target) &&
+          match.found &&
+          match.page &&
+          match.supportingText &&
+          match.confidence >= 0.72
+            ? [
+                {
+                  target: match.target,
+                  label: labels.get(match.target) ?? match.target,
+                  documentType,
+                  filename: file.name,
+                  page: match.page,
+                  supportingText: match.supportingText.slice(0, 800),
+                  matchedValue: (match.matchedValue ?? "").slice(0, 500),
+                  confidence: match.confidence,
+                },
+              ]
+            : []
+        )
+      } catch (error) {
+        if (failureType(error) === "cancelled") throw error
+        console.error(
+          `Correction source verification failed: ${file.name}`,
+          error
+        )
+        return []
+      }
+    })
+  )
+  const best = new Map<string, CorrectionSourceCandidate>()
+  for (const candidate of results.flat()) {
+    const current = best.get(candidate.target)
+    if (!current || candidate.confidence > current.confidence)
+      best.set(candidate.target, candidate)
+  }
+  return [...best.values()]
 }
 
 function fieldPrompt(field: ExtractionField) {

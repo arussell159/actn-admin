@@ -19,6 +19,126 @@ test.beforeEach(async ({ context, page }) => {
   )
 })
 
+test("Month End opens the current dashboard and its header menu opens the month table", async ({
+  page,
+  isMobile,
+}) => {
+  await page.route("**/rest/v1/app_settings*", (route) =>
+    route.fulfill({
+      json: {
+        id: "mobile_nav_layout",
+        value: {
+          dockHrefs: [
+            "/dashboard",
+            "/previous-month-ends",
+            "/quote-tool",
+            "/information",
+          ],
+        },
+        updated_at: "2026-08-01T12:00:00.000Z",
+      },
+    })
+  )
+  await page.goto("/dashboard")
+  const monthEnd = page
+    .getByRole("link", { name: "Month End", exact: true })
+    .filter({ visible: true })
+  await expect(monthEnd).toHaveAttribute("href", "/month-end")
+  await monthEnd.click()
+  await expect(page).toHaveURL(/\/month-end$/)
+  await expect(
+    page
+      .getByRole("heading", { name: "August 2026", exact: true })
+      .filter({ visible: true })
+  ).toBeVisible()
+  await expect(
+    page
+      .getByRole("tab", { name: "Dashboard", exact: true })
+      .filter({ visible: true })
+  ).toHaveAttribute("aria-selected", "true")
+  const actions = page
+    .locator("header")
+    .getByRole("button", { name: "Month end actions", exact: true })
+    .filter({ visible: true })
+  await actions.click()
+  const previous = page.getByRole("menuitem", {
+    name: "View previous months",
+    exact: true,
+  })
+  await expect(previous).toBeVisible()
+  await page.screenshot({
+    path: `node_modules/.cache/month-end-menu-${isMobile ? "mobile" : "desktop"}.png`,
+    animations: "disabled",
+  })
+  await previous.press("Enter")
+  await expect(page).toHaveURL(/\/previous-month-ends$/)
+  await expect(
+    page.getByRole("columnheader", { name: "Name", exact: true })
+  ).toBeVisible()
+  await page
+    .locator('a[href="/previous-month-ends/view?period=2026-07"]')
+    .first()
+    .press("Enter")
+  const back = page.locator(
+    'header [aria-label="Back to previous months"]:visible'
+  )
+  await expect(back).toBeVisible()
+  await back.press("Enter")
+  await expect(page).toHaveURL(/\/previous-month-ends$/)
+  await monthEnd.press("Enter")
+  await expect(page).toHaveURL(/\/month-end$/)
+  await expect(
+    page
+      .getByRole("heading", { name: "August 2026", exact: true })
+      .filter({ visible: true })
+  ).toBeVisible()
+})
+
+for (const hasHistory of [true, false]) {
+  test(`Month End opens the table without an open month (${hasHistory ? "closed history" : "empty history"})`, async ({
+    page,
+  }) => {
+    const writes: string[] = []
+    await page.route("**/rest/v1/month_end_records*", (route) => {
+      if (route.request().method() !== "GET")
+        writes.push(route.request().method())
+      return route.fulfill({
+        json: hasHistory
+          ? [
+              {
+                id: "2026-08",
+                period: "2026-08",
+                checked: {},
+                status: "Closed",
+                created_at: "2026-08-01T12:00:00.000Z",
+                updated_at: "2026-08-31T12:00:00.000Z",
+                completed_at: "2026-08-31T12:00:00.000Z",
+              },
+            ]
+          : [],
+      })
+    })
+    await page.goto("/dashboard")
+    await page
+      .getByRole("link", { name: "Month End", exact: true })
+      .filter({ visible: true })
+      .click()
+    await expect(page).toHaveURL(/\/previous-month-ends$/)
+    await expect(
+      page.getByRole("columnheader", { name: "Name", exact: true })
+    ).toBeVisible()
+    if (hasHistory)
+      await expect(
+        page.getByRole("link", { name: "August 2026", exact: true })
+      ).toBeVisible()
+    else
+      await expect(
+        page.getByText("No month ends yet.", { exact: true })
+      ).toBeVisible()
+    expect(writes).toEqual([])
+  })
+}
+
 test("shared page frame preserves route geometry, navigation and scroll clearance", async ({
   page,
   isMobile,
@@ -270,13 +390,21 @@ test("Accounting settings keeps its original section tabs and country form", asy
     includeHidden: true,
   })
   await expect(
-    tabs.getByRole("tab", { name: "Countries", exact: true, includeHidden: true })
+    tabs.getByRole("tab", {
+      name: "Countries",
+      exact: true,
+      includeHidden: true,
+    })
   ).toHaveCount(1)
   await expect(
     tabs.getByRole("tab", { name: "Tasks", exact: true, includeHidden: true })
   ).toHaveCount(1)
   await expect(
-    tabs.getByRole("tab", { name: "NetSuite", exact: true, includeHidden: true })
+    tabs.getByRole("tab", {
+      name: "NetSuite",
+      exact: true,
+      includeHidden: true,
+    })
   ).toHaveCount(1)
   await expect(
     page.getByRole("navigation", { name: "Settings", exact: true })

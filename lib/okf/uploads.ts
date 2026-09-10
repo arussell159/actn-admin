@@ -36,14 +36,23 @@ import {
   type MadagascarInvoiceItem,
 } from "@/lib/madagascar-bsc"
 import { sharedExtractionInstructions } from "./seed"
+import {
+  correctionLearningSummary,
+  normalizedCorrectionTarget,
+  parseCorrectionLearning,
+  type CorrectionSourceLearning,
+} from "./correction-learning"
 
 type Session = Awaited<ReturnType<typeof okfSession>>
 type CorrectionExample = {
   country: string
   target: string
+  label: string
   before: string
   after: string
   reason: string
+  verified: boolean
+  documentType: string
 }
 export type UploadReviewProgress = {
   stage: "country" | "document"
@@ -227,37 +236,76 @@ async function readCorrectionMemory(
   client: Session["client"]
 ): Promise<CorrectionExample[]> {
   try {
-    const [corrections, requests] = await Promise.all([
+    const [corrections, requests, intake] = await Promise.all([
       client
         .from("okf_corrections")
         .select("request_id,target,before_value,after_value,reason,created_at")
         .order("created_at", { ascending: false })
         .limit(200),
       client.from("madagascar_bsc_requests").select("id,country").limit(500),
+      client
+        .from("okf_intake")
+        .select("page_id,note,result,created_at")
+        .like("page_id", "correction-learning:%")
+        .order("created_at", { ascending: false })
+        .limit(200),
     ])
-    if (corrections.error || requests.error) return []
+    if (corrections.error || requests.error || intake.error) return []
     const countries = new Map(
       (requests.data ?? []).map((request) => [
         String(request.id),
         String(request.country),
       ])
     )
-    return (corrections.data ?? []).flatMap((correction) => {
+    const explained = (intake.data ?? []).flatMap((entry) => {
+      const result = entry.result as
+        | {
+            country?: unknown
+            learning?: CorrectionSourceLearning
+          }
+        | undefined
+      const learning = result?.learning
+      const country = typeof result?.country === "string" ? result.country : ""
+      if (learning?.version !== 1 || !learning.verified || !country) return []
+      return [
+        {
+          country,
+          target: learning.target,
+          label: learning.label,
+          before: "",
+          after: learning.matchedValue.slice(0, 500),
+          reason: correctionLearningSummary(learning).slice(0, 500),
+          verified: true,
+          documentType: learning.documentType,
+        },
+      ]
+    })
+    const corrected = (corrections.data ?? []).flatMap((correction) => {
       const country = countries.get(String(correction.request_id)) ?? ""
       const before = correctionText(correction.before_value)
       const after = correctionText(correction.after_value)
-      const target = String(correction.target ?? "")
+      const learning = parseCorrectionLearning(correction.reason)
+      if (learning && !learning.verified) return []
+      const target =
+        learning?.target ??
+        normalizedCorrectionTarget(String(correction.target ?? ""))
       if (!country || !target || !after || before === after) return []
       return [
         {
           country,
           target,
+          label: learning?.label ?? target,
           before: before.slice(0, 500),
           after: after.slice(0, 500),
-          reason: String(correction.reason ?? "").slice(0, 500),
+          reason: learning
+            ? correctionLearningSummary(learning).slice(0, 500)
+            : String(correction.reason ?? "").slice(0, 500),
+          verified: Boolean(learning?.verified),
+          documentType: learning?.documentType ?? "",
         },
       ]
     })
+    return [...explained, ...corrected].slice(0, 200)
   } catch {
     // Corrections improve extraction but must never block a new certificate.
     return []
@@ -553,6 +601,52 @@ export async function reviewUploads(
       date
     )
     const mappings = countryPages.flatMap((page) => page.content.mappings)
+    const learnedExtractions = new Map<
+      string,
+      Array<{
+        id: string
+        label: string
+        document: string
+        location: string
+        requiredWhen: string
+        instruction: string
+        portalFieldIds: string[]
+        ruleIds: string[]
+      }>
+    >()
+    const learnedKeys = new Set<string>()
+    for (const learning of correctionMemory) {
+      if (
+        !learning.verified ||
+        learning.country !== identification.country.name ||
+        !documentPriority.has(learning.documentType)
+      )
+        continue
+      const mapping = mappings.find(
+        (candidate) => candidate.systemFieldId === learning.target
+      )
+      const key = `${learning.documentType}:${learning.target}`
+      if (!mapping || learnedKeys.has(key)) continue
+      learnedKeys.add(key)
+      const learnedId = `learned-${learning.documentType}-${learning.target}`
+        .toLowerCase()
+        .replace(/[^a-z0-9.-]+/g, "-")
+        .slice(0, 150)
+      if (!mapping.fallbackSourceIds.includes(learnedId))
+        mapping.fallbackSourceIds.push(learnedId)
+      const fields = learnedExtractions.get(learning.documentType) ?? []
+      fields.push({
+        id: learnedId,
+        label: learning.label,
+        document: learning.documentType,
+        location: "",
+        requiredWhen: "",
+        instruction: `Look for an explicitly stated ${learning.label}. Staff previously verified this field in this document type. Return it only with current-document page evidence; never copy a prior value.`,
+        portalFieldIds: [learning.target],
+        ruleIds: [],
+      })
+      learnedExtractions.set(learning.documentType, fields)
+    }
     const localEvidencePages = new Map<
       string,
       Awaited<ReturnType<typeof localDocumentPages>>
@@ -807,8 +901,10 @@ export async function reviewUploads(
       )
       const allExtraction = [
         ...new Map(
-          documentPages
-            .flatMap((page) => page.content.fields)
+          [
+            ...documentPages.flatMap((page) => page.content.fields),
+            ...(learnedExtractions.get(documentType) ?? []),
+          ]
             .filter(
               (field) =>
                 mappedSourceIds.has(field.id) || ruleFieldIds.has(field.id)
@@ -899,7 +995,8 @@ export async function reviewUploads(
             .filter(
               (example) =>
                 example.country === identification.country.name &&
-                example.target === systemFieldId
+                example.target === systemFieldId &&
+                (!example.documentType || example.documentType === documentType)
             )
             .slice(0, 3)
             .map(({ before, after, reason }) => ({ before, after, reason })),

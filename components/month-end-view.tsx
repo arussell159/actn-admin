@@ -13,6 +13,7 @@ import {
   DownloadIcon,
   FileCheck2Icon,
   FileTextIcon,
+  HistoryIcon,
   ListTodoIcon,
   MessageSquareTextIcon,
   MoreHorizontalIcon,
@@ -27,7 +28,10 @@ import { SectionNavigation } from "@/components/section-navigation"
 import { PageFrame } from "@/components/page-frame"
 import { CountryTableFilters } from "@/components/country-table-filters"
 import { HeaderActionMenuTrigger } from "@/components/header-action-menu-trigger"
-import { MonthEndDashboardSkeleton } from "@/components/page-skeletons"
+import {
+  MonthEndDashboardSkeleton,
+  PreviousMonthEndsSkeleton,
+} from "@/components/page-skeletons"
 import { SiteHeader, SiteHeaderBackButton } from "@/components/site-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -951,7 +955,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     }
 
     if (!period && hasLoaded && !hasRecord && !loadError) {
-      router.replace("/month-end/new")
+      router.replace("/previous-month-ends")
     }
   }, [hasLoaded, hasRecord, loadError, period, recordStatus, router])
 
@@ -1453,7 +1457,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     setChecked(period ? updatedRecord.checked : {})
     setShowCloseMonthConfirm(false)
     if (!period) {
-      router.replace("/month-end/new")
+      router.replace("/previous-month-ends")
     }
     window.dispatchEvent(new Event("month-end:records-updated"))
   }
@@ -1775,7 +1779,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
   }
 
   const monthStatusAction = (
-    <div className="hidden shrink-0 items-center gap-2 md:flex">
+    <div className="flex shrink-0 items-center gap-2">
       <DropdownMenu
         onOpenChange={(open) => {
           if (!open) {
@@ -1788,6 +1792,11 @@ export function MonthEndView({ period }: { period?: string } = {}) {
           render={<HeaderActionMenuTrigger label="Month end actions" />}
         />
         <DropdownMenuContent align="end" className="min-w-56">
+          <DropdownMenuItem render={<AppLink href="/previous-month-ends" />}>
+            <HistoryIcon />
+            View previous months
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem
             disabled={!record || isClosed || isUploadingMasterSheet}
             onClick={openMasterSheetUpload}
@@ -1826,21 +1835,6 @@ export function MonthEndView({ period }: { period?: string } = {}) {
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-      <input
-        ref={masterUploadInputRef}
-        type="file"
-        accept=".csv,text/csv"
-        className="sr-only"
-        onChange={(event) => {
-          const file = event.target.files?.[0]
-
-          if (file) {
-            reuploadMasterSheet(file)
-          }
-
-          event.currentTarget.value = ""
-        }}
-      />
     </div>
   )
 
@@ -1874,11 +1868,9 @@ export function MonthEndView({ period }: { period?: string } = {}) {
 
   if (!period && hasLoaded && !record) {
     return (
-      <PageFrame header={<SiteHeader title="New Month End" />}>
+      <PageFrame header={<SiteHeader title="Month End" />}>
         <div className="grid gap-4 px-4 py-4 lg:px-6">
-          <Button className="w-fit" render={<AppLink href="/month-end/new" />}>
-            New Month End
-          </Button>
+          <PreviousMonthEndsSkeleton includeAction />
         </div>
       </PageFrame>
     )
@@ -1918,6 +1910,19 @@ export function MonthEndView({ period }: { period?: string } = {}) {
       header={
         <SiteHeader
           title={record ? formatPeriod(record.period) : "Month End"}
+          leadingContent={
+            shouldShowPreviousBackButton ? (
+              <Button
+                variant="outline"
+                className="w-[4.625rem]"
+                aria-label="Back to previous months"
+                render={<AppLink href="/previous-month-ends" />}
+              >
+                <ArrowLeftIcon />
+                Back
+              </Button>
+            ) : undefined
+          }
           mobileLeadingContent={
             shouldShowPreviousBackButton ? (
               <SiteHeaderBackButton
@@ -1927,6 +1932,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
             ) : undefined
           }
           actions={monthStatusAction}
+          mobileTrailingContent={monthStatusAction}
           bottomContent={
             <MonthEndSectionNavigation
               items={monthEndSectionItems}
@@ -1937,26 +1943,23 @@ export function MonthEndView({ period }: { period?: string } = {}) {
         />
       }
     >
+      <input
+        ref={masterUploadInputRef}
+        type="file"
+        accept=".csv,text/csv"
+        hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          if (file) reuploadMasterSheet(file)
+          event.currentTarget.value = ""
+        }}
+      />
       <div
         role="tabpanel"
         id="month-end-section"
         aria-labelledby={`month-end-section-${activeMonthEndSection}`}
         className="@container/month-end flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6"
       >
-        {shouldShowPreviousBackButton ? (
-          <section className="hidden flex-col gap-3 md:flex md:flex-row md:items-center md:justify-between">
-            <Button
-              variant="outline"
-              size="icon-sm"
-              className="w-fit"
-              aria-label="Back to previous months"
-              render={<AppLink href="/previous-month-ends" />}
-            >
-              <ArrowLeftIcon />
-            </Button>
-          </section>
-        ) : null}
-
         {masterUploadMessage ? (
           <p className="text-sm text-muted-foreground">{masterUploadMessage}</p>
         ) : null}

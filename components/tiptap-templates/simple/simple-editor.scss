@@ -109,6 +109,70 @@ $system-font-stack:
   padding: 3rem 3rem 30vh;
 }
 
+.simple-editor-content
+  .tiptap.ProseMirror.simple-editor
+  [data-knowledge-definers] {
+  width: fit-content;
+  min-width: 18rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin: 0.75rem 0 1.5rem;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  user-select: none;
+}
+
+.simple-editor-content
+  .tiptap.ProseMirror.simple-editor
+  [data-knowledge-definers]
+  table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.simple-editor-content
+  .tiptap.ProseMirror.simple-editor
+  [data-knowledge-definers]
+  th,
+.simple-editor-content
+  .tiptap.ProseMirror.simple-editor
+  [data-knowledge-definers]
+  td {
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 0.35rem 0.55rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.simple-editor-content
+  .tiptap.ProseMirror.simple-editor
+  [data-knowledge-definers]
+  th {
+  min-width: 6rem;
+  background: color-mix(in oklch, var(--muted) 65%, transparent);
+  color: var(--foreground);
+  font-weight: 500;
+}
+
+.simple-editor-content
+  .tiptap.ProseMirror.simple-editor
+  [data-knowledge-definers]
+  th {
+  border-right: 1px solid var(--border);
+}
+
+.simple-editor-content
+  .tiptap.ProseMirror.simple-editor
+  [data-knowledge-definers]
+  tr:last-child
+  > * {
+  border-bottom: 0;
+}
+
 @media screen and (min-width: 768px) {
   .simple-editor-content .tiptap.ProseMirror.simple-editor h1 {
     font-size: 40px;

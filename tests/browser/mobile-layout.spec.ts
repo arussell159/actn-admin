@@ -601,7 +601,7 @@ test("Notes controls and mobile menu links respond", async ({
   await page.getByRole("button", { name: "Done", exact: true }).tap()
   await page.getByRole("button", { name: "Close", exact: true }).tap()
   for (const [label, path] of [
-    ["Month End", "/previous-month-ends"],
+    ["Month End", "/month-end"],
     ["New Month End", "/month-end/new"],
     ["Accounting settings", "/template-builder"],
     ["Certificate settings", "/certificate-settings"],
@@ -624,8 +624,8 @@ test("major page controls respond to taps", async ({ page, isMobile }) => {
     await tab.tap()
     await expect(tab).toHaveAttribute("aria-selected", "true")
   }
-  await page.getByRole("button", { name: "Open profile menu" }).tap()
-  await expect(page.getByRole("menuitem", { name: "Logout" })).toBeVisible()
+  await page.getByRole("button", { name: "Month end actions" }).tap()
+  await expect(page.getByRole("menuitem", { name: "View previous months" })).toBeVisible()
   await page.keyboard.press("Escape")
   await page.goto("/pricing-upload")
   const chooser = page.waitForEvent("filechooser")
@@ -727,7 +727,7 @@ test("country tabs and dock navigation respond to mobile taps", async ({
   }
   for (const [label, path] of [
     ["Dashboard", "/dashboard"],
-    ["Month End", "/previous-month-ends"],
+    ["Month End", "/month-end"],
     ["Quote Tool", "/quote-tool"],
     ["Notebook", "/information"],
   ]) {

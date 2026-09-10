@@ -12,6 +12,7 @@ const {
 } = require("../lib/okf/seed.ts")
 const {
   certificateDocumentDownloadName,
+  certificateDocumentTypeRank,
   documentTypeAbbreviation,
   madagascarFieldGroups,
 } = require("../lib/madagascar-bsc.ts")
@@ -22,6 +23,11 @@ const {
   validatePublicationDependencies,
   evaluateReview,
 } = require("../lib/okf/engine.ts")
+const {
+  correctionLearningReason,
+  normalizedCorrectionTarget,
+  parseCorrectionLearning,
+} = require("../lib/okf/correction-learning.ts")
 const seed = () => ({ generation: 0, pages: createInitialPages() })
 const evidence = [
   {
@@ -89,6 +95,38 @@ test("certificate documents use classified download names", () => {
       "invoice.pdf"
     ),
     "CI_MAEU_123_456.pdf"
+  )
+})
+
+test("certificate documents follow the fixed optional document order", () => {
+  const documentTypes = [
+    "Certificate of Insurance",
+    "Export Declaration",
+    "Freight Invoice",
+    "Other",
+    "Bill of Lading",
+    "FDI",
+    "Commercial Invoice",
+    "DU",
+    "Certificate of Origin",
+  ]
+
+  assert.deepEqual(
+    documentTypes.toSorted(
+      (left, right) =>
+        certificateDocumentTypeRank(left) - certificateDocumentTypeRank(right)
+    ),
+    [
+      "Bill of Lading",
+      "Commercial Invoice",
+      "Freight Invoice",
+      "Export Declaration",
+      "DU",
+      "FDI",
+      "Certificate of Origin",
+      "Certificate of Insurance",
+      "Other",
+    ]
   )
 })
 
@@ -387,6 +425,25 @@ test("migration is additive, approval is atomic and corrections retain identity 
   assert.match(sql, /for update/)
   assert.match(sql, /before_pages,after_pages,proposer,approver/)
   assert.match(sql, /before_value,after_value,reason,actor/)
+})
+
+test("field corrections retain verified source evidence for bounded OKF learning", () => {
+  const learning = {
+    version: 1,
+    target: normalizedCorrectionTarget("invoiceValue:2"),
+    label: "Freight Value",
+    verified: true,
+    documentType: "Bill of Lading",
+    filename: "rated-bl.pdf",
+    page: 2,
+    supportingText: "Ocean freight USD 1,250.00",
+    matchedValue: "1,250.00",
+    confidence: 0.98,
+  }
+  const reason = correctionLearningReason("Madagascar", learning)
+  assert.deepEqual(parseCorrectionLearning(reason), learning)
+  assert.equal(learning.target, "invoiceValues")
+  assert.match(reason, /Bill of Lading/)
 })
 
 test("upload adapter persists exact published revisions and maps approved extraction only", async () => {

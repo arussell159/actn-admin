@@ -37,7 +37,7 @@ export const settingsPages = [
 export const appCommandPages = [
   {
     title: "Month End",
-    href: "/previous-month-ends",
+    href: "/month-end",
     section: "Accounting",
     keywords: ["month end", "history", "archive", "open", "closed"],
     icon: HistoryIcon,

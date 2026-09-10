@@ -95,9 +95,11 @@ function wikiSnapshot(nodes: InformationNode[]) {
 export function KnowledgeBaseAiManager({
   nodes,
   onApply,
+  draftPage,
 }: {
   nodes: InformationNode[]
   onApply: (nodes: InformationNode[], firstUpdatedId?: string) => void
+  draftPage?: { path: string; title: string; body: string }
 }) {
   const [open, setOpen] = React.useState(false)
   const [instruction, setInstruction] = React.useState("")
@@ -106,6 +108,13 @@ export function KnowledgeBaseAiManager({
   const [proposal, setProposal] = React.useState<KnowledgeProposal>()
   const [error, setError] = React.useState("")
   const [loading, setLoading] = React.useState(false)
+
+  function openManager() {
+    setError("")
+    setProposal(undefined)
+    setInstruction("")
+    setOpen(true)
+  }
 
   async function review() {
     setLoading(true)
@@ -116,6 +125,7 @@ export function KnowledgeBaseAiManager({
       form.set("instruction", instruction)
       form.set("sourceLabel", sourceLabel)
       form.set("wiki", wikiSnapshot(nodes))
+      if (draftPage) form.set("draftPage", JSON.stringify(draftPage))
       files.forEach((file) => form.append("files", file))
       const response = await fetch("/api/knowledge-base/chat", {
         method: "POST",
@@ -148,6 +158,7 @@ export function KnowledgeBaseAiManager({
     const timestamp = new Date().toISOString()
     const next = [...nodes]
     let firstUpdatedId: string | undefined
+    let editedPageId: string | undefined
 
     for (const update of proposal.updates) {
       const globalPage = [
@@ -217,6 +228,12 @@ export function KnowledgeBaseAiManager({
           updatedAt: timestamp,
         }
         firstUpdatedId ??= next[existingIndex].id
+        if (
+          draftPage &&
+          update.title.trim().toLocaleLowerCase() ===
+            draftPage.title.trim().toLocaleLowerCase()
+        )
+          editedPageId = next[existingIndex].id
       } else {
         const page: InformationNode = {
           id: createInformationId(update.title),
@@ -229,10 +246,16 @@ export function KnowledgeBaseAiManager({
         }
         next.push(page)
         firstUpdatedId ??= page.id
+        if (
+          draftPage &&
+          update.title.trim().toLocaleLowerCase() ===
+            draftPage.title.trim().toLocaleLowerCase()
+        )
+          editedPageId = page.id
       }
     }
 
-    onApply(next, firstUpdatedId)
+    onApply(next, editedPageId ?? firstUpdatedId)
     setOpen(false)
     setProposal(undefined)
     setInstruction("")
@@ -242,18 +265,22 @@ export function KnowledgeBaseAiManager({
 
   return (
     <>
-      <Button size="sm" className="gap-2" onClick={() => setOpen(true)}>
-        <SparklesIcon />
-        <span className="hidden lg:inline">AI Update</span>
+      <Button size="sm" className="gap-2" onClick={openManager}>
+        {draftPage ? <CheckIcon /> : <SparklesIcon />}
+        <span>{draftPage ? "Finish editing" : "AI Update"}</span>
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Update knowledge with AI</DialogTitle>
+            <DialogTitle>
+              {draftPage
+                ? "Review page edits with AI"
+                : "Update knowledge with AI"}
+            </DialogTitle>
             <DialogDescription>
-              Add a source, correction or procedure change. AI checks the whole
-              wiki and proposes every affected page; nothing changes until you
-              approve it.
+              {draftPage
+                ? "Your typing is an unreviewed draft. AI reconciles it with the structured OKF and proposes every affected page; nothing changes until you approve it."
+                : "Add a source, correction or procedure change. AI checks the whole wiki and proposes every affected page; nothing changes until you approve it."}
             </DialogDescription>
           </DialogHeader>
 
@@ -267,7 +294,11 @@ export function KnowledgeBaseAiManager({
               <Textarea
                 value={instruction}
                 onChange={(event) => setInstruction(event.target.value)}
-                placeholder="Paste new requirements, explain a correction, or tell AI what changed…"
+                placeholder={
+                  draftPage
+                    ? "Optional: explain what you intended to change…"
+                    : "Paste new requirements, explain a correction, or tell AI what changed…"
+                }
                 className="min-h-36 resize-y"
               />
               <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed p-3 text-sm transition-colors hover:bg-muted/50">
@@ -342,14 +373,23 @@ export function KnowledgeBaseAiManager({
                 >
                   Back
                 </Button>
-                <Button onClick={applyProposal}>
-                  Apply {proposal.updates.length} updates
-                </Button>
+                {proposal.updates.length ? (
+                  <Button onClick={applyProposal}>
+                    Apply {proposal.updates.length} updates
+                  </Button>
+                ) : (
+                  <Button onClick={() => setOpen(false)}>
+                    Return to draft
+                  </Button>
+                )}
               </>
             ) : (
               <Button
                 onClick={review}
-                disabled={loading || (!instruction.trim() && !files.length)}
+                disabled={
+                  loading ||
+                  (!draftPage && !instruction.trim() && !files.length)
+                }
               >
                 {loading ? (
                   <LoaderCircleIcon className="animate-spin" />

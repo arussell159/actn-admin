@@ -62,7 +62,7 @@ const allModuleItems = [
   },
   {
     label: "Month End",
-    href: "/previous-month-ends",
+    href: "/month-end",
     icon: HistoryIcon,
     match: ["/previous-month-ends", "/month-end", "/month-end/country"],
   },
@@ -114,7 +114,7 @@ const allModuleItems = [
 
 const defaultDockHrefs = [
   "/dashboard",
-  "/previous-month-ends",
+  "/month-end",
   "/quote-tool",
   "/information",
 ]
@@ -133,14 +133,16 @@ function isActivePath(pathname: string, matches: string[]) {
 
 function normalizeDefaultDockHrefs(hrefs: string[]) {
   const remainingHrefs = hrefs.filter(
-    (href) => href !== "/dashboard" && href !== "/previous-month-ends"
+    (href) =>
+      href !== "/dashboard" &&
+      href !== "/month-end" &&
+      href !== "/previous-month-ends"
   )
 
-  return [
-    "/dashboard",
-    "/previous-month-ends",
-    ...new Set(remainingHrefs),
-  ].slice(0, maxDockItems)
+  return ["/dashboard", "/month-end", ...new Set(remainingHrefs)].slice(
+    0,
+    maxDockItems
+  )
 }
 
 export function MobileTabBar() {
@@ -443,7 +445,7 @@ export function MobileTabBar() {
                 <div className="max-h-[62svh] overflow-auto px-3">
                   {moreItems.map((item, index) => {
                     const Icon = item.icon
-                    const isActive = pathname.startsWith(item.href)
+                    const isActive = isActivePath(pathname, item.match)
 
                     return (
                       <React.Fragment key={item.href}>

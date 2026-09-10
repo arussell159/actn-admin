@@ -18,11 +18,25 @@ import {
   validatePublicationDependencies,
 } from "@/lib/okf/engine"
 import { getMadagascarDropdownOptions } from "@/lib/madagascar-bsc-server"
+import {
+  parseCorrectionLearning,
+  type VisibleCorrectionLearning,
+} from "@/lib/okf/correction-learning"
 
 export async function GET() {
   try {
     const session = await okfSession()
-    const [state, drafts, history, options, intake] = await Promise.all([
+    const [
+      state,
+      drafts,
+      history,
+      options,
+      intake,
+      corrections,
+      requests,
+      layouts,
+      learningIntake,
+    ] = await Promise.all([
       readKnowledge(session.client),
       session.client
         .from("okf_drafts")
@@ -39,10 +53,70 @@ export async function GET() {
         .select("*")
         .order("created_at", { ascending: false })
         .limit(200),
+      session.client
+        .from("okf_corrections")
+        .select("request_id,reason,created_at")
+        .order("created_at", { ascending: false })
+        .limit(1000),
+      session.client
+        .from("madagascar_bsc_requests")
+        .select("id,country")
+        .limit(1000),
+        session.client
+          .from("okf_certificate_layouts")
+          .select("layout")
+          .limit(300),
+        session.client
+          .from("okf_intake")
+          .select("result,created_at")
+          .like("page_id", "correction-learning:%")
+          .order("created_at", { ascending: false })
+          .limit(1000),
     ])
     databaseError(drafts.error)
     databaseError(history.error)
     databaseError(intake.error)
+    databaseError(corrections.error)
+    databaseError(requests.error)
+    databaseError(layouts.error)
+    databaseError(learningIntake.error)
+    const countries = new Map(
+      (requests.data ?? []).map((row) => [String(row.id), String(row.country)])
+    )
+    const learnedKeys = new Set<string>()
+    const sourceLearnings: VisibleCorrectionLearning[] = []
+    for (const entry of learningIntake.data ?? []) {
+      const result = entry.result as
+        | {
+            country?: unknown
+            learning?: VisibleCorrectionLearning
+          }
+        | undefined
+      const learning = result?.learning
+      const country = typeof result?.country === "string" ? result.country : ""
+      if (learning?.version !== 1 || !learning.verified || !country) continue
+      const key = `${country}:${learning.target}:${learning.documentType}`
+      if (learnedKeys.has(key)) continue
+      learnedKeys.add(key)
+      sourceLearnings.push({
+        ...learning,
+        country,
+        createdAt: String(entry.created_at),
+      })
+    }
+    for (const correction of corrections.data ?? []) {
+      const learning = parseCorrectionLearning(correction.reason)
+      const country = countries.get(String(correction.request_id)) ?? ""
+      if (!learning?.verified || !country) continue
+      const key = `${country}:${learning.target}:${learning.documentType}`
+      if (learnedKeys.has(key)) continue
+      learnedKeys.add(key)
+      sourceLearnings.push({
+        ...learning,
+        country,
+        createdAt: String(correction.created_at),
+      })
+    }
     return Response.json(
       {
         ok: true,
@@ -50,6 +124,13 @@ export async function GET() {
         drafts: drafts.data,
         history: history.data,
         intake: intake.data,
+        sourceLearnings,
+        layoutCountries: (layouts.data ?? []).flatMap((row) => {
+          const country = (row.layout as { country?: unknown } | null)?.country
+          return typeof country === "string" && country.trim()
+            ? [country.trim()]
+            : []
+        }),
         options,
         userId: session.user.id,
         canEdit: session.canEdit,

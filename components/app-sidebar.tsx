@@ -1,10 +1,10 @@
 "use client"
 
 import * as React from "react"
-import Image from "next/image"
 import { usePathname } from "next/navigation"
 
 import { AppLink } from "@/components/app-link"
+import { AppLogo } from "@/components/app-logo"
 import { openAppCommandMenuEvent } from "@/lib/app-command-menu"
 import { NavUser } from "@/components/nav-user"
 import {
@@ -75,7 +75,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     },
     {
       name: "Month End",
-      url: "/previous-month-ends",
+      url: "/month-end",
       icon: <HistoryIcon />,
     },
   ]
@@ -175,16 +175,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 className="data-[slot=sidebar-menu-button]:p-1.5!"
                 render={<AppLink href="/month-end" />}
               >
-                <span className="grid size-7 shrink-0 place-items-center rounded-md bg-background">
-                  <Image
-                    src="/actn-admin-icon.png"
-                    alt=""
-                    width={28}
-                    height={28}
-                    className="size-7 object-contain"
-                    priority
-                  />
-                </span>
+                <AppLogo priority />
                 <span className="text-base font-semibold">ACTN Admin</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
