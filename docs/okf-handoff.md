@@ -22,7 +22,25 @@ Production and other hostnames retain the existing staff authentication and role
 
 Apply supabase-okf.sql once through the application's Supabase SQL editor with administrator access. The transaction adds OKF tables, publication/correction functions, private evidence storage and initial unpublished records. It preserves existing records and supplies the request table/storage if missing. Existing cached requests absent from storage remain available and are recovered when storage is available.
 
-The connected project's okf_state and madagascar_bsc_requests tables were absent during read-only verification. No administrator connection was available, so the live migration was not applied. Production activation remains outstanding; local persistence does not activate the production backend.
+The connected project's `okf_state`, `madagascar_bsc_requests`, and
+`okf_certificate_layouts` tables were still absent during read-only verification
+on 2026-09-11 (`PGRST205`). No administrator connection was available, so the
+live migration was not applied. Production activation remains outstanding;
+local persistence does not activate the production backend.
+
+Apply the production SQL in this order from the connected Supabase project's SQL
+editor as a database owner:
+
+1. `supabase-okf.sql`
+2. `supabase-certificate-layouts.sql`
+
+The first migration creates the shared certificate request/review tables, keeps
+the private document bucket restricted to authenticated staff, and adds
+`madagascar_bsc_requests` to Supabase Realtime. The second creates the shared,
+revisioned Certificate Settings catalogue. Both are additive and preserve
+existing rows. After applying them, deploy the application with
+`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and
+`OPENAI_API_KEY` configured in the hosting environment.
 
 ## Uploads and certificate records
 

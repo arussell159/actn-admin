@@ -195,6 +195,7 @@ const documentTypeOptions = [
   "Bill of Lading",
   "Commercial Invoice",
   "Freight Invoice",
+  "DU (Documento Unico)",
   "Draft",
   "Invoice",
   "Validation",

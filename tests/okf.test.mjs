@@ -80,6 +80,7 @@ const publish = (state) => ({
 test("certificate documents use classified download names", () => {
   assert.equal(documentTypeAbbreviation("Bill of Lading"), "BL")
   assert.equal(documentTypeAbbreviation("Certificate of Origin"), "COO")
+  assert.equal(documentTypeAbbreviation("DU (Documento Unico)"), "DU")
   assert.equal(
     certificateDocumentDownloadName(
       "Bill of Lading",
@@ -132,7 +133,7 @@ test("certificate documents follow the fixed optional document order", () => {
 
 test("initial pages use fixed templates, no invented approval or effective dates, and preserve the complete form catalog", () => {
   const state = seed()
-  assert.equal(state.pages.length, 17)
+  assert.equal(state.pages.length, 18)
   assert.equal(publishedPages(state).length, 0)
   for (const p of state.pages) {
     assert.equal(p.version, null)
@@ -153,6 +154,7 @@ test("initial pages use fixed templates, no invented approval or effective dates
   )
   const billFields = state.pages.find((p) => p.title === "Bill of Lading")
     .content.fields
+  assert.ok(state.pages.some((p) => p.title === "DU (Documento Unico)"))
   assert.ok(billFields.some((f) => f.portalFieldIds.includes("exporterName")))
   assert.ok(billFields.some((f) => f.portalFieldIds.includes("importerName")))
   assert.ok(
@@ -173,7 +175,7 @@ test("initial pages use fixed templates, no invented approval or effective dates
         level: "minor",
       }))
     ).length,
-    17
+    18
   )
 })
 test("commercial invoice guidance coordinates Incoterm, place and FOB value derivation", () => {

@@ -9,13 +9,39 @@ create table if not exists public.madagascar_bsc_requests (
   analysis jsonb not null default '{}', created_at timestamptz not null default now(), updated_at timestamptz not null default now()
 );
 alter table public.madagascar_bsc_requests add column if not exists country text not null default '';
+create index if not exists madagascar_bsc_requests_created_idx on public.madagascar_bsc_requests(created_at desc);
+create index if not exists madagascar_bsc_requests_country_idx on public.madagascar_bsc_requests(country);
 alter table public.madagascar_bsc_requests enable row level security;
+drop policy if exists okf_authenticated_requests on public.madagascar_bsc_requests;
+drop policy if exists "Allow authenticated Madagascar request access" on public.madagascar_bsc_requests;
+drop policy if exists "Allow local Madagascar request access" on public.madagascar_bsc_requests;
 create policy okf_authenticated_requests on public.madagascar_bsc_requests for all to authenticated using (true) with check (true);
 grant select,insert,update,delete on public.madagascar_bsc_requests to authenticated;
+revoke all on public.madagascar_bsc_requests from anon;
 insert into storage.buckets(id,name,public) values('madagascar-bsc','madagascar-bsc',false) on conflict(id) do nothing;
+update storage.buckets set public=false where id='madagascar-bsc';
+drop policy if exists okf_request_documents_read on storage.objects;
+drop policy if exists okf_request_documents_insert on storage.objects;
+drop policy if exists okf_request_documents_update on storage.objects;
+drop policy if exists okf_request_documents_delete on storage.objects;
+drop policy if exists "Allow authenticated Madagascar document reads" on storage.objects;
+drop policy if exists "Allow authenticated Madagascar document writes" on storage.objects;
+drop policy if exists "Allow local Madagascar document access" on storage.objects;
 create policy okf_request_documents_read on storage.objects for select to authenticated using(bucket_id='madagascar-bsc');
 create policy okf_request_documents_insert on storage.objects for insert to authenticated with check(bucket_id='madagascar-bsc');
 create policy okf_request_documents_update on storage.objects for update to authenticated using(bucket_id='madagascar-bsc') with check(bucket_id='madagascar-bsc');
+create policy okf_request_documents_delete on storage.objects for delete to authenticated using(bucket_id='madagascar-bsc');
+do $$ begin
+  if exists(select 1 from pg_publication where pubname='supabase_realtime')
+    and not exists(
+      select 1 from pg_publication_tables
+      where pubname='supabase_realtime'
+        and schemaname='public'
+        and tablename='madagascar_bsc_requests'
+    ) then
+    alter publication supabase_realtime add table public.madagascar_bsc_requests;
+  end if;
+end $$;
 create table if not exists public.okf_state (
   id boolean primary key default true check (id), generation integer not null default 0,
   pages jsonb not null check (jsonb_typeof(pages) = 'array')

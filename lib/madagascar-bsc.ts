@@ -5,6 +5,7 @@ export type MadagascarDocumentType =
   | "Export/Customs Declaration"
   | "Export Declaration"
   | "Customs Declaration"
+  | "DU (Documento Unico)"
   | "Certificate of Origin"
   | "Freight Invoice"
   | "Unknown"
@@ -16,6 +17,7 @@ const documentTypeAbbreviations: Record<string, string> = {
   "export declaration": "ED",
   "export/customs declaration": "ED",
   "customs declaration": "ED",
+  "du (documento unico)": "DU",
   "packing list": "PL",
   fdi: "FDI",
   "certificate of origin": "COO",
@@ -32,6 +34,7 @@ const certificateDocumentTypeOrder: Record<string, number> = {
   "export declaration": 4,
   "export/customs declaration": 4,
   "customs declaration": 4,
+  "du (documento unico)": 5,
   du: 5,
   fdi: 6,
   "certificate of origin": 7,

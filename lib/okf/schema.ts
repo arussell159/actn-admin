@@ -25,6 +25,7 @@ export const documentNames = [
   "Export/Customs Declaration",
   "Export Declaration",
   "Customs Declaration",
+  "DU (Documento Unico)",
   "Certificate of Origin",
 ] as const
 const id = z.string().min(1).max(160)

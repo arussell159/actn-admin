@@ -73,8 +73,9 @@ const documentPriority = new Map([
   ["Export/Customs Declaration", 3],
   ["Export Declaration", 3],
   ["Customs Declaration", 3],
-  ["Certificate of Origin", 4],
-  ["Freight Invoice", 5],
+  ["DU (Documento Unico)", 4],
+  ["Certificate of Origin", 5],
+  ["Freight Invoice", 6],
 ])
 const priorityPortalFields: Record<string, string[]> = {
   "Bill of Lading": [
@@ -878,6 +879,7 @@ export async function reviewUploads(
       "Packing List",
       "Export Declaration",
       "Customs Declaration",
+      "DU (Documento Unico)",
       "Certificate of Origin",
     ].sort(
       (left, right) =>

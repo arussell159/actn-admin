@@ -26,6 +26,7 @@ const providerDocumentTypes = [
   "Packing List",
   "Export Declaration",
   "Customs Declaration",
+  "DU (Documento Unico)",
   "Certificate of Origin",
   "Other or Unknown",
 ] as const

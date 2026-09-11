@@ -27,9 +27,20 @@ create policy "Allow authenticated Madagascar request access"
 on public.madagascar_bsc_requests for all to authenticated
 using (true) with check (true);
 
-create policy "Allow local Madagascar request access"
-on public.madagascar_bsc_requests for all to anon
-using (true) with check (true);
+grant select, insert, update, delete on public.madagascar_bsc_requests to authenticated;
+revoke all on public.madagascar_bsc_requests from anon;
+
+do $$ begin
+  if exists(select 1 from pg_publication where pubname='supabase_realtime')
+    and not exists(
+      select 1 from pg_publication_tables
+      where pubname='supabase_realtime'
+        and schemaname='public'
+        and tablename='madagascar_bsc_requests'
+    ) then
+    alter publication supabase_realtime add table public.madagascar_bsc_requests;
+  end if;
+end $$;
 
 create table if not exists public.madagascar_bsc_rules (
   id text primary key,
@@ -51,9 +62,8 @@ create policy "Allow authenticated Madagascar rule access"
 on public.madagascar_bsc_rules for all to authenticated
 using (true) with check (true);
 
-create policy "Allow local Madagascar rule access"
-on public.madagascar_bsc_rules for all to anon
-using (true) with check (true);
+grant select, insert, update, delete on public.madagascar_bsc_rules to authenticated;
+revoke all on public.madagascar_bsc_rules from anon;
 
 insert into public.madagascar_bsc_rules
   (id, document_type, title, instruction, enabled, source, created_at, updated_at)
@@ -71,6 +81,8 @@ insert into storage.buckets (id, name, public)
 values ('madagascar-bsc', 'madagascar-bsc', false)
 on conflict (id) do nothing;
 
+update storage.buckets set public = false where id = 'madagascar-bsc';
+
 drop policy if exists "Allow authenticated Madagascar document reads" on storage.objects;
 drop policy if exists "Allow authenticated Madagascar document writes" on storage.objects;
 drop policy if exists "Allow local Madagascar document access" on storage.objects;
@@ -81,11 +93,6 @@ using (bucket_id = 'madagascar-bsc');
 
 create policy "Allow authenticated Madagascar document writes"
 on storage.objects for all to authenticated
-using (bucket_id = 'madagascar-bsc')
-with check (bucket_id = 'madagascar-bsc');
-
-create policy "Allow local Madagascar document access"
-on storage.objects for all to anon
 using (bucket_id = 'madagascar-bsc')
 with check (bucket_id = 'madagascar-bsc');
 

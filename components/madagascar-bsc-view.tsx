@@ -98,8 +98,8 @@ import {
   deleteMadagascarRequest,
   downloadMadagascarDocument,
   listMadagascarRequests,
-  loadCachedMadagascarRequests,
   saveMadagascarRequest,
+  subscribeToMadagascarRequestChanges,
 } from "@/lib/madagascar-bsc-db"
 import {
   createSeedCtnKnowledgeRecords,
@@ -1383,9 +1383,9 @@ function NewRequest() {
           </span>
           <span className="max-w-xl text-sm text-muted-foreground">
             Bill of Lading, Commercial Invoice, Packing List, Export/Customs
-            Declaration, and Freight Invoice. Certificate fields and document
-            sources come from Certificate Settings; country requirements come
-            from published knowledge. PDF or image.
+            Declaration, DU (Documento Unico), and Freight Invoice. Certificate
+            fields and document sources come from Certificate Settings; country
+            requirements come from published knowledge. PDF or image.
           </span>
           <span className="text-sm text-muted-foreground">
             {files.length
@@ -1438,8 +1438,8 @@ function Requests({
   const router = useRouter()
   const searchParams = useSearchParams()
   const selectedId = searchParams.get("id") ?? ""
-  const [requests, setRequests] = React.useState(loadCachedMadagascarRequests)
-  const [isLoading, setIsLoading] = React.useState(!requests.length)
+  const [requests, setRequests] = React.useState<MadagascarRequest[]>([])
+  const [isLoading, setIsLoading] = React.useState(true)
   const [searchQuery, setSearchQuery] = React.useState("")
   const [selectedFilter, setSelectedFilter] = React.useState("all")
   const [confirmDeleteId, setConfirmDeleteId] = React.useState("")
@@ -1447,14 +1447,41 @@ function Requests({
 
   React.useEffect(() => {
     let mounted = true
-    listMadagascarRequests().then((next) => {
-      if (mounted) {
-        setRequests(next)
-        setIsLoading(false)
+    let refreshing = false
+    let refreshQueued = false
+    const refresh = async () => {
+      if (refreshing) {
+        refreshQueued = true
+        return
       }
-    })
+      refreshing = true
+      try {
+        const next = await listMadagascarRequests()
+        if (mounted) setRequests(next)
+      } finally {
+        refreshing = false
+        if (mounted) setIsLoading(false)
+        if (mounted && refreshQueued) {
+          refreshQueued = false
+          void refresh()
+        }
+      }
+    }
+    const requestChanged = () => void refresh()
+    const unsubscribe = subscribeToMadagascarRequestChanges(requestChanged)
+    const visibleRefresh = () => {
+      if (document.visibilityState === "visible") void refresh()
+    }
+    window.addEventListener("focus", requestChanged)
+    document.addEventListener("visibilitychange", visibleRefresh)
+    const interval = window.setInterval(visibleRefresh, 30_000)
+    void refresh()
     return () => {
       mounted = false
+      unsubscribe()
+      clearInterval(interval)
+      window.removeEventListener("focus", requestChanged)
+      document.removeEventListener("visibilitychange", visibleRefresh)
     }
   }, [])
 
@@ -1463,9 +1490,13 @@ function Requests({
   const selectedDraftJob = selectedId
     ? getDraftCertificateJob(selectedId)
     : undefined
+  const persistedSelected = requests.find(
+    (request) => request.id === selectedId
+  )
   const selected =
-    selectedDraftJob?.request ??
-    requests.find((request) => request.id === selectedId)
+    selectedDraftJob?.isAnalyzing || selectedDraftJob?.error
+      ? selectedDraftJob.request
+      : persistedSelected ?? selectedDraftJob?.request
 
   React.useEffect(() => {
     onSelectedRequestChange?.(selected ?? null)

@@ -19,6 +19,7 @@ const requestTable = "madagascar_bsc_requests"
 const ruleTable = "madagascar_bsc_rules"
 const storageBucket = "madagascar-bsc"
 const requestCacheKey = "actn-madagascar-bsc-requests-v1"
+const requestChangedEvent = "actn-madagascar-bsc-requests-changed"
 const ruleCacheKey = "actn-madagascar-bsc-rules-v1"
 const documentDatabaseName = "actn-madagascar-bsc-documents"
 const documentStoreName = "documents"
@@ -133,6 +134,40 @@ function cacheRequests(requests: MadagascarRequest[]) {
   writeBrowserStorage("localStorage", requestCacheKey, JSON.stringify(requests))
 }
 
+function notifyRequestChange() {
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new Event(requestChangedEvent))
+}
+
+export function subscribeToMadagascarRequestChanges(
+  listener: () => void
+) {
+  if (typeof window === "undefined") return () => undefined
+
+  window.addEventListener(requestChangedEvent, listener)
+  if (localDevelopment())
+    return () => window.removeEventListener(requestChangedEvent, listener)
+
+  const client = createClient()
+  const channel = client
+    .channel("shared-certificate-requests")
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: requestTable,
+      },
+      listener
+    )
+    .subscribe()
+
+  return () => {
+    window.removeEventListener(requestChangedEvent, listener)
+    void client.removeChannel(channel)
+  }
+}
+
 function cacheRules(rules: MadagascarRule[]) {
   writeBrowserStorage("localStorage", ruleCacheKey, JSON.stringify(rules))
 }
@@ -239,9 +274,11 @@ export async function saveMadagascarRequest(
       saved,
       ...loadCachedMadagascarRequests().filter((r) => r.id !== request.id),
     ])
+    notifyRequestChange()
     return saved
   }
   const client = createClient()
+  const uploadErrors: string[] = []
   const documents = await Promise.all(
     request.documents.map(async (document, index) => {
       const file = files[index]
@@ -253,9 +290,17 @@ export async function saveMadagascarRequest(
         .from(storageBucket)
         .upload(storagePath, file, { upsert: true, contentType: file.type })
 
-      return error ? document : { ...document, storagePath }
+      if (error) {
+        uploadErrors.push(`${file.name}: ${error.message}`)
+        return document
+      }
+      return { ...document, storagePath }
     })
   )
+  if (uploadErrors.length)
+    throw new Error(
+      `The request was not saved because document storage failed. ${uploadErrors.join("; ")}`
+    )
   const savedRequest = { ...request, documents }
   const cached = [
     savedRequest,
@@ -275,11 +320,7 @@ export async function saveMadagascarRequest(
   })
 
   if (error) throw error
-  if (files.some((file, index) => file && !documents[index]?.storagePath))
-    throw new Error(
-      "The request is saved, but some documents could not be stored in the backend. Their local copies are preserved."
-    )
-
+  notifyRequestChange()
   return savedRequest
 }
 
@@ -293,6 +334,7 @@ export async function deleteMadagascarRequest(id: string) {
       { method: "DELETE" }
     )
     if (!response.ok) throw Error("Could not delete local request.")
+    notifyRequestChange()
     return
   }
   const { error } = await createClient()
@@ -300,6 +342,7 @@ export async function deleteMadagascarRequest(id: string) {
     .delete()
     .eq("id", id)
   if (error && !/does not exist|schema cache/i.test(error.message)) throw error
+  notifyRequestChange()
 }
 
 export async function downloadMadagascarDocument(
