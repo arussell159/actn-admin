@@ -241,7 +241,7 @@ export function CertificateFieldControl({
           ) : isChooser ? (
             <div className="flex min-w-0 items-center gap-1">
               <Select
-                value={draftValue || undefined}
+                value={draftValue || null}
                 onValueChange={(nextValue) => {
                   const selectedValue = nextValue ?? ""
                   setDraftValue(selectedValue)

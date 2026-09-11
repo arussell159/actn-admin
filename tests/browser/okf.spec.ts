@@ -118,6 +118,24 @@ test("new ECTN streams the Certificate Settings layout immediately after the BL 
                     ),
                   20
                 )
+                setTimeout(() => {
+                  controller.enqueue(
+                    encoder.encode(
+                      JSON.stringify({
+                        type: "field",
+                        fieldKey: "shipmentMethod",
+                        analysis: {
+                          ...streamAnalysis,
+                          fields: streamAnalysis.fields.map((field) =>
+                            field.key === "shipmentMethod"
+                              ? { ...field, value: "Sea", status: "extracted" }
+                              : field
+                          ),
+                        },
+                      }) + "\n"
+                    )
+                  )
+                }, 1_200)
                 setTimeout(() => controller.close(), 10_000)
               },
             }),
@@ -158,6 +176,9 @@ test("new ECTN streams the Certificate Settings layout immediately after the BL 
   await expect(
     page.locator('[data-layout-field="exporterName"] [data-slot="skeleton"]')
   ).toHaveCount(0)
+  await expect(
+    page.getByRole("combobox", { name: "Shipment Method", exact: true })
+  ).toContainText("Sea")
   await page.screenshot({
     path: `node_modules/.cache/ectn-field-glow-${info.project.name}.png`,
   })
