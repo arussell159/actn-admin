@@ -57,7 +57,7 @@ function copyText(value: string) {
 export function AiTextShimmer() {
   return (
     <BorderBeam
-      active
+      active={false}
       size="md"
       colorVariant="colorful"
       theme="light"
@@ -66,7 +66,7 @@ export function AiTextShimmer() {
       brightness={1.55}
       saturation={1.5}
       staticColors
-      className="ai-field-loading max-w-4xl rounded-lg"
+      className="max-w-4xl rounded-lg"
     >
       <div
         className="min-h-9 rounded-lg bg-background px-3 py-2 text-sm text-muted-foreground"
@@ -191,7 +191,7 @@ export function CertificateFieldControl({
     <div className="grid min-w-0 gap-1.5">
       <span className="text-[13px] font-semibold text-foreground">{label}</span>
       <BorderBeam
-        active={isLoading}
+        active={false}
         size="md"
         colorVariant="colorful"
         theme="light"
@@ -202,7 +202,7 @@ export function CertificateFieldControl({
         staticColors
         className={cn(
           "w-full rounded-lg",
-          isLoading && "ai-field-loading pointer-events-none"
+          isLoading && "pointer-events-none"
         )}
         aria-busy={isLoading || undefined}
       >

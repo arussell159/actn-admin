@@ -849,6 +849,7 @@ function AnalysisView({
           {savedLayout ? (
             <CertificateForm
               layout={savedLayout.layout}
+              isLoading={isProgressivelyLoading}
               renderField={renderField}
               groupAction={(group) =>
                 group.kind === "invoice-items" &&
