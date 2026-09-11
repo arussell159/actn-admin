@@ -37,6 +37,7 @@ export function SiteHeaderBackButton({
       className={siteHeaderGlassButtonClassName}
       data-site-header-back=""
       aria-label={label}
+      nativeButton={href ? false : undefined}
       render={href ? <AppLink href={href} /> : undefined}
       onClick={onClick}
     >
@@ -129,7 +130,9 @@ export function SiteHeader({
               />
             </div>
           ) : null}
-          <Heading className="min-w-0 truncate text-base font-medium">{heading}</Heading>
+          <Heading className="min-w-0 truncate text-base font-medium">
+            {heading}
+          </Heading>
           {actions ? (
             <div className="flex shrink-0 items-center gap-2">{actions}</div>
           ) : null}

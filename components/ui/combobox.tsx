@@ -51,6 +51,7 @@ function ComboboxTrigger({
   return (
     <ComboboxPrimitive.Trigger
       data-slot="combobox-trigger"
+      nativeButton={false}
       render={<Button variant="outline" />}
       className={cn(
         "w-full justify-between font-normal aria-expanded:bg-muted",

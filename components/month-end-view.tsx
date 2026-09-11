@@ -2740,6 +2740,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                 variant="outline"
                 className="w-[4.625rem]"
                 aria-label="Back to previous months"
+                nativeButton={false}
                 render={<AppLink href="/previous-month-ends" />}
               >
                 <ArrowLeftIcon />
