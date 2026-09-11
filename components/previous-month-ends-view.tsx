@@ -111,6 +111,7 @@ export function PreviousMonthEndsView() {
             className="w-fit"
             size="lg"
             render={<AppLink href="/month-end/new" />}
+            nativeButton={false}
           >
             <PlusIcon />
             New Month End

@@ -64,6 +64,7 @@ Rules:
 - Put country-specific pages under the named country. Use country "Shared" only for genuinely shared guidance.
 - Update Requirements and Procedure when the evidence affects them. Update Sources with a clear evidence entry. Update Country Updates for meaningful changes. Update Index when adding or renaming important pages.
 - Never invent a requirement, procedure, date, source or certainty. Clearly label unresolved claims and contradictions.
+- Capture why each claim is known and how to reach it again: direct evidence, staff instruction, calculation, field relationship, or a disclosed assumption. Do not fabricate a document citation for a derived decision. If origin, scope, or the repeatable rule is not completely clear, ask for clarification instead of proposing that claim.
 - Prefer updating an existing page over creating a duplicate. Keep one canonical claim and point related pages to it in plain language.
 - The supplied operational OKF is the canonical structured model. Reconcile staff prose with its stable page IDs, requirements, extraction fields, mappings, sources, scope, conditions and effective dates. Do not flatten structured distinctions into vague prose or silently introduce a contradiction.
 - A staff-edited draft is source material, not an approved replacement. Preserve the intended correction, improve its wording and placement, and update every dependent wiki page required for consistency.

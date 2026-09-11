@@ -1,9 +1,6 @@
 import { createPublicClient } from "@/lib/public-client"
+import { readAllRows, deleteRowsById } from "@/lib/database-records"
 import { assertSupabaseConfig } from "@/lib/supabase-env"
-import {
-  readJsonBrowserStorage,
-  writeBrowserStorage,
-} from "@/lib/browser-storage"
 import {
   mergeReportValues,
   normalizeCountryReportReference,
@@ -42,25 +39,11 @@ type MonthEndCountryReportRecordRow = {
 }
 
 const tableName = "month_end_country_report_records"
-const localStorageKey = "actn-month-end-country-report-records-v1"
 export const antaserInvoiceParserKey = "antaser-invoice-v1"
 
 function getSupabaseClient() {
   assertSupabaseConfig()
   return createPublicClient()
-}
-
-function isLocalhostBrowser() {
-  if (typeof window === "undefined") {
-    return false
-  }
-
-  return (
-    window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1" ||
-    window.location.hostname === "[::1]" ||
-    window.location.hostname.endsWith(".localhost")
-  )
 }
 
 function toRecord(
@@ -108,101 +91,6 @@ function toRow(
     transaction_date: record.transactionDate ?? "",
     selling_date: record.sellingDate ?? "",
   }
-}
-
-function withoutOptionalCountryReportColumns(
-  row: MonthEndCountryReportRecordRow
-) {
-  const rest = { ...row }
-
-  delete rest.status
-  delete rest.transaction_date
-  delete rest.selling_date
-  delete rest.secondary_amount
-
-  return rest
-}
-
-function isMissingOptionalCountryReportColumnError(error: unknown) {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    "message" in error &&
-    typeof error.message === "string" &&
-    (error.code === "42703" || error.code === "PGRST204") &&
-    (error.message.includes("transaction_date") ||
-      error.message.includes("selling_date") ||
-      error.message.includes("status") ||
-      error.message.includes("secondary_amount"))
-  )
-}
-
-function getLocalRecords() {
-  if (typeof window === "undefined") {
-    return []
-  }
-
-  return readJsonBrowserStorage({
-    kind: "localStorage",
-    key: localStorageKey,
-    fallback: [],
-    validate: isCountryReportRecordArray,
-  })
-}
-
-function isCountryReportRecordArray(
-  value: unknown
-): value is MonthEndCountryReportRecord[] {
-  return (
-    Array.isArray(value) &&
-    value.every((record) => {
-      if (typeof record !== "object" || record === null) {
-        return false
-      }
-
-      const candidate = record as Partial<MonthEndCountryReportRecord>
-      return (
-        typeof candidate.id === "string" &&
-        typeof candidate.monthEndId === "string" &&
-        typeof candidate.period === "string" &&
-        typeof candidate.countryId === "string" &&
-        typeof candidate.countryName === "string" &&
-        typeof candidate.invoiceNumber === "string" &&
-        typeof candidate.ctnNumber === "string" &&
-        typeof candidate.billOfLadingNumber === "string" &&
-        typeof candidate.reference === "string" &&
-        typeof candidate.amount === "number" &&
-        Number.isFinite(candidate.amount) &&
-        typeof candidate.sourceRowCount === "number" &&
-        Number.isFinite(candidate.sourceRowCount) &&
-        typeof candidate.parserKey === "string"
-      )
-    })
-  )
-}
-
-function saveLocalRecords(records: MonthEndCountryReportRecord[]) {
-  if (typeof window === "undefined") {
-    return
-  }
-
-  writeBrowserStorage("localStorage", localStorageKey, JSON.stringify(records))
-}
-
-function replaceLocalCountryReportRecords(
-  monthEndId: string,
-  countryId: string,
-  records: MonthEndCountryReportRecord[]
-) {
-  const canonicalCountryId = getCanonicalCountryId(countryId)
-  const existing = getLocalRecords().filter(
-    (record) =>
-      record.monthEndId !== monthEndId ||
-      getCanonicalCountryId(record.countryId) !== canonicalCountryId
-  )
-
-  saveLocalRecords([...existing, ...records])
 }
 
 function countryReportGroupKey(
@@ -307,66 +195,45 @@ export async function replaceMonthEndCountryReportRecords({
   records: MonthEndCountryReportRecord[]
 }) {
   const canonicalCountryId = getCanonicalCountryId(countryId)
-
-  if (isLocalhostBrowser()) {
-    replaceLocalCountryReportRecords(monthEndId, countryId, records)
-  }
-
-  try {
-    const supabase = getSupabaseClient()
-    const { data: existingRows, error: selectError } = await supabase
+  if (
+    records.some(
+      (record) =>
+        record.monthEndId !== monthEndId ||
+        getCanonicalCountryId(record.countryId) !== canonicalCountryId
+    )
+  )
+    throw new Error(
+      "The imported records do not belong to this month and country."
+    )
+  const supabase = getSupabaseClient()
+  const existingRows = await readAllRows<{ id: string }>((from, to) =>
+    supabase
       .from(tableName)
       .select("id")
       .eq("month_end_id", monthEndId)
       .eq("country_id", canonicalCountryId)
-
-    if (selectError) {
-      throw selectError
-    }
-
-    if (records.length) {
-      const { error } = await supabase
-        .from(tableName)
-        .upsert(records.map(toRow), { onConflict: "id" })
-
-      if (isMissingOptionalCountryReportColumnError(error)) {
-        const { error: retryError } = await supabase
-          .from(tableName)
-          .upsert(records.map(toRow).map(withoutOptionalCountryReportColumns), {
-            onConflict: "id",
-          })
-
-        if (retryError) {
-          throw retryError
-        }
-      } else if (error) {
-        throw error
-      }
-    }
-
-    const nextIds = new Set(records.map((record) => record.id))
-    const staleIds = (existingRows ?? [])
-      .map((row) => row.id)
-      .filter((id) => !nextIds.has(id))
-
-    if (staleIds.length) {
-      const { error } = await supabase
+      .order("id")
+      .range(from, to)
+  )
+  for (let index = 0; index < records.length; index += 500) {
+    const { error } = await supabase
+      .from(tableName)
+      .upsert(records.slice(index, index + 500).map(toRow), {
+        onConflict: "id",
+      })
+    if (error) throw error
+  }
+  const nextIds = new Set(records.map((record) => record.id))
+  await deleteRowsById(
+    existingRows.map((row) => row.id).filter((id) => !nextIds.has(id)),
+    (ids) =>
+      supabase
         .from(tableName)
         .delete()
-        .in("id", staleIds)
-
-      if (error) {
-        throw error
-      }
-    }
-  } catch (error) {
-    if (isLocalhostBrowser()) {
-      replaceLocalCountryReportRecords(monthEndId, countryId, records)
-      return
-    }
-
-    throw error
-  }
+        .eq("month_end_id", monthEndId)
+        .eq("country_id", canonicalCountryId)
+        .in("id", ids)
+  )
 }
 
 export async function listMonthEndCountryReportRecords({
@@ -377,54 +244,17 @@ export async function listMonthEndCountryReportRecords({
   countryId: string
 }) {
   const canonicalCountryId = getCanonicalCountryId(countryId)
-
-  try {
-    const supabase = getSupabaseClient()
-    const { data, error } = await supabase
+  const supabase = getSupabaseClient()
+  const rows = await readAllRows<MonthEndCountryReportRecordRow>((from, to) =>
+    supabase
       .from(tableName)
       .select("*")
       .eq("month_end_id", monthEndId)
       .eq("country_id", canonicalCountryId)
-      .order("reference", { ascending: true })
-
-    if (error) {
-      throw error
-    }
-
-    const remoteRecords = (data ?? []).map((row) =>
-      toRecord(row as MonthEndCountryReportRecordRow)
-    )
-
-    if (!isLocalhostBrowser()) {
-      return remoteRecords
-    }
-
-    const localRecords = getLocalRecords().filter(
-      (record) =>
-        record.monthEndId === monthEndId &&
-        getCanonicalCountryId(record.countryId) === canonicalCountryId
-    )
-    const localIds = new Set(localRecords.map((record) => record.id))
-    const remoteOnlyRecords = remoteRecords.filter(
-      (record) => !localIds.has(record.id)
-    )
-
-    return [...remoteOnlyRecords, ...localRecords].sort((first, second) =>
-      first.reference.localeCompare(second.reference)
-    )
-  } catch (error) {
-    if (isLocalhostBrowser()) {
-      return getLocalRecords()
-        .filter(
-          (record) =>
-            record.monthEndId === monthEndId &&
-            getCanonicalCountryId(record.countryId) === canonicalCountryId
-        )
-        .sort((first, second) =>
-          first.reference.localeCompare(second.reference)
-        )
-    }
-
-    throw error
-  }
+      .order("id")
+      .range(from, to)
+  )
+  return rows
+    .map(toRecord)
+    .sort((a, b) => a.reference.localeCompare(b.reference))
 }

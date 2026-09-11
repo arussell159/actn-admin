@@ -37,7 +37,10 @@ import {
 } from "@/lib/madagascar-bsc"
 import { sharedExtractionInstructions } from "./seed"
 import {
+  correctionLearningInstruction,
+  correctionLearningKey,
   correctionLearningSummary,
+  normalizeCorrectionLearning,
   normalizedCorrectionTarget,
   parseCorrectionLearning,
   type CorrectionSourceLearning,
@@ -53,6 +56,10 @@ type CorrectionExample = {
   reason: string
   verified: boolean
   documentType: string
+  basis?: CorrectionSourceLearning["basis"]
+  explanation?: string
+  reasoning?: string
+  reproduction?: string
 }
 export type UploadReviewProgress = {
   stage: "country" | "document"
@@ -266,6 +273,8 @@ async function readCorrectionMemory(
           }
         | undefined
       const learning = result?.learning
+        ? normalizeCorrectionLearning(result.learning)
+        : undefined
       const country = typeof result?.country === "string" ? result.country : ""
       if (learning?.version !== 1 || !learning.verified || !country) return []
       return [
@@ -278,6 +287,10 @@ async function readCorrectionMemory(
           reason: correctionLearningSummary(learning).slice(0, 500),
           verified: true,
           documentType: learning.documentType,
+          basis: learning.basis,
+          explanation: learning.explanation,
+          reasoning: learning.reasoning,
+          reproduction: learning.reproduction,
         },
       ]
     })
@@ -303,10 +316,19 @@ async function readCorrectionMemory(
             : String(correction.reason ?? "").slice(0, 500),
           verified: Boolean(learning?.verified),
           documentType: learning?.documentType ?? "",
+          basis: learning?.basis,
+          explanation: learning?.explanation,
+          reasoning: learning?.reasoning,
+          reproduction: learning?.reproduction,
         },
       ]
     })
-    return [...explained, ...corrected].slice(0, 200)
+    const unique = new Map<string, CorrectionExample>()
+    for (const learning of [...explained, ...corrected]) {
+      const key = `${learning.country.toLocaleLowerCase()}:${learning.target.toLocaleLowerCase()}`
+      if (!unique.has(key)) unique.set(key, learning)
+    }
+    return [...unique.values()].slice(0, 200)
   } catch {
     // Corrections improve extraction but must never block a new certificate.
     return []
@@ -619,34 +641,45 @@ export async function reviewUploads(
     for (const learning of correctionMemory) {
       if (
         !learning.verified ||
-        learning.country !== identification.country.name ||
-        !documentPriority.has(learning.documentType)
+        learning.country !== identification.country.name
       )
         continue
       const mapping = mappings.find(
         (candidate) => candidate.systemFieldId === learning.target
       )
-      const key = `${learning.documentType}:${learning.target}`
-      if (!mapping || learnedKeys.has(key)) continue
+      const learnedDocumentType =
+        learning.basis === "reasoned inference"
+          ? countryPages
+              .flatMap((page) => page.content.fields)
+              .find((field) => mapping?.sourceFieldIds.includes(field.id))
+              ?.document || learning.documentType
+          : learning.documentType
+      const key = correctionLearningKey(learning.country, learning)
+      if (
+        !mapping ||
+        learnedKeys.has(key) ||
+        !documentPriority.has(learnedDocumentType)
+      )
+        continue
       learnedKeys.add(key)
-      const learnedId = `learned-${learning.documentType}-${learning.target}`
+      const learnedId = `learned-${learnedDocumentType}-${learning.target}`
         .toLowerCase()
         .replace(/[^a-z0-9.-]+/g, "-")
         .slice(0, 150)
       if (!mapping.fallbackSourceIds.includes(learnedId))
         mapping.fallbackSourceIds.push(learnedId)
-      const fields = learnedExtractions.get(learning.documentType) ?? []
+      const fields = learnedExtractions.get(learnedDocumentType) ?? []
       fields.push({
         id: learnedId,
         label: learning.label,
-        document: learning.documentType,
+        document: learnedDocumentType,
         location: "",
         requiredWhen: "",
-        instruction: `Look for an explicitly stated ${learning.label}. Staff previously verified this field in this document type. Return it only with current-document page evidence; never copy a prior value.`,
+        instruction: correctionLearningInstruction(learning),
         portalFieldIds: [learning.target],
         ruleIds: [],
       })
-      learnedExtractions.set(learning.documentType, fields)
+      learnedExtractions.set(learnedDocumentType, fields)
     }
     const localEvidencePages = new Map<
       string,
@@ -1100,7 +1133,13 @@ export async function reviewUploads(
             fieldKeys: [...new Set(completedKeys)],
           })
         }
-      }
+      },
+      new Map(
+        bootstrapClassifications.map((classification) => [
+          classification.originalFilename,
+          classification,
+        ])
+      )
     )
     const successfullyInspectedFiles = new Set(
       inspection.documents.map(
@@ -1179,7 +1218,38 @@ export async function reviewUploads(
         fieldKeys: derivedFieldKeys,
       })
 
-    if (documentAnalyses.length) {
+    const reconciliationMappings = mappings.flatMap((mapping) =>
+      [...mapping.sourceFieldIds, ...mapping.fallbackSourceIds].map(
+        (sourceFieldId) => ({
+          sourceFieldId,
+          systemFieldId: mapping.systemFieldId,
+          repeated: mapping.repeated,
+        })
+      )
+    )
+    const fieldsBySystemId = new Map<string, Set<string>>()
+    for (const mapping of reconciliationMappings) {
+      if (mapping.repeated) continue
+      const filesWithValues = new Set(
+        documentAnalyses.flatMap((analysis) =>
+          analysis.fields.some(
+            (field) =>
+              field.id === mapping.sourceFieldId && field.value !== null
+          )
+            ? [analysis.originalFilename]
+            : []
+        )
+      )
+      const current = fieldsBySystemId.get(mapping.systemFieldId) ?? new Set()
+      filesWithValues.forEach((filename) => current.add(filename))
+      fieldsBySystemId.set(mapping.systemFieldId, current)
+    }
+    const needsReconciliation =
+      documentAnalyses.some(
+        (analysis) => analysis.possibleConflicts.length > 0
+      ) ||
+      [...fieldsBySystemId.values()].some((filenames) => filenames.size > 1)
+    if (needsReconciliation) {
       try {
         const documentForSourceField = new Map(
           countryPages.flatMap((page) =>

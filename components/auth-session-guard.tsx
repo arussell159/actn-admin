@@ -10,7 +10,7 @@ import {
   isPhoneAuthSession,
   markAuthSessionStarted,
 } from "@/lib/auth-session-timeout"
-import { createClient } from "@/lib/client"
+import { createClient, ensureLocalDevelopmentSession } from "@/lib/client"
 
 export function AuthSessionGuard() {
   const router = useRouter()
@@ -19,28 +19,6 @@ export function AuthSessionGuard() {
     let isMounted = true
     let isChecking = false
     const supabase = createClient()
-
-    async function createLocalSession() {
-      const response = await fetch("/api/auth/local-session", {
-        method: "POST",
-        cache: "no-store",
-      })
-      const result = await response.json()
-
-      if (!response.ok || !result.tokenHash) {
-        throw new Error(
-          result.message || "Could not create the local development session."
-        )
-      }
-
-      const { error } = await supabase.auth.verifyOtp({
-        token_hash: result.tokenHash,
-        type: "magiclink",
-      })
-      if (error) throw error
-      markAuthSessionStarted()
-      router.refresh()
-    }
 
     async function enforceTimeout() {
       if (
@@ -63,16 +41,20 @@ export function AuthSessionGuard() {
           return
         }
 
-        if (!session) {
-          if (
-            ["localhost", "127.0.0.1", "[::1]"].includes(
-              window.location.hostname
-            )
-          ) {
-            await createLocalSession()
+        const isLocalhost = ["localhost", "127.0.0.1", "[::1]"].includes(
+          window.location.hostname
+        )
+
+        if (isLocalhost && !session) {
+          const sessionChanged = await ensureLocalDevelopmentSession()
+          if (sessionChanged) {
+            markAuthSessionStarted()
+            window.location.reload()
           }
           return
         }
+
+        if (!session) return
 
         if (session.user.app_metadata.local_development === true) return
 

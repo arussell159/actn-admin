@@ -11,7 +11,10 @@ import {
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname
 
-  if (isLocalhostRequest(request.nextUrl.hostname)) {
+  if (
+    process.env.NODE_ENV === "development" &&
+    isLocalhostRequest(request.nextUrl.hostname)
+  ) {
     return NextResponse.next()
   }
 
@@ -24,6 +27,16 @@ export async function proxy(request: NextRequest) {
       message: error instanceof Error ? error.message : String(error),
       pathname,
     })
+    if (pathname.startsWith("/api/"))
+      return NextResponse.json(
+        {
+          ok: false,
+          message:
+            "The sign-in service is temporarily unavailable. Please try again.",
+        },
+        { status: 503, headers: { "Cache-Control": "no-store" } }
+      )
+    if (isAuthBypassPath(pathname)) return NextResponse.next()
 
     const loginUrl = new URL(loginPath, request.url)
     loginUrl.searchParams.set("error", "session_unavailable")
@@ -41,6 +54,11 @@ export async function proxy(request: NextRequest) {
   }
 
   if (!user && !isAuthBypassPath(pathname)) {
+    if (pathname.startsWith("/api/"))
+      return NextResponse.json(
+        { ok: false, message: "Sign in with your staff account to continue." },
+        { status: 401, headers: { "Cache-Control": "no-store" } }
+      )
     const loginUrl = new URL(loginPath, request.url)
     loginUrl.searchParams.set(
       "next",

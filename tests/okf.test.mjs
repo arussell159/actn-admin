@@ -24,7 +24,10 @@ const {
   evaluateReview,
 } = require("../lib/okf/engine.ts")
 const {
+  correctionLearningInstruction,
+  correctionLearningKey,
   correctionLearningReason,
+  normalizeCorrectionLearning,
   normalizedCorrectionTarget,
   parseCorrectionLearning,
 } = require("../lib/okf/correction-learning.ts")
@@ -455,9 +458,45 @@ test("field corrections retain verified source evidence for bounded OKF learning
     confidence: 0.98,
   }
   const reason = correctionLearningReason("Madagascar", learning)
-  assert.deepEqual(parseCorrectionLearning(reason), learning)
+  assert.deepEqual(parseCorrectionLearning(reason), normalizeCorrectionLearning(learning))
   assert.equal(learning.target, "invoiceValues")
   assert.match(reason, /Bill of Lading/)
+})
+
+test("reasoned correction learning is reproducible and has one canonical field key", () => {
+  const learning = {
+    label: "Notify Party",
+    documentType: "Workflow reasoning",
+    basis: "reasoned inference",
+    reasoning: "Staff intentionally made Notify Party match Consignee.",
+    reproduction:
+      "Set Notify Party to the Consignee value when staff confirms those parties must match.",
+  }
+  assert.equal(
+    correctionLearningKey("Madagascar", { target: "notifyParty" }),
+    correctionLearningKey("madagascar", { target: "notifyParty" })
+  )
+  assert.match(correctionLearningInstruction(learning), /Set Notify Party/)
+  assert.doesNotMatch(correctionLearningInstruction(learning), /page evidence/)
+})
+
+test("legacy learning data is upgraded to the human-readable decision structure", () => {
+  const upgraded = normalizeCorrectionLearning({
+    version: 1,
+    target: "notifyParty",
+    label: "Notify Party",
+    verified: true,
+    documentType: "Bill of Lading",
+    filename: "bill.pdf",
+    page: 1,
+    supportingText: "Notify Party: Example Ltd",
+    matchedValue: "Example Ltd",
+    confidence: 1,
+    basis: "document evidence",
+  })
+  assert.match(upgraded.reasoning, /Notify Party: Example Ltd/)
+  assert.match(upgraded.reproduction, /current shipment/)
+  assert.equal(upgraded.assumption, false)
 })
 
 test("upload adapter persists exact published revisions and maps approved extraction only", async () => {
@@ -1080,6 +1119,13 @@ test("OpenAI sends PDFs as high-detail input files and maps strict extraction re
               repeated: false,
               options: [],
             },
+            {
+              id: "goods",
+              label: "Goods",
+              instruction: "Read goods",
+              repeated: true,
+              options: [],
+            },
           ],
         },
       ],
@@ -1096,6 +1142,97 @@ test("OpenAI sends PDFs as high-detail input files and maps strict extraction re
       inspected.documents[0].analysis.fields[0].value,
       "ACME EXPORTS"
     )
+
+    payloads.length = 0
+    const cachedInspection = await adapter.exports.inspectDocuments(
+      [new File(["pdf"], "combined-copy.pdf", { type: "application/pdf" })],
+      [
+        {
+          documentType: "Bill of Lading",
+          fields: [
+            {
+              id: "shipper",
+              label: "Shipper",
+              instruction: "Read shipper",
+              repeated: false,
+              options: [],
+            },
+            {
+              id: "goods",
+              label: "Goods",
+              instruction: "Read goods",
+              repeated: true,
+              options: [],
+            },
+          ],
+        },
+      ],
+      [{ country: "Madagascar", aliases: ["MG"] }]
+    )
+    assert.equal(payloads.length, 0)
+    assert.equal(
+      cachedInspection.documents[0].analysis.originalFilename,
+      "combined-copy.pdf"
+    )
+
+    payloads.length = 0
+    const knownFile = new File(["known pdf"], "known.pdf", {
+      type: "application/pdf",
+    })
+    await adapter.exports.inspectDocuments(
+      [knownFile],
+      [
+        {
+          documentType: "Bill of Lading",
+          fields: [
+            {
+              id: "shipper",
+              label: "Shipper",
+              instruction: "Read shipper",
+              repeated: false,
+              options: [],
+            },
+            {
+              id: "goods",
+              label: "Goods",
+              instruction: "Read goods",
+              repeated: true,
+              options: [],
+            },
+          ],
+        },
+      ],
+      [{ country: "Madagascar", aliases: ["MG"] }],
+      undefined,
+      undefined,
+      undefined,
+      new Map([
+        [
+          "known.pdf",
+          {
+            originalFilename: "known.pdf",
+            documentType: "Bill of Lading",
+            documentTypeConfidence: 0.99,
+            documentStatus: "final",
+            documentStatusConfidence: 0.99,
+            classificationSource: { page: 1, text: "Bill of Lading" },
+            consigneeCountry: "Madagascar",
+            consigneeCountryConfidence: 0.99,
+            consigneeCountrySource: {
+              page: 1,
+              text: "Consignee Madagascar",
+            },
+            shipmentReferences: [],
+            warnings: [],
+            missingFields: [],
+            uncertainFields: [],
+            possibleConflicts: [],
+          },
+        ],
+      ])
+    )
+    assert.equal(payloads.length, 1)
+    assert.equal(payloads[0].text.format.name, "shipment_document_extraction")
 
     payloads.length = 0
     const escalated = await adapter.exports.extractDocuments(

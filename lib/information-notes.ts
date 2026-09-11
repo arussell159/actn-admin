@@ -1,3 +1,13 @@
+import {
+  reportDatabaseReadFailure,
+  clearDatabaseReadFailure,
+} from "@/lib/persistence"
+import { readAllRows, deleteRowsById } from "@/lib/database-records"
+import {
+  readPendingDatabaseSave,
+  saveDatabaseDraft,
+  waitForDatabaseSave,
+} from "@/lib/persistence"
 import { createPublicClient } from "@/lib/public-client"
 import {
   readBrowserStorage,
@@ -7,6 +17,7 @@ import {
 import { createInitialPages } from "@/lib/okf/seed"
 import type { KnowledgePage } from "@/lib/okf/schema"
 import type { VisibleCorrectionLearning } from "@/lib/okf/correction-learning"
+import { correctionLearningKey } from "@/lib/okf/correction-learning"
 
 export type InformationNodeType = "folder" | "note"
 
@@ -109,7 +120,14 @@ export function defaultInformationNotes(): InformationNode[] {
   ]
 }
 
-function editorDocument(blocks: { heading?: string; text?: string }[]) {
+function editorDocument(
+  blocks: {
+    heading?: string
+    headingLevel?: 2 | 3
+    text?: string
+    bullets?: string[]
+  }[]
+) {
   return JSON.stringify({
     type: "doc",
     content: blocks.flatMap((block) => [
@@ -117,7 +135,7 @@ function editorDocument(blocks: { heading?: string; text?: string }[]) {
         ? [
             {
               type: "heading",
-              attrs: { textAlign: null, level: 2 },
+              attrs: { textAlign: null, level: block.headingLevel ?? 2 },
               content: [{ type: "text", text: block.heading }],
             },
           ]
@@ -128,6 +146,23 @@ function editorDocument(blocks: { heading?: string; text?: string }[]) {
             attrs: { textAlign: null },
             content: text ? [{ type: "text", text }] : undefined,
           }))
+        : []),
+      ...(block.bullets?.length
+        ? [
+            {
+              type: "bulletList",
+              content: block.bullets.map((text) => ({
+                type: "listItem",
+                content: [
+                  {
+                    type: "paragraph",
+                    attrs: { textAlign: null },
+                    content: [{ type: "text", text }],
+                  },
+                ],
+              })),
+            },
+          ]
         : []),
     ]),
   })
@@ -312,7 +347,14 @@ export function mergeCorrectionLearningNotes(
   if (!learnings.length) return nodes
   const next = [...nodes]
   const byCountry = new Map<string, VisibleCorrectionLearning[]>()
-  for (const learning of learnings)
+  const uniqueLearnings = new Map<string, VisibleCorrectionLearning>()
+  for (const learning of [...learnings].sort((left, right) =>
+    right.createdAt.localeCompare(left.createdAt)
+  )) {
+    const key = correctionLearningKey(learning.country, learning)
+    if (!uniqueLearnings.has(key)) uniqueLearnings.set(key, learning)
+  }
+  for (const learning of uniqueLearnings.values())
     byCountry.set(learning.country, [
       ...(byCountry.get(learning.country) ?? []),
       learning,
@@ -339,20 +381,42 @@ export function mergeCorrectionLearningNotes(
       title: "AI Learning",
       content: editorDocument([
         {
-          text: "Verified field-source corrections from completed certificate reviews. These compact rules guide future extraction; the original correction records remain in the OKF audit history.",
+          text: "This page records the current reusable decisions learned from completed certificate reviews. Each field appears once. The correction audit retains the full history.",
         },
         {
-          heading: "Verified field sources",
-          text: countryLearnings
-            .sort((left, right) =>
-              right.createdAt.localeCompare(left.createdAt)
-            )
-            .map(
-              (learning) =>
-                `${learning.label} — ${learning.documentType}${learning.page ? `, page ${learning.page}` : ""} — ${learning.supportingText || learning.matchedValue} — learned ${learning.createdAt.slice(0, 10)}`
-            )
-            .join("\n"),
+          heading: "How to use this page",
+          text: "Use the rule and reasoning to reach the value again on a new shipment. Document evidence is quoted when available. A confirmed inference may instead describe a calculation or relationship between fields. If the same evidence or relationship is not clear, ask a person rather than guessing.",
         },
+        {
+          heading: "Learned decisions",
+        },
+        ...countryLearnings
+          .sort((left, right) =>
+            left.label.localeCompare(right.label, undefined, {
+              sensitivity: "base",
+            })
+          )
+          .flatMap((learning) => [
+            {
+              heading: learning.label,
+              headingLevel: 3 as const,
+              text:
+                learning.reproduction ||
+                (learning.basis === "reasoned inference"
+                  ? learning.reasoning || learning.explanation
+                  : `Read ${learning.label} from ${learning.documentType}.`),
+            },
+            {
+              bullets: [
+                `Why: ${learning.reasoning || learning.explanation || learning.supportingText || "Staff verified the source during correction."}`,
+                learning.basis === "reasoned inference"
+                  ? `Basis: ${learning.assumption ? "Confirmed operational assumption" : "Confirmed field relationship or calculation"}`
+                  : `Evidence: ${learning.documentType}${learning.filename ? ` (${learning.filename})` : ""}${learning.page ? `, page ${learning.page}` : ""}${learning.supportingText ? ` — ${learning.supportingText}` : ""}`,
+                "Guardrail: Apply only when the same evidence or relationship is present. Ask for confirmation when it is not clear.",
+                `Confirmed: ${learning.createdAt.slice(0, 10)}`,
+              ],
+            },
+          ]),
       ]),
       createdAt: existingIndex >= 0 ? next[existingIndex].createdAt : timestamp,
       updatedAt: timestamp,
@@ -446,32 +510,6 @@ export function mergeLayoutCountryNotes(
       })
   }
   return next
-}
-
-function hasKnowledgeBaseExamples(nodes: InformationNode[]) {
-  const countryFolders = new Set(
-    nodes
-      .filter((node) => node.type === "folder" && !node.parentId)
-      .map((node) => node.title.toLocaleLowerCase())
-  )
-  const sharedFolder = nodes.find(
-    (node) =>
-      node.type === "folder" &&
-      !node.parentId &&
-      node.title.toLocaleLowerCase() === "shared"
-  )
-  const hasUploadInstructions = nodes.some(
-    (node) =>
-      node.type === "note" &&
-      node.parentId === sharedFolder?.id &&
-      node.title === "Document Upload & AI Instructions"
-  )
-  return (
-    hasUploadInstructions &&
-    ["madagascar", "djibouti", "somalia"].every((country) =>
-      countryFolders.has(country)
-    )
-  )
 }
 
 function knowledgePageBlocks(page: KnowledgePage) {
@@ -776,21 +814,37 @@ export function loadInformationNotes(
   })
 }
 
+type NoteDraft = { nodes: InformationNode[]; previous: InformationNode[] }
+const confirmedNotes = new Map<InformationNotesScope, InformationNode[]>()
+const notesSaveKey = (scope: InformationNotesScope) => "notes:" + scope
+
 export function saveInformationNotes(
   nodes: InformationNode[],
   scope: InformationNotesScope = "notebook"
 ) {
-  if (typeof window === "undefined") {
-    return
-  }
-
-  writeBrowserStorage(
-    "localStorage",
-    scopeConfig[scope].storageKey,
-    JSON.stringify(nodes)
-  )
-  saveDatabaseInformationNotes(nodes, scope).finally(() => {
-    window.dispatchEvent(new Event(scopeConfig[scope].updatedEvent))
+  const previous =
+    confirmedNotes.get(scope) ??
+    readPendingDatabaseSave<NoteDraft>(notesSaveKey(scope))?.previous ??
+    loadInformationNotes(scope)
+  return saveDatabaseDraft(
+    notesSaveKey(scope),
+    scope === "notebook" ? "Notebook" : "Knowledge Base",
+    { nodes, previous },
+    async (draft) => {
+      await saveDatabaseInformationNotes(
+        draft.nodes,
+        scope,
+        confirmedNotes.get(scope) ?? draft.previous
+      )
+      confirmedNotes.set(scope, structuredClone(draft.nodes))
+      cacheInformationNotes(draft.nodes, scope)
+    }
+  ).then(() => {
+    if (
+      typeof window !== "undefined" &&
+      !readPendingDatabaseSave(notesSaveKey(scope))
+    )
+      window.dispatchEvent(new Event(scopeConfig[scope].updatedEvent))
   })
 }
 
@@ -813,80 +867,132 @@ export function saveTrashedInformationNotes(
   nodes: TrashedInformationNode[],
   scope: InformationNotesScope = "notebook"
 ) {
-  if (typeof window === "undefined") {
-    return
-  }
-
-  writeBrowserStorage(
-    "localStorage",
-    scopeConfig[scope].trashStorageKey,
-    JSON.stringify(nodes)
+  return saveDatabaseDraft(
+    "notes-trash:" + scope,
+    "Notebook trash",
+    nodes,
+    async (snapshot) => {
+      const { error } = await createPublicClient()
+        .from("app_settings")
+        .upsert(
+          {
+            id: "notes-trash:" + scope,
+            value: snapshot,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" }
+        )
+      if (error) throw error
+      writeBrowserStorage(
+        "localStorage",
+        scopeConfig[scope].trashStorageKey,
+        JSON.stringify(snapshot)
+      )
+    }
   )
 }
 
-export async function getInformationNotes(
+async function syncNotesTrash(scope: InformationNotesScope) {
+  const key = "notes-trash:" + scope
+  await waitForDatabaseSave(key).catch(() => {})
+  const pending = readPendingDatabaseSave<TrashedInformationNode[]>(key)
+  if (pending) await saveTrashedInformationNotes(pending, scope)
+  await waitForDatabaseSave(key)
+  const { data, error } = await createPublicClient()
+    .from("app_settings")
+    .select("value")
+    .eq("id", key)
+    .maybeSingle()
+  if (error) throw error
+  if (data && isTrashedInformationNodeArray(data.value)) {
+    writeBrowserStorage(
+      "localStorage",
+      scopeConfig[scope].trashStorageKey,
+      JSON.stringify(data.value)
+    )
+  } else {
+    const legacyTrash = loadTrashedInformationNotes(scope)
+    if (legacyTrash.length)
+      await saveTrashedInformationNotes(legacyTrash, scope)
+  }
+}
+
+async function getInformationNotesFromDatabase(
   scope: InformationNotesScope = "notebook"
 ) {
-  let localNotes = loadInformationNotes(scope)
-  const needsExampleMigration =
-    scope === "knowledge-base" &&
-    readBrowserStorage("localStorage", knowledgeBaseExampleVersionKey) !== "3"
-
-  if (needsExampleMigration) {
-    localNotes = mergeCountryExamples(localNotes)
-    cacheInformationNotes(localNotes, scope)
-    writeBrowserStorage("localStorage", knowledgeBaseExampleVersionKey, "3")
+  await waitForDatabaseSave(notesSaveKey(scope)).catch(() => {})
+  const pending = readPendingDatabaseSave<NoteDraft>(notesSaveKey(scope))
+  if (pending) {
+    try {
+      await saveInformationNotes(pending.nodes, scope)
+    } catch {
+      return mergeLiveNotes(pending.nodes, scope)
+    }
   }
-
-  const dynamicIndexPromise =
-    scope === "knowledge-base"
-      ? loadDynamicOkfIndex()
-      : Promise.resolve({ sourceLearnings: [], layoutCountries: [] })
-
-  try {
-    const supabase = createPublicClient()
-    const { data, error } = await supabase
+  await waitForDatabaseSave(notesSaveKey(scope))
+  await syncNotesTrash(scope)
+  const supabase = createPublicClient()
+  const rows = await readAllRows<InformationNoteRow>((from, to) =>
+    supabase
       .from(scopeConfig[scope].tableName)
       .select("*")
-      .order("sort_order", { ascending: true })
-      .order("created_at", { ascending: true })
-
-    if (error) {
-      return mergeDynamicOkfNotes(localNotes, await dynamicIndexPromise)
-    }
-
-    let notes = (data ?? []).map((row) =>
-      toInformationNode(row as InformationNoteRow)
-    )
-
-    if (!notes.length && localNotes.length) {
-      const initialNotes =
-        scope === "knowledge-base"
+      .order("sort_order")
+      .order("id")
+      .range(from, to)
+  )
+  let notes = rows.map(toInformationNode)
+  confirmedNotes.set(scope, structuredClone(notes))
+  if (!notes.length) {
+    // Migrate existing local notes only into an uninitialized collection. An
+    // intentionally emptied collection must stay empty on another device.
+    const marker = await supabase
+      .from("app_settings")
+      .select("id")
+      .eq("id", "notes-initialized:" + scope)
+      .maybeSingle()
+    if (marker.error) throw marker.error
+    if (!marker.data) {
+      const localNotes = loadInformationNotes(scope)
+      notes =
+        scope === "knowledge-base" &&
+        !readBrowserStorage("localStorage", scopeConfig[scope].storageKey)
           ? ((await loadPublishedKnowledgeBaseNotes()) ?? localNotes)
           : localNotes
-      saveDatabaseInformationNotes(initialNotes, scope)
-      return mergeDynamicOkfNotes(initialNotes, await dynamicIndexPromise)
+      await saveInformationNotes(notes, scope)
+      // Re-read in case another device initialized the same collection.
+      notes = (
+        await readAllRows<InformationNoteRow>((from, to) =>
+          supabase
+            .from(scopeConfig[scope].tableName)
+            .select("*")
+            .order("sort_order")
+            .order("id")
+            .range(from, to)
+        )
+      ).map(toInformationNode)
+      confirmedNotes.set(scope, structuredClone(notes))
     }
-
-    if (
-      scope === "knowledge-base" &&
-      (needsExampleMigration ||
-        (hasKnowledgeBaseExamples(localNotes) &&
-          !hasKnowledgeBaseExamples(notes)))
-    ) {
-      notes = mergeCountryExamples(notes)
-      void saveDatabaseInformationNotes(notes, scope)
-    }
-
-    const visibleNotes = await mergeDynamicOkfNotes(
-      notes,
-      await dynamicIndexPromise
-    )
-    cacheInformationNotes(visibleNotes, scope)
-    return visibleNotes
-  } catch {
-    return mergeDynamicOkfNotes(localNotes, await dynamicIndexPromise)
   }
+  if (
+    scope === "knowledge-base" &&
+    readBrowserStorage("localStorage", knowledgeBaseExampleVersionKey) !== "3"
+  ) {
+    notes = mergeCountryExamples(notes)
+    await saveInformationNotes(notes, scope)
+    writeBrowserStorage("localStorage", knowledgeBaseExampleVersionKey, "3")
+  }
+  const visibleNotes = await mergeLiveNotes(notes, scope)
+  cacheInformationNotes(visibleNotes, scope)
+  return visibleNotes
+}
+
+async function mergeLiveNotes(
+  nodes: InformationNode[],
+  scope: InformationNotesScope
+) {
+  return scope === "knowledge-base"
+    ? mergeDynamicOkfNotes(nodes, await loadDynamicOkfIndex())
+    : nodes
 }
 
 function cacheInformationNotes(
@@ -934,37 +1040,105 @@ function toInformationRow(
 
 async function saveDatabaseInformationNotes(
   nodes: InformationNode[],
-  scope: InformationNotesScope
+  scope: InformationNotesScope,
+  previous: InformationNode[]
 ) {
-  try {
-    const supabase = createPublicClient()
-    const rows = nodes.map((node, index) => toInformationRow(node, index))
-
-    if (rows.length) {
-      await supabase
-        .from(scopeConfig[scope].tableName)
-        .upsert(rows, { onConflict: "id" })
-    }
-
-    const ids = new Set(nodes.map((node) => node.id))
-    const { data } = await supabase
-      .from(scopeConfig[scope].tableName)
-      .select("id")
-    const staleIds = (data ?? [])
-      .map((row) => row.id as string)
-      .filter((id) => !ids.has(id))
-
-    if (staleIds.length) {
-      await supabase
-        .from(scopeConfig[scope].tableName)
-        .delete()
-        .in("id", staleIds)
-    }
-  } catch {}
+  const supabase = createPublicClient()
+  const table = scopeConfig[scope].tableName
+  const previousRows = new Map(
+    previous.map((node, index) => [node.id, toInformationRow(node, index)])
+  )
+  let rows = nodes
+    .map(toInformationRow)
+    .filter(
+      (row) => JSON.stringify(row) !== JSON.stringify(previousRows.get(row.id))
+    )
+  const currentRows = await readAllRows<InformationNoteRow>((from, to) =>
+    supabase.from(table).select("*").order("id").range(from, to)
+  )
+  const currentById = new Map(currentRows.map((row) => [row.id, row]))
+  // A first-load migration may race another device initializing the notebook.
+  // Preserve records already present instead of replacing them with seed text.
+  if (!previous.length) rows = rows.filter((row) => !currentById.has(row.id))
+  for (const row of rows) {
+    const before = previousRows.get(row.id)
+    const current = currentById.get(row.id)
+    if (before && !current)
+      throw new Error(
+        "This note was deleted on another device. Reload before saving again."
+      )
+    if (
+      before &&
+      current &&
+      Date.parse(current.updated_at) !== Date.parse(before.updated_at) &&
+      Date.parse(current.updated_at) !== Date.parse(row.updated_at)
+    )
+      throw new Error(
+        "This note changed on another device. Reload the notebook before saving again."
+      )
+  }
+  const ids = new Set(nodes.map((node) => node.id))
+  const removed = previous.filter((node) => !ids.has(node.id))
+  const removedIds = new Set(removed.map((node) => node.id))
+  for (const node of removed) {
+    const current = currentById.get(node.id)
+    if (
+      current &&
+      Date.parse(current.updated_at) !== Date.parse(node.updatedAt)
+    )
+      throw new Error(
+        "A note you are deleting changed on another device. Reload before deleting it."
+      )
+  }
+  if (
+    currentRows.some(
+      (row) =>
+        row.parent_id &&
+        removedIds.has(row.parent_id) &&
+        !removedIds.has(row.id)
+    )
+  )
+    throw new Error(
+      "This folder has new content from another device. Reload before deleting it."
+    )
+  // Write changed notes only. Saving one browser's stale notebook must never
+  // overwrite or delete unrelated notes created on another device.
+  for (let index = 0; index < rows.length; index += 100) {
+    const { error } = await supabase
+      .from(table)
+      .upsert(rows.slice(index, index + 100), { onConflict: "id" })
+    if (error) throw error
+  }
+  await deleteRowsById(
+    removed.map((node) => node.id),
+    (ids) => supabase.from(table).delete().in("id", ids)
+  )
+  const { error } = await supabase.from("app_settings").upsert(
+    {
+      id: "notes-initialized:" + scope,
+      value: true,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "id" }
+  )
+  if (error) throw error
 }
 
 export function getPinnedInformationNodes(nodes: InformationNode[]) {
   return nodes
     .filter((node) => node.pinned)
     .sort((a, b) => a.title.localeCompare(b.title))
+}
+
+export async function getInformationNotes(
+  scope: InformationNotesScope = "notebook"
+) {
+  try {
+    const value = await getInformationNotesFromDatabase(scope)
+    clearDatabaseReadFailure("notes:" + scope)
+    return value
+  } catch {
+    reportDatabaseReadFailure("notes:" + scope, "Notebook")
+    return loadInformationNotes(scope)
+  }
 }

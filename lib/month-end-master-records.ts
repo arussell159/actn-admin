@@ -1,10 +1,7 @@
 import { parseCsv, findCsvColumn, normalizeCsvHeader } from "@/lib/csv"
 import { createPublicClient } from "@/lib/public-client"
+import { readAllRows, deleteRowsById } from "@/lib/database-records"
 import { assertSupabaseConfig } from "@/lib/supabase-env"
-import {
-  readJsonBrowserStorage,
-  writeBrowserStorage,
-} from "@/lib/browser-storage"
 import {
   loadMonthEndTemplate,
   type ReportFieldMapping,
@@ -48,7 +45,6 @@ type MonthEndMasterRecordRow = {
 }
 
 const tableName = "month_end_master_records"
-const localStorageKey = "actn-month-end-master-records-v1"
 const masterRecordBatchSize = 500
 
 export function masterTransactionDatesKey(countryId: string) {
@@ -103,19 +99,6 @@ function getSupabaseClient() {
   return createPublicClient()
 }
 
-function isLocalhostBrowser() {
-  if (typeof window === "undefined") {
-    return false
-  }
-
-  return (
-    window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1" ||
-    window.location.hostname === "[::1]" ||
-    window.location.hostname.endsWith(".localhost")
-  )
-}
-
 function toRecord(row: MonthEndMasterRecordRow): MonthEndMasterRecord {
   return {
     id: row.id,
@@ -155,24 +138,6 @@ function toRow(record: MonthEndMasterRecord): MonthEndMasterRecordRow {
   }
 }
 
-function withoutTransactionDate(row: MonthEndMasterRecordRow) {
-  const { transaction_date: _transactionDate, ...rest } = row
-
-  return rest
-}
-
-function isMissingTransactionDateColumnError(error: unknown) {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    "message" in error &&
-    typeof error.message === "string" &&
-    (error.code === "42703" || error.code === "PGRST204") &&
-    error.message.includes("transaction_date")
-  )
-}
-
 async function upsertMasterRows(
   supabase: ReturnType<typeof getSupabaseClient>,
   rows: MonthEndMasterRecordRow[]
@@ -183,131 +148,10 @@ async function upsertMasterRows(
       .from(tableName)
       .upsert(batch, { onConflict: "id" })
 
-    if (!isMissingTransactionDateColumnError(error)) {
-      if (error) {
-        return error
-      }
-
-      continue
-    }
-
-    const { error: retryError } = await supabase
-      .from(tableName)
-      .upsert(batch.map(withoutTransactionDate), { onConflict: "id" })
-
-    if (retryError) {
-      return retryError
-    }
+    if (error) return error
   }
 
   return null
-}
-
-function getLocalRecords() {
-  if (typeof window === "undefined") {
-    return []
-  }
-
-  return readJsonBrowserStorage({
-    kind: "localStorage",
-    key: localStorageKey,
-    fallback: [],
-    validate: isMonthEndMasterRecordArray,
-  })
-}
-
-function isMonthEndMasterRecordArray(
-  value: unknown
-): value is MonthEndMasterRecord[] {
-  return (
-    Array.isArray(value) &&
-    value.every((record) => {
-      if (typeof record !== "object" || record === null) {
-        return false
-      }
-
-      const candidate = record as Partial<MonthEndMasterRecord>
-      return (
-        typeof candidate.id === "string" &&
-        typeof candidate.monthEndId === "string" &&
-        typeof candidate.period === "string" &&
-        typeof candidate.countryId === "string" &&
-        typeof candidate.countryName === "string" &&
-        typeof candidate.salesOrderNumber === "string" &&
-        typeof candidate.billOfLadingNumber === "string" &&
-        typeof candidate.ctnNumber === "string" &&
-        typeof candidate.status === "string" &&
-        typeof candidate.amount === "number" &&
-        Number.isFinite(candidate.amount) &&
-        typeof candidate.sourceClass === "string" &&
-        typeof candidate.sourceInternalId === "string" &&
-        typeof candidate.sourceRowIndex === "number" &&
-        Number.isFinite(candidate.sourceRowIndex)
-      )
-    })
-  )
-}
-
-function saveLocalRecords(records: MonthEndMasterRecord[]) {
-  if (typeof window === "undefined") {
-    return
-  }
-
-  writeBrowserStorage("localStorage", localStorageKey, JSON.stringify(records))
-}
-
-function upsertLocalMasterRecords(
-  monthEndId: string,
-  records: MonthEndMasterRecord[]
-) {
-  const existing = getLocalRecords().filter(
-    (record) => record.monthEndId !== monthEndId
-  )
-
-  saveLocalRecords([...existing, ...records])
-}
-
-function upsertLocalCountryMasterRecords(
-  monthEndId: string,
-  countryIds: string[],
-  records: MonthEndMasterRecord[]
-) {
-  const countryIdSet = new Set(countryIds)
-  const existing = getLocalRecords().filter(
-    (record) =>
-      record.monthEndId !== monthEndId || !countryIdSet.has(record.countryId)
-  )
-
-  saveLocalRecords([...existing, ...records])
-}
-
-function moveLocalMasterRecordsToCountry(
-  monthEndId: string,
-  recordIds: string[],
-  countryId: string,
-  countryName: string
-) {
-  const records = getLocalRecords()
-  const recordIdSet = new Set(recordIds)
-  const movedRecords: MonthEndMasterRecord[] = []
-  const nextRecords = records.map((record) => {
-    if (record.monthEndId !== monthEndId || !recordIdSet.has(record.id)) {
-      return record
-    }
-
-    const movedRecord = {
-      ...record,
-      countryId,
-      countryName,
-      sourceClass: countryName,
-    }
-
-    movedRecords.push(movedRecord)
-    return movedRecord
-  })
-
-  saveLocalRecords(nextRecords)
-  return movedRecords
 }
 
 function countryRows(countries: TemplateCountryRow[]) {
@@ -749,56 +593,50 @@ export function parseMappedCountryMasterCsv({
   })
 }
 
+async function replaceMasterRecords(
+  monthEndId: string,
+  records: MonthEndMasterRecord[],
+  countryIds?: string[]
+) {
+  if (
+    records.some(
+      (record) =>
+        record.monthEndId !== monthEndId ||
+        (countryIds && !countryIds.includes(record.countryId))
+    )
+  )
+    throw new Error(
+      "The imported records do not belong to this month and country."
+    )
+  const supabase = getSupabaseClient()
+  const existingRows = await readAllRows<{ id: string }>((from, to) => {
+    let query = supabase
+      .from(tableName)
+      .select("id")
+      .eq("month_end_id", monthEndId)
+      .order("id")
+    if (countryIds) query = query.in("country_id", countryIds)
+    return query.range(from, to)
+  })
+  const error = await upsertMasterRows(supabase, records.map(toRow))
+  if (error) throw error
+  const nextIds = new Set(records.map((record) => record.id))
+  await deleteRowsById(
+    existingRows.map((row) => row.id).filter((id) => !nextIds.has(id)),
+    (ids) =>
+      supabase
+        .from(tableName)
+        .delete()
+        .eq("month_end_id", monthEndId)
+        .in("id", ids)
+  )
+}
+
 export async function saveMonthEndMasterRecords(
   monthEndId: string,
   records: MonthEndMasterRecord[]
 ) {
-  if (isLocalhostBrowser()) {
-    upsertLocalMasterRecords(monthEndId, records)
-  }
-
-  try {
-    const supabase = getSupabaseClient()
-    const { data: existingRows, error: selectError } = await supabase
-      .from(tableName)
-      .select("id")
-      .eq("month_end_id", monthEndId)
-
-    if (selectError) {
-      throw selectError
-    }
-
-    if (records.length) {
-      const error = await upsertMasterRows(supabase, records.map(toRow))
-
-      if (error) {
-        throw error
-      }
-    }
-
-    const nextIds = new Set(records.map((record) => record.id))
-    const staleIds = (existingRows ?? [])
-      .map((row) => row.id)
-      .filter((id) => !nextIds.has(id))
-
-    if (staleIds.length) {
-      const { error } = await supabase
-        .from(tableName)
-        .delete()
-        .in("id", staleIds)
-
-      if (error) {
-        throw error
-      }
-    }
-  } catch (error) {
-    if (isLocalhostBrowser()) {
-      upsertLocalMasterRecords(monthEndId, records)
-      return
-    }
-
-    throw error
-  }
+  await replaceMasterRecords(monthEndId, records)
 }
 
 export async function replaceMonthEndCountryMasterRecords({
@@ -810,55 +648,11 @@ export async function replaceMonthEndCountryMasterRecords({
   countryId: string
   records: MonthEndMasterRecord[]
 }) {
-  const countryIds = getLinkedCountryIds(countryId)
-
-  if (isLocalhostBrowser()) {
-    upsertLocalCountryMasterRecords(monthEndId, countryIds, records)
-  }
-
-  try {
-    const supabase = getSupabaseClient()
-    const { data: existingRows, error: selectError } = await supabase
-      .from(tableName)
-      .select("id")
-      .eq("month_end_id", monthEndId)
-      .in("country_id", countryIds)
-
-    if (selectError) {
-      throw selectError
-    }
-
-    if (records.length) {
-      const error = await upsertMasterRows(supabase, records.map(toRow))
-
-      if (error) {
-        throw error
-      }
-    }
-
-    const nextIds = new Set(records.map((record) => record.id))
-    const staleIds = (existingRows ?? [])
-      .map((row) => row.id)
-      .filter((id) => !nextIds.has(id))
-
-    if (staleIds.length) {
-      const { error } = await supabase
-        .from(tableName)
-        .delete()
-        .in("id", staleIds)
-
-      if (error) {
-        throw error
-      }
-    }
-  } catch (error) {
-    if (isLocalhostBrowser()) {
-      upsertLocalCountryMasterRecords(monthEndId, countryIds, records)
-      return
-    }
-
-    throw error
-  }
+  await replaceMasterRecords(
+    monthEndId,
+    records,
+    getLinkedCountryIds(countryId)
+  )
 }
 
 export async function moveMonthEndMasterRecordsToCountry({
@@ -873,22 +667,10 @@ export async function moveMonthEndMasterRecordsToCountry({
   countryName: string
 }) {
   const uniqueRecordIds = Array.from(new Set(recordIds))
-
-  if (!uniqueRecordIds.length) {
-    return []
-  }
-
-  const localMovedRecords = isLocalhostBrowser()
-    ? moveLocalMasterRecordsToCountry(
-        monthEndId,
-        uniqueRecordIds,
-        countryId,
-        countryName
-      )
-    : []
-
-  try {
-    const supabase = getSupabaseClient()
+  const movedRecords: MonthEndMasterRecord[] = []
+  const supabase = getSupabaseClient()
+  for (let index = 0; index < uniqueRecordIds.length; index += 25) {
+    const ids = uniqueRecordIds.slice(index, index + 25)
     const { data, error } = await supabase
       .from(tableName)
       .update({
@@ -897,25 +679,18 @@ export async function moveMonthEndMasterRecordsToCountry({
         source_class: countryName,
       })
       .eq("month_end_id", monthEndId)
-      .in("id", uniqueRecordIds)
+      .in("id", ids)
       .select("*")
-
-    if (error) {
-      throw error
-    }
-
-    const movedRecords = (data ?? []).map((row) =>
-      toRecord(row as MonthEndMasterRecordRow)
+    if (error) throw error
+    if (data?.length !== ids.length)
+      throw new Error(
+        "Some selected records are no longer available. Reload the report before retrying."
+      )
+    movedRecords.push(
+      ...data.map((row) => toRecord(row as MonthEndMasterRecordRow))
     )
-
-    return movedRecords.length ? movedRecords : localMovedRecords
-  } catch (error) {
-    if (isLocalhostBrowser()) {
-      return localMovedRecords
-    }
-
-    throw error
   }
+  return movedRecords
 }
 
 export function getLinkedCountryRows(
@@ -932,60 +707,18 @@ export async function listMonthEndMasterRecords({
   monthEndId: string
   countryId?: string
 }) {
+  const supabase = getSupabaseClient()
   const countryIds = countryId ? getLinkedCountryIds(countryId) : []
-
-  try {
-    const supabase = getSupabaseClient()
+  const rows = await readAllRows<MonthEndMasterRecordRow>((from, to) => {
     let query = supabase
       .from(tableName)
       .select("*")
       .eq("month_end_id", monthEndId)
-      .order("sales_order_number", { ascending: true })
-
-    if (countryId) {
-      query = query.in("country_id", countryIds)
-    }
-
-    const { data, error } = await query
-
-    if (error) {
-      throw error
-    }
-
-    const remoteRecords = (data ?? []).map((row) =>
-      toRecord(row as MonthEndMasterRecordRow)
-    )
-
-    if (!isLocalhostBrowser()) {
-      return remoteRecords
-    }
-
-    const localRecords = getLocalRecords().filter(
-      (record) =>
-        record.monthEndId === monthEndId &&
-        (!countryId || countryIds.includes(record.countryId))
-    )
-    const localIds = new Set(localRecords.map((record) => record.id))
-    const remoteOnlyRecords = remoteRecords.filter(
-      (record) => !localIds.has(record.id)
-    )
-
-    return [...remoteOnlyRecords, ...localRecords].sort((first, second) =>
-      first.salesOrderNumber.localeCompare(second.salesOrderNumber)
-    )
-  } catch (error) {
-    if (isLocalhostBrowser()) {
-      return getLocalRecords()
-        .filter(
-          (record) =>
-            record.monthEndId === monthEndId &&
-            (!countryId || countryIds.includes(record.countryId))
-        )
-        .sort((first, second) =>
-          first.salesOrderNumber.localeCompare(second.salesOrderNumber)
-        )
-    }
-
-    throw error
-  }
+      .order("id")
+    if (countryId) query = query.in("country_id", countryIds)
+    return query.range(from, to)
+  })
+  return rows
+    .map(toRecord)
+    .sort((a, b) => a.salesOrderNumber.localeCompare(b.salesOrderNumber))
 }

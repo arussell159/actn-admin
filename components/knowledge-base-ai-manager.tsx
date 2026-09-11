@@ -98,7 +98,7 @@ export function KnowledgeBaseAiManager({
   draftPage,
 }: {
   nodes: InformationNode[]
-  onApply: (nodes: InformationNode[], firstUpdatedId?: string) => void
+  onApply: (nodes: InformationNode[], firstUpdatedId?: string) => Promise<void>
   draftPage?: { path: string; title: string; body: string }
 }) {
   const [open, setOpen] = React.useState(false)
@@ -153,7 +153,7 @@ export function KnowledgeBaseAiManager({
     }
   }
 
-  function applyProposal() {
+  async function applyProposal() {
     if (!proposal) return
     const timestamp = new Date().toISOString()
     const next = [...nodes]
@@ -255,7 +255,17 @@ export function KnowledgeBaseAiManager({
       }
     }
 
-    onApply(next, editedPageId ?? firstUpdatedId)
+    setLoading(true)
+    try {
+      await onApply(next, editedPageId ?? firstUpdatedId)
+    } catch {
+      setError(
+        "Could not save the approved changes. Your proposal is still available; retry when the connection is restored."
+      )
+      return
+    } finally {
+      setLoading(false)
+    }
     setOpen(false)
     setProposal(undefined)
     setInstruction("")
@@ -374,7 +384,7 @@ export function KnowledgeBaseAiManager({
                   Back
                 </Button>
                 {proposal.updates.length ? (
-                  <Button onClick={applyProposal}>
+                  <Button disabled={loading} onClick={applyProposal}>
                     Apply {proposal.updates.length} updates
                   </Button>
                 ) : (

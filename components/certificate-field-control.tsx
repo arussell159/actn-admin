@@ -2,8 +2,8 @@
 
 import * as React from "react"
 import { CalendarIcon, ClipboardIcon } from "lucide-react"
-import { BorderBeam } from "@/components/ui/border-beam"
 import { Button } from "@/components/ui/button"
+import { Button as MovingBorderContainer } from "@/components/ui/moving-border"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Calendar } from "@/components/ui/calendar"
@@ -56,17 +56,13 @@ function copyText(value: string) {
 
 export function AiTextShimmer() {
   return (
-    <BorderBeam
-      active={false}
-      size="md"
-      colorVariant="colorful"
-      theme="light"
-      duration={3.8}
-      strength={0.95}
-      brightness={1.55}
-      saturation={1.5}
-      staticColors
-      className="max-w-4xl rounded-lg"
+    <MovingBorderContainer
+      active
+      as="div"
+      borderRadius="0.5rem"
+      duration={3800}
+      containerClassName="h-auto w-full max-w-4xl"
+      className="block h-auto border-transparent bg-background p-0"
     >
       <div
         className="min-h-9 rounded-lg bg-background px-3 py-2 text-sm text-muted-foreground"
@@ -74,7 +70,7 @@ export function AiTextShimmer() {
       >
         Analyzing…
       </div>
-    </BorderBeam>
+    </MovingBorderContainer>
   )
 }
 
@@ -190,20 +186,17 @@ export function CertificateFieldControl({
   return (
     <div className="grid min-w-0 gap-1.5">
       <span className="text-[13px] font-semibold text-foreground">{label}</span>
-      <BorderBeam
-        active={false}
-        size="md"
-        colorVariant="colorful"
-        theme="light"
-        duration={3.8}
-        strength={0.95}
-        brightness={1.55}
-        saturation={1.5}
-        staticColors
-        className={cn(
-          "w-full rounded-lg",
+      <MovingBorderContainer
+        active={isLoading}
+        as="div"
+        borderRadius="0.5rem"
+        duration={3800}
+        containerClassName={cn(
+          "h-auto w-full",
           isLoading && "pointer-events-none"
         )}
+        borderClassName="h-20 w-20 opacity-95"
+        className="block h-auto border-transparent bg-background p-0"
         aria-busy={isLoading || undefined}
       >
         <div className="group relative w-full rounded-lg">
@@ -334,7 +327,7 @@ export function CertificateFieldControl({
             </div>
           ) : null}
         </div>
-      </BorderBeam>
+      </MovingBorderContainer>
     </div>
   )
 }

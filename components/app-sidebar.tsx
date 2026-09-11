@@ -126,13 +126,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   async function unpinItem(nodeId: string) {
     const notes = await getInformationNotes()
 
-    saveInformationNotes(
+    void saveInformationNotes(
       notes.map((node) =>
         node.id === nodeId
           ? { ...node, pinned: false, updatedAt: new Date().toISOString() }
           : node
       )
-    )
+    ).catch(() => {})
   }
 
   function isActiveUrl(url: string) {

@@ -1,3 +1,5 @@
+import { authenticatedFetch } from "@/lib/client"
+
 export function stableSignature(value: unknown) {
   return JSON.stringify(value, (_key, item) =>
     item && typeof item === "object" && !Array.isArray(item)
@@ -8,7 +10,7 @@ export function stableSignature(value: unknown) {
   )
 }
 export async function okfApi<T>(path: string, body?: unknown): Promise<T> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     path,
     body === undefined
       ? { cache: "no-store" }

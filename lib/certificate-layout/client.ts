@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { createClient } from "@/lib/client"
+import { authenticatedFetch, createClient } from "@/lib/client"
 import { layoutCatalogSchema, type CertificateLayoutRecord } from "./schema"
 
 const changedEvent = "actn-certificate-layouts-changed"
@@ -45,7 +45,7 @@ export async function loadCertificateLayouts(force = false) {
     return previous.rows
   if (inFlight) return inFlight
   inFlight = (async () => {
-    const response = await fetch("/api/okf/layouts", {
+    const response = await authenticatedFetch("/api/okf/layouts", {
       headers: previous?.etag ? { "If-None-Match": previous.etag } : {},
       cache: "no-cache",
     })

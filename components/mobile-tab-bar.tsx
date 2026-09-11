@@ -265,7 +265,7 @@ export function MobileTabBar() {
         setDockHrefs(normalizedDockHrefs)
 
         if (normalizedDockHrefs.join("|") !== storedDockHrefs.join("|")) {
-          saveMobileNavDockHrefs(normalizedDockHrefs)
+          void saveMobileNavDockHrefs(normalizedDockHrefs).catch(() => {})
         }
       }
     }
@@ -308,7 +308,7 @@ export function MobileTabBar() {
       .slice(0, maxDockItems)
 
     setDockHrefs(cleanDockHrefs)
-    saveMobileNavDockHrefs(cleanDockHrefs)
+    void saveMobileNavDockHrefs(cleanDockHrefs).catch(() => {})
   }
 
   function prepareActiveIndicatorTransition() {

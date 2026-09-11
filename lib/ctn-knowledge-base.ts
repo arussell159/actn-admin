@@ -3,7 +3,12 @@
 import { knowledgeAnchor, knowledgeVersion } from "./ctn-knowledge-review"
 
 import { madagascarOfficialRuleDefinitions } from "@/lib/madagascar-bsc"
-import { readJsonBrowserStorage } from "@/lib/browser-storage"
+import {
+  readJsonBrowserStorage,
+  readBrowserStorage,
+  writeBrowserStorage,
+} from "@/lib/browser-storage"
+import { createPublicClient } from "@/lib/public-client"
 
 export type CtnKnowledgeSectionKind = string
 
@@ -343,9 +348,72 @@ export function loadCtnKnowledgeRecords() {
   return Array.from(recordsById.values())
 }
 
-// Throw on storage failure so approval can retain the proposal and retry.
-export function saveCtnKnowledgeRecords(records: CtnKnowledgeCountryRecord[]) {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(records))
+const databaseSettingId = "ctn-knowledge-records"
+let databaseRevision: string | null | undefined
+
+export async function getCtnKnowledgeRecords(): Promise<
+  CtnKnowledgeCountryRecord[]
+> {
+  const { data, error } = await createPublicClient()
+    .from("app_settings")
+    .select("value,updated_at")
+    .eq("id", databaseSettingId)
+    .maybeSingle()
+  if (error) throw error
+  databaseRevision = data?.updated_at ?? null
+  if (!data) {
+    const legacy = loadCtnKnowledgeRecords()
+    if (readBrowserStorage("localStorage", STORAGE_KEY))
+      await saveCtnKnowledgeRecords(legacy)
+    return legacy
+  }
+  if (!isCtnKnowledgeCountryRecordArray(data.value))
+    throw new Error(
+      "The saved country knowledge is invalid. Please restore a valid revision."
+    )
+  const old = readBrowserStorage("localStorage", STORAGE_KEY)
+  if (
+    old &&
+    !readBrowserStorage("localStorage", STORAGE_KEY + ":before-database-sync")
+  )
+    writeBrowserStorage(
+      "localStorage",
+      STORAGE_KEY + ":before-database-sync",
+      old
+    )
+  writeBrowserStorage("localStorage", STORAGE_KEY, JSON.stringify(data.value))
+  return data.value
+}
+
+// The whole approved document, version and history commit together. Competing
+// browsers must reload a changed revision before approving another proposal.
+export async function saveCtnKnowledgeRecords(
+  records: CtnKnowledgeCountryRecord[]
+) {
+  if (databaseRevision === undefined)
+    throw new Error("Load shared knowledge before saving.")
+  const client = createPublicClient()
+  const row = {
+    id: databaseSettingId,
+    value: records,
+    updated_at: new Date().toISOString(),
+  }
+  const query =
+    databaseRevision === null
+      ? client.from("app_settings").insert(row)
+      : client
+          .from("app_settings")
+          .update(row)
+          .eq("id", databaseSettingId)
+          .eq("updated_at", databaseRevision)
+  const { data, error } = await query.select("updated_at").maybeSingle()
+  if (error) throw error
+  if (!data)
+    throw new Error(
+      "The knowledge changed on another device. Reload and review it again."
+    )
+  databaseRevision = data.updated_at
+  writeBrowserStorage("localStorage", STORAGE_KEY, JSON.stringify(records))
 }
 
 export function ctnKnowledgeRecordToHtml(record: CtnKnowledgeCountryRecord) {

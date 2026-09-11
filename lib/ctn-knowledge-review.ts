@@ -332,8 +332,8 @@ export function prepareKnowledgeProposal(
   }
 }
 
-// Browser storage is the existing source of truth. Only the explicit Approve
-// handler receives this session's commit capability; analysis cannot write.
+// Only the explicit Approve handler receives this session's commit capability;
+// analysis cannot write, and failed persistence retains the pending proposal.
 export function createKnowledgeReviewSession() {
   let pending: KnowledgePendingProposal | null = null
   return {
@@ -377,6 +377,36 @@ export function createKnowledgeReviewSession() {
       // Retain the original pending proposal when storage throws, allowing retry.
       persist(result.records)
       pending = null
+      return result
+    },
+    async approveAsync(
+      id: string,
+      records: CtnKnowledgeCountryRecord[],
+      persist: (records: CtnKnowledgeCountryRecord[]) => Promise<void>
+    ) {
+      if (!pending || pending.id !== id)
+        throw new Error("There is no pending proposal to approve.")
+      const proposal = pending
+      for (const file of proposal.files) {
+        const current = records.find((record) => record.id === file.recordId)
+        if ((current ? JSON.stringify(current) : null) !== file.snapshot)
+          throw new Error(
+            "The OKF changed since this proposal. Cancel and request a fresh review."
+          )
+      }
+      const nextRecords = records.map(
+        (record) =>
+          proposal.files.find((file) => file.recordId === record.id)
+            ?.nextRecord ?? record
+      )
+      nextRecords.push(
+        ...proposal.files
+          .filter((file) => file.newRecord)
+          .map((file) => file.nextRecord)
+      )
+      const result = structuredClone({ records: nextRecords, proposal })
+      await persist(result.records)
+      if (pending === proposal) pending = null
       return result
     },
   }

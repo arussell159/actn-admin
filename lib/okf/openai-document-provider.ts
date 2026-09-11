@@ -1,5 +1,6 @@
 import "server-only"
 
+import { createHash } from "node:crypto"
 import { z } from "zod"
 
 import { fetchWithTimeout, RequestTimeoutError } from "@/lib/network"
@@ -189,6 +190,59 @@ type ResponseUsage = {
 export type ExtractionFieldDelta = {
   id: string
   value: string
+}
+
+const recognitionCache = new Map<
+  string,
+  { expiresAt: number; value: InspectedDocument }
+>()
+const recognitionCacheTtlMs = 15 * 60 * 1000
+const recognitionCacheLimit = 64
+
+async function recognitionCacheKey(
+  file: File,
+  profiles: DocumentExtractionProfile[],
+  supportedCountries: SupportedCountry[]
+) {
+  const hash = createHash("sha256")
+  hash.update(Buffer.from(await file.arrayBuffer()))
+  hash.update(
+    JSON.stringify({
+      profiles,
+      supportedCountries,
+      baseModel: baseModel(),
+      escalationModel: escalationModel(),
+      confidenceThreshold: confidenceThreshold(),
+      classificationThreshold: classificationThreshold(),
+    })
+  )
+  return hash.digest("hex")
+}
+
+function cachedRecognition(key: string, filename: string) {
+  const cached = recognitionCache.get(key)
+  if (!cached || cached.expiresAt <= Date.now()) {
+    if (cached) recognitionCache.delete(key)
+    return null
+  }
+  recognitionCache.delete(key)
+  recognitionCache.set(key, cached)
+  return {
+    classification: {
+      ...cached.value.classification,
+      originalFilename: filename,
+    },
+    analysis: { ...cached.value.analysis, originalFilename: filename },
+  }
+}
+
+function cacheRecognition(key: string, value: InspectedDocument) {
+  recognitionCache.set(key, {
+    expiresAt: Date.now() + recognitionCacheTtlMs,
+    value,
+  })
+  while (recognitionCache.size > recognitionCacheLimit)
+    recognitionCache.delete(recognitionCache.keys().next().value!)
 }
 
 class ProviderSemaphore {
@@ -725,7 +779,7 @@ export async function verifyCorrectionSources(
         const result = await structuredResponse({
           schema: correctionVerificationSchema,
           schemaName: "correction_source_verification",
-          instructions: `${systemInstruction} Verify whether each staff-corrected field value is visibly supported by this one ${documentType}. Search the entire document, including rated or charges sections. Numeric formatting, currency symbols and thousands separators may differ, but the value and meaning must match. Do not infer that a value belongs to a field merely because the same number appears elsewhere. Set found only with direct evidence, include its one-based page and a short verbatim supporting excerpt, and return every requested target once.`,
+          instructions: `${systemInstruction} Verify whether each staff-corrected field value is visibly supported by this one ${documentType}. Search the entire document, including rated or charges sections. Numeric formatting, currency symbols and thousands separators may differ, but the value and meaning must match. Do not infer that a value belongs to a field merely because the same number appears elsewhere. Set found only when completely certain, with direct evidence, its one-based page and a short verbatim supporting excerpt. Otherwise set found false so staff can explain the decision. Return every requested target once.`,
           data: {
             originalFilename: file.name,
             expectedDocumentType: documentType,
@@ -748,7 +802,7 @@ export async function verifyCorrectionSources(
           match.found &&
           match.page &&
           match.supportingText &&
-          match.confidence >= 0.72
+          match.confidence === 1
             ? [
                 {
                   target: match.target,
@@ -1033,8 +1087,41 @@ async function inspectDocument(
   profiles: DocumentExtractionProfile[],
   supportedCountries: SupportedCountry[],
   signal?: AbortSignal,
-  onFieldDelta?: (field: ExtractionFieldDelta) => void
+  onFieldDelta?: (field: ExtractionFieldDelta) => void,
+  knownClassification?: DocumentClassification
 ): Promise<InspectedDocument> {
+  const cacheKey = await recognitionCacheKey(file, profiles, supportedCountries)
+  const cached = cachedRecognition(cacheKey, file.name)
+  if (cached) {
+    logRequest({
+      operation: "inspect_document",
+      filename: file.name,
+      latencyMs: 0,
+      outcome: "cache_hit",
+    })
+    return cached
+  }
+  const knownProfile = knownClassification
+    ? profiles.find(
+        (profile) => profile.documentType === knownClassification.documentType
+      )
+    : undefined
+  if (
+    knownClassification &&
+    knownProfile &&
+    knownClassification.documentTypeConfidence >= classificationThreshold()
+  ) {
+    const analysis = await analyzeDocument(
+      file,
+      knownClassification.documentType,
+      knownProfile.fields,
+      signal,
+      onFieldDelta
+    )
+    const value = { classification: knownClassification, analysis }
+    cacheRecognition(cacheKey, value)
+    return value
+  }
   const allFields = [
     ...new Map(
       profiles
@@ -1100,7 +1187,7 @@ async function inspectDocument(
     if (failureType(error) === "cancelled") throw error
     const reasons = [failureType(error)]
     result = await request(escalationModel(), "low", reasons)
-    return {
+    const value = {
       classification: result.classification,
       analysis: {
         ...result.extraction,
@@ -1109,6 +1196,8 @@ async function inspectDocument(
         escalationReasons: reasons,
       },
     }
+    cacheRecognition(cacheKey, value)
+    return value
   }
 
   const reasons = [
@@ -1123,7 +1212,7 @@ async function inspectDocument(
   ]
   if (reasons.length) {
     result = await request(escalationModel(), "low", [...new Set(reasons)])
-    return {
+    const value = {
       classification: result.classification,
       analysis: {
         ...result.extraction,
@@ -1132,8 +1221,10 @@ async function inspectDocument(
         escalationReasons: [...new Set(reasons)],
       },
     }
+    cacheRecognition(cacheKey, value)
+    return value
   }
-  return {
+  const value = {
     classification: result.classification,
     analysis: {
       ...result.extraction,
@@ -1142,6 +1233,8 @@ async function inspectDocument(
       escalationReasons: [],
     },
   }
+  cacheRecognition(cacheKey, value)
+  return value
 }
 
 export async function inspectDocuments(
@@ -1150,7 +1243,8 @@ export async function inspectDocuments(
   supportedCountries: SupportedCountry[],
   signal?: AbortSignal,
   onFieldDelta?: (file: File, field: ExtractionFieldDelta) => void,
-  onDocument?: (file: File, result: InspectedDocument) => void | Promise<void>
+  onDocument?: (file: File, result: InspectedDocument) => void | Promise<void>,
+  knownClassifications?: Map<string, DocumentClassification>
 ) {
   validatePdfFiles(files)
   const settled = await Promise.all(
@@ -1161,7 +1255,8 @@ export async function inspectDocuments(
           profiles,
           supportedCountries,
           signal,
-          onFieldDelta ? (field) => onFieldDelta(file, field) : undefined
+          onFieldDelta ? (field) => onFieldDelta(file, field) : undefined,
+          knownClassifications?.get(file.name)
         )
         await onDocument?.(file, value)
         return { ok: true as const, value }

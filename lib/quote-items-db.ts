@@ -1,8 +1,6 @@
 import { createPublicClient } from "@/lib/public-client"
-import {
-  getSupabasePublishableKey,
-  getSupabaseUrl,
-} from "@/lib/supabase-env"
+import { readAllRows, deleteRowsById } from "@/lib/database-records"
+import { getSupabasePublishableKey, getSupabaseUrl } from "@/lib/supabase-env"
 import type { QuoteCatalogItem } from "@/lib/quote-items-catalog"
 
 export type QuoteLineItem = QuoteCatalogItem & {
@@ -115,18 +113,20 @@ export async function listQuoteItems() {
     return []
   }
 
-  const { data, error } = await supabase
-    .from("quote_items")
-    .select("*")
-    .order("country_name", { ascending: true })
-    .order("sorting_field", { ascending: true })
-    .returns<QuoteItemRow[]>()
-
-  if (error) {
-    throw error
-  }
-
-  return (data ?? []).map(toQuoteItem)
+  const data = await readAllRows<QuoteItemRow>((from, to) =>
+    supabase
+      .from("quote_items")
+      .select("*")
+      .order("internal_id")
+      .range(from, to)
+  )
+  return data
+    .map(toQuoteItem)
+    .sort(
+      (a, b) =>
+        a.countryName.localeCompare(b.countryName) ||
+        a.sortingField.localeCompare(b.sortingField)
+    )
 }
 
 export async function syncQuoteItemCatalog(items: QuoteCatalogItem[]) {
@@ -146,16 +146,24 @@ export async function replaceQuoteItemCatalog(items: QuoteCatalogItem[]) {
     throw new Error("Supabase is not configured for pricing uploads.")
   }
 
-  const { error: deleteError } = await supabase
-    .from("quote_items")
-    .delete()
-    .neq("internal_id", "")
-
-  if (deleteError) {
-    throw deleteError
-  }
-
+  if (!items.length)
+    throw new Error(
+      "The pricing sheet has no valid items. The current catalog was kept."
+    )
+  const existing = await readAllRows<{ internal_id: string }>((from, to) =>
+    supabase
+      .from("quote_items")
+      .select("internal_id")
+      .order("internal_id")
+      .range(from, to)
+  )
+  // Never erase the current catalog before discovering whether uploads work.
   await upsertQuoteItemRows(items)
+  const nextIds = new Set(items.map((item) => item.internalId))
+  await deleteRowsById(
+    existing.map((row) => row.internal_id).filter((id) => !nextIds.has(id)),
+    (ids) => supabase.from("quote_items").delete().in("internal_id", ids)
+  )
 }
 
 export async function saveQuoteRecord(record: QuoteRecord) {

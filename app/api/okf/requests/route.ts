@@ -89,7 +89,7 @@ export async function GET(request: Request) {
               correctionId: String(correction.id),
               target: String(correction.target),
               label: learning.label,
-              question: `I could not verify ${learning.label} in the uploaded documents. Where did this value come from?`,
+              question: `I could not determine with certainty why ${learning.label} was changed. Was it copied from a document, calculated, or intentionally made to match another field? Explain the exact rule so it can be repeated; if it was an assumption, say so.`,
             },
           ]
         : []
@@ -160,30 +160,42 @@ export async function POST(request: Request) {
                 )))) ||
           explanation.includes(document.fileName.toLocaleLowerCase())
       )
-      if (!sourceDocument)
+      if (namedType && !sourceDocument)
         throw new OkfError(
-          "I could not match that explanation to an uploaded document. Name the document, such as rated Bill of Lading, Commercial Invoice, or Packing List."
+          "That document was not found in this shipment. Check its name, or explain the calculation, field relationship, or assumption instead."
         )
       const resolvedDocumentType =
-        sourceDocument.documentType === "Unknown" && namedType
+        sourceDocument?.documentType === "Unknown" && namedType
           ? namedType
-          : sourceDocument.documentType
+          : sourceDocument?.documentType || "Workflow reasoning"
+      const reasonedInference = !sourceDocument
+      const assumption =
+        /\b(?:assum|default|best judgement|best judgment|normally|usually)\b/i.test(
+          parsed.explanation
+        )
       const learning: CorrectionSourceLearning = {
         ...originalLearning,
         verified: true,
         documentType: resolvedDocumentType,
-        filename: sourceDocument.fileName,
+        filename: sourceDocument?.fileName ?? "",
         supportingText: parsed.explanation,
         confidence: 1,
-        basis: "staff explanation",
+        basis: reasonedInference ? "reasoned inference" : "staff explanation",
         explanation: parsed.explanation,
+        reasoning: parsed.explanation,
+        reproduction: reasonedInference
+          ? `${parsed.explanation} Apply this only when the same relationship is present in the current shipment; otherwise ask for confirmation.`
+          : undefined,
+        assumption,
       }
       const intake = await session.client.from("okf_intake").insert({
         page_id: `correction-learning:${parsed.correctionId}`,
         note: parsed.explanation,
-        sources: [sourceDocument.fileName],
+        sources: sourceDocument ? [sourceDocument.fileName] : [],
         result: {
-          classification: "staff-confirmed field source",
+          classification: reasonedInference
+            ? "staff-confirmed decision rule"
+            : "staff-confirmed field source",
           correctionId: parsed.correctionId,
           country: String(requestResult.data!.country),
           learning,
@@ -295,7 +307,7 @@ export async function POST(request: Request) {
             correctionId: String(result.data.correction.id),
             target: edit.target,
             label: edit.label,
-            question: `I could not verify ${edit.label} in the uploaded documents. Where did this value come from?`,
+            question: `I could not determine with certainty why ${edit.label} was changed. Was it copied from a document, calculated, or intentionally made to match another field? Explain the exact rule so it can be repeated; if it was an assumption, say so.`,
           })
         sourceLearnings.push(learning)
       }

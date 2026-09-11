@@ -1,5 +1,7 @@
 "use client"
 
+import { authenticatedFetch } from "@/lib/client"
+
 import {
   layoutDraftRecordSchema,
   type CertificateLayout,
@@ -7,7 +9,7 @@ import {
 } from "./schema"
 
 async function draftRequest<T>(url: string, init?: RequestInit) {
-  const response = await fetch(url, { ...init, cache: "no-store" })
+  const response = await authenticatedFetch(url, { ...init, cache: "no-store" })
   const value = await response.json()
   if (!response.ok)
     throw new Error(value.message || "Could not access the layout draft.")
@@ -18,9 +20,7 @@ export async function loadCertificateLayoutDraft(draftKey: string) {
   const value = await draftRequest<{ draft: unknown }>(
     `/api/okf/layouts/draft?key=${encodeURIComponent(draftKey)}`
   )
-  return value.draft
-    ? layoutDraftRecordSchema.parse(value.draft)
-    : undefined
+  return value.draft ? layoutDraftRecordSchema.parse(value.draft) : undefined
 }
 
 export async function saveCertificateLayoutDraft(input: {

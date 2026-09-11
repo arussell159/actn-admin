@@ -306,7 +306,10 @@ test("layout cache checks the full catalogue, reuses it and cannot roll back a j
     id === "./schema"
       ? require("../lib/certificate-layout/schema.ts")
       : id === "@/lib/client"
-        ? { createClient: () => ({}) }
+        ? {
+            authenticatedFetch: (...args) => globalThis.fetch(...args),
+            createClient: () => ({}),
+          }
       : original(id)
   adapter._compile(
     ts.transpileModule(fs.readFileSync(filename, "utf8"), {

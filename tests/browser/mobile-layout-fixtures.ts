@@ -1,4 +1,45 @@
 import type { BrowserContext } from "@playwright/test"
+import nextEnv from "@next/env"
+
+export async function mockStaffSession(context: BrowserContext) {
+  nextEnv.loadEnvConfig(process.cwd(), true)
+  const project = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!).hostname.split(
+    "."
+  )[0]
+  const user = {
+    id: "11111111-1111-4111-8111-111111111111",
+    email: "staff@example.test",
+    app_metadata: { okf_role: "staff" },
+    user_metadata: {},
+    aud: "authenticated",
+    created_at: "2026-01-01T00:00:00Z",
+  }
+  const session = {
+    access_token: "fixture-access-token",
+    refresh_token: "fixture-refresh-token",
+    token_type: "bearer",
+    expires_in: 3600,
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
+    user,
+  }
+  await context.addInitScript(() =>
+    sessionStorage.setItem("actn-admin-auth-started-at", String(Date.now()))
+  )
+  await context.addCookies([
+    {
+      name: `sb-${project}-auth-token`,
+      value:
+        "base64-" + Buffer.from(JSON.stringify(session)).toString("base64url"),
+      domain: "localhost",
+      path: "/",
+    },
+  ])
+  await context.route("**/auth/v1/**", (route) =>
+    route.fulfill({
+      json: route.request().url().includes("/user") ? user : session,
+    })
+  )
+}
 
 export async function mockLayoutData(context: BrowserContext) {
   const timestamp = "2026-08-01T12:00:00.000Z"
@@ -118,4 +159,5 @@ export async function mockLayoutData(context: BrowserContext) {
       },
     })
   )
+  await mockStaffSession(context)
 }

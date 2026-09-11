@@ -1,5 +1,7 @@
 "use client"
 
+import { authenticatedFetch } from "@/lib/client"
+
 import { useCallback, useEffect, useRef, useState, type DragEvent } from "react"
 import {
   ChevronDownIcon,
@@ -176,10 +178,13 @@ export function CertificatePageImporter({
       data.set("country", country)
       data.set("pageNumber", String(pageNumber))
       data.append("screenshots", file)
-      const response = await fetch("/api/okf/layouts/from-screenshots", {
-        method: "POST",
-        body: data,
-      })
+      const response = await authenticatedFetch(
+        "/api/okf/layouts/from-screenshots",
+        {
+          method: "POST",
+          body: data,
+        }
+      )
       const result = await response.json()
       if (!response.ok)
         throw Error(result.message || "Could not read this system page.")

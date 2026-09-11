@@ -1,12 +1,13 @@
 import { expect, test, type Page } from "@playwright/test"
 import { createInitialPages } from "../../lib/okf/seed"
 import { validateChanges, nextVersion } from "../../lib/okf/engine"
-import { mockLayoutData } from "./mobile-layout-fixtures"
+import { mockLayoutData, mockStaffSession } from "./mobile-layout-fixtures"
 import { madagascarFieldGroups } from "../../lib/madagascar-bsc"
 import type { KnowledgeDraft, KnowledgeState } from "../../lib/okf/schema"
 import { createMadagascarLayout } from "../../lib/certificate-layout/seed"
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page, context }) => {
+  await mockStaffSession(context)
   await page.route("**/api/okf/layouts", (route) =>
     route.fulfill({ json: { ok: true, rows: [createMadagascarLayout()] } })
   )
@@ -152,7 +153,7 @@ test("new ECTN streams the Certificate Settings layout immediately after the BL 
     certificateTabs.getByRole("tab", { name: "Fields", exact: true })
   ).toHaveAttribute("aria-selected", "true")
   await expect(
-    page.locator('[data-layout-field="exporterName"] .ai-field-loading input')
+    page.locator('[data-layout-field="exporterName"] [aria-busy="true"] input')
   ).toBeVisible()
   await expect(
     page.locator('[data-layout-field="exporterName"] [data-slot="skeleton"]')
@@ -178,121 +179,59 @@ test("new ECTN streams the Certificate Settings layout immediately after the BL 
   await expect(page.getByText("Bill of Lading", { exact: true })).toBeVisible()
 })
 
-test("certificate tabs edit fields, keep the layout draft and show a clean preview", async ({
+test("certificate editor preserves field edits across preview and reload", async ({
   page,
-}, info) => {
+}) => {
   await mockLayoutData(page.context())
   await mockKnowledge(page)
+  let draft: Record<string, unknown> | null = null
+  await page.route("**/api/okf/layouts/draft*", async (route) => {
+    if (route.request().method() === "PUT") {
+      const body = route.request().postDataJSON()
+      draft = {
+        draft_key: body.draftKey,
+        layout: body.layout,
+        base_revision: body.baseRevision,
+        edit: body.expectedEdit + 1,
+        updated_at: new Date().toISOString(),
+        updated_by: "11111111-1111-4111-8111-111111111111",
+      }
+    }
+    await route.fulfill({ json: { ok: true, draft } })
+  })
   await page.goto("/certificate-settings?country=madagascar")
-  const tabs = page.getByRole("tablist", {
-    name: "Certificate settings sections",
-    exact: true,
-  })
-  const fields = tabs.getByRole("tab", { name: "Fields", exact: true })
-  const layout = tabs.getByRole("tab", { name: "Layout", exact: true })
-  const preview = tabs.getByRole("tab", { name: "Preview", exact: true })
-  await expect(layout).toHaveAttribute("aria-selected", "true")
-  await fields.click()
-  await expect(
-    page.getByRole("tabpanel", { name: "Fields", exact: true })
-  ).toBeVisible()
-  await expect(page.locator("[data-drag-field]")).toHaveCount(0)
-  const search = page.getByRole("textbox", {
-    name: "Search country fields",
-    exact: true,
-  })
-  await search.fill("no such field")
-  await expect(
-    page.getByText("No fields match your search.", { exact: true })
-  ).toBeVisible()
-  await search.fill("Exporter Name")
-  await page
-    .getByRole("button", { name: "Edit field Exporter Name", exact: true })
+  const exporter = page.locator('[data-layout-group="exporter"]')
+  await exporter
+    .getByRole("button", { name: "Edit field Name", exact: true })
     .click()
   await page
     .getByRole("textbox", { name: "Field label", exact: true })
     .fill("Exporter legal name")
   await page.getByRole("button", { name: "Done", exact: true }).click()
-  await search.fill("Exporter legal name")
-  await expect(
-    page.getByRole("button", {
-      name: "Edit field Exporter legal name",
-      exact: true,
-    })
-  ).toBeVisible()
-  await fields.focus()
-  await fields.press("ArrowRight")
-  await expect(layout).toBeFocused()
-  await expect(fields).toHaveAttribute("aria-selected", "true")
-  await layout.press("Enter")
-  await expect(
-    page.getByRole("tabpanel", { name: "Layout", exact: true })
-  ).toBeVisible()
-  await expect(
-    page.locator('[data-layout-group="exporter"]').getByRole("button", {
-      name: "Edit field Exporter legal name",
-      exact: true,
-    })
-  ).toBeVisible()
-  await fields.click()
-  await expect(search).toHaveValue("Exporter legal name")
-  await page.getByRole("button", { name: "New field", exact: true }).click()
-  await page
-    .getByRole("textbox", { name: "New field name", exact: true })
-    .fill("Exporter registration")
-  await page.getByRole("button", { name: "Add field", exact: true }).click()
-  await search.fill("Exporter")
-  await expect(
-    page.getByRole("button", {
-      name: "Edit field Exporter registration",
-      exact: true,
-    })
-  ).toBeVisible()
-  await page.screenshot({
-    path: `node_modules/.cache/certificate-fields-tab-${info.project.name}.png`,
-    animations: "disabled",
-  })
-  await preview.click()
-  await expect(
-    page.getByRole("tabpanel", { name: "Preview", exact: true })
-  ).toBeVisible()
+  const view = page.getByRole("group", { name: "Editor view", exact: true })
+  await view.getByRole("button", { name: "Preview", exact: true }).click()
   await expect(
     page.getByRole("textbox", { name: "Exporter legal name", exact: true })
   ).toBeVisible()
-  await expect(
-    page.getByRole("textbox", { name: "Exporter registration", exact: true })
-  ).toBeVisible()
-  await expect(
-    page.getByRole("button", { name: "Add section", exact: true })
-  ).toHaveCount(0)
   await expect(page.locator("[data-drag-field]")).toHaveCount(0)
+  await view.getByRole("button", { name: "Edit", exact: true }).click()
   await expect(
-    page.getByRole("button", { name: "Edit layout", exact: true })
-  ).toHaveCount(0)
-  await page.screenshot({
-    path: `node_modules/.cache/certificate-preview-tab-${info.project.name}.png`,
-    animations: "disabled",
-  })
-  await layout.click()
-  await expect(
-    page.getByRole("button", {
-      name: "Edit field Exporter registration",
+    exporter.getByRole("button", {
+      name: "Edit field Exporter legal name",
       exact: true,
     })
   ).toBeVisible()
-  const draft = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("actn-layout-draft-madagascar") || "{}")
-  )
-  expect(
-    draft.layout.fields.some(
-      (field: { label: string }) => field.label === "Exporter registration"
-    )
-  ).toBe(true)
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth
-    )
-  ).toBe(true)
+  await expect.poll(() => draft !== null).toBe(true)
+  await page.reload()
+  await expect(
+    exporter.getByRole("button", {
+      name: "Edit field Exporter legal name",
+      exact: true,
+    })
+  ).toBeVisible()
+  await expect(
+    page.getByRole("button", { name: "Publish", exact: true })
+  ).toBeEnabled()
 })
 
 test("country heading searches saved layouts and creates a layout from the last option", async ({
@@ -910,19 +849,20 @@ test("country layouts and verified learning are visible in the OKF", async ({
   await expect.poll(mocked.readCount).toBeGreaterThan(0)
   await expect
     .poll(() =>
-      page.evaluate(() =>
-        JSON.parse(
-          localStorage.getItem("africa-ctn-knowledge-base-notes") ?? "[]"
-        ).filter((node: { title?: string }) =>
-          ["Kenya", "Somalia", "Sudan", "Madagascar", "Djibouti"].includes(
-            node.title ?? ""
-          )
-        ).length === 5
+      page.evaluate(
+        () =>
+          JSON.parse(
+            localStorage.getItem("africa-ctn-knowledge-base-notes") ?? "[]"
+          ).filter((node: { title?: string }) =>
+            ["Kenya", "Somalia", "Sudan", "Madagascar", "Djibouti"].includes(
+              node.title ?? ""
+            )
+          ).length === 5
       )
     )
     .toBe(true)
   await expect(page.getByRole("heading", { name: "AI Learning" })).toBeVisible()
-  await expect(page.getByText(/Freight Value — Bill of Lading/)).toBeVisible()
+  await expect(page.getByText(/Evidence: Bill of Lading/)).toBeVisible()
 })
 
 test("direct edits autosave, preserve published content until exact preview approval, and retain the fixed template", async ({
@@ -1004,27 +944,14 @@ test("duplicate AI update and questions do not publish or create versions", asyn
   expect(model.state.generation).toBe(1)
 })
 
-test("localhost development opens without a login and still rejects invalid writes", async ({
+test("unauthenticated localhost API requests cannot read or publish staff knowledge", async ({
   request,
 }) => {
-  const knowledge = await request.get("/api/okf")
-  expect(knowledge.status()).toBe(200)
-  expect(await knowledge.json()).toMatchObject({
-    development: true,
-    canEdit: true,
-    canPublish: true,
-  })
-  const layouts = await request.get("/api/okf/layouts")
-  expect(layouts.status()).toBe(200)
-  expect(
-    (await layouts.json()).rows.some(
-      (row: { country_key: string }) => row.country_key === "madagascar"
-    )
-  ).toBe(true)
-  const checked = await request.get("/api/okf/layouts", {
-    headers: { "If-None-Match": layouts.headers().etag },
-  })
-  expect(checked.status()).toBe(304)
+  for (const url of ["/api/okf", "/api/okf/layouts"]) {
+    const response = await request.get(url)
+    expect(response.status()).toBe(401)
+    expect(await response.json()).toMatchObject({ ok: false })
+  }
   for (const url of [
     "/api/okf",
     "/api/okf/requests",
@@ -1034,7 +961,7 @@ test("localhost development opens without a login and still rejects invalid writ
     const response = await request.post(url, {
       data: { action: "publish", id: "invalid" },
     })
-    expect(response.status()).toBe(400)
+    expect(response.status()).toBe(401)
     expect(await response.json()).toMatchObject({ ok: false })
   }
 })

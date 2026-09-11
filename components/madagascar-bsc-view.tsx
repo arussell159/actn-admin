@@ -44,6 +44,7 @@ import { CountryCell } from "@/components/country-cell"
 import { CountryTableFilters } from "@/components/country-table-filters"
 import type { PendingRequestEdit } from "@/components/okf-request-review"
 import { okfApi } from "@/lib/okf/client"
+import { authenticatedFetch, ensureLocalDevelopmentSession } from "@/lib/client"
 import type { CorrectionSourceLearning } from "@/lib/okf/correction-learning"
 import { SiteHeader, SiteHeaderBackButton } from "@/components/site-header"
 import { Badge } from "@/components/ui/badge"
@@ -104,7 +105,7 @@ import {
 import {
   createSeedCtnKnowledgeRecords,
   ctnKnowledgeRecordToHtml,
-  loadCtnKnowledgeRecords,
+  getCtnKnowledgeRecords,
   saveCtnKnowledgeRecords,
 } from "@/lib/ctn-knowledge-base"
 import { Extension } from "@tiptap/core"
@@ -849,7 +850,6 @@ function AnalysisView({
           {savedLayout ? (
             <CertificateForm
               layout={savedLayout.layout}
-              isLoading={isProgressivelyLoading}
               renderField={renderField}
               groupAction={(group) =>
                 group.kind === "invoice-items" &&
@@ -1151,6 +1151,17 @@ function NewRequest() {
   async function analyze() {
     setIsAnalyzing(true)
     setError("")
+    try {
+      await ensureLocalDevelopmentSession()
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not start the local development session."
+      )
+      setIsAnalyzing(false)
+      return
+    }
     const now = new Date().toISOString()
     const requestId = createMadagascarId("mgbsc")
     const documents = files.map((file) => ({
@@ -1191,11 +1202,14 @@ function NewRequest() {
       files.forEach((file) => formData.append("files", file))
       formData.set("requestId", requestId)
       formData.set("stream", "true")
-      const response = await fetch(`${moduleApiBasePath}/analyze`, {
-        method: "POST",
-        body: formData,
-        signal: abortController.signal,
-      })
+      const response = await authenticatedFetch(
+        `${moduleApiBasePath}/analyze`,
+        {
+          method: "POST",
+          body: formData,
+          signal: abortController.signal,
+        }
+      )
       if (!response.ok || !response.body) {
         const payload = (await response.json()) as { message?: string }
         throw new Error(payload.message || "Could not analyze the documents.")
@@ -1508,7 +1522,7 @@ function Requests({
   const selected =
     selectedDraftJob?.isAnalyzing || selectedDraftJob?.error
       ? selectedDraftJob.request
-      : persistedSelected ?? selectedDraftJob?.request
+      : (persistedSelected ?? selectedDraftJob?.request)
 
   React.useEffect(() => {
     onSelectedRequestChange?.(selected ?? null)
@@ -1604,7 +1618,11 @@ function Requests({
         filterOptions={filterOptions}
         mobileFiltersFullWidth
         action={
-          <Button size="lg" render={<AppLink href={`${moduleBasePath}/new`} />}>
+          <Button
+            size="lg"
+            nativeButton={false}
+            render={<AppLink href={`${moduleBasePath}/new`} />}
+          >
             <PlusIcon />
             {newRequestLabel}
           </Button>
@@ -1766,7 +1784,20 @@ function Rules() {
     React.useState<KnowledgeNavigation | null>(null)
   const requestBusy = React.useRef(false)
   React.useEffect(() => {
-    setRecords(loadCtnKnowledgeRecords())
+    let active = true
+    void getCtnKnowledgeRecords()
+      .then((records) => {
+        if (active) setRecords(records)
+      })
+      .catch(() => {
+        if (active)
+          setMessage(
+            "Could not load shared country knowledge. Please reload before editing."
+          )
+      })
+    return () => {
+      active = false
+    }
   }, [])
   const [chatActivity, setChatActivity] = React.useState<
     "thinking" | "responding" | "saving" | null
@@ -2011,9 +2042,9 @@ function Rules() {
     setMessage("")
     setChatActivity("thinking")
     try {
-      const liveRecords = loadCtnKnowledgeRecords()
+      const liveRecords = await getCtnKnowledgeRecords()
       setRecords(liveRecords)
-      const response = await fetch("/api/knowledge-base/chat", {
+      const response = await authenticatedFetch("/api/knowledge-base/chat", {
         signal: abort.signal,
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2139,15 +2170,15 @@ function Rules() {
     setChatActivity("saving")
     setMessage("")
     try {
-      const commit = () =>
-        reviewSession.approve(
+      const commit = async () =>
+        reviewSession.approveAsync(
           pendingProposal.id,
-          loadCtnKnowledgeRecords(),
+          await getCtnKnowledgeRecords(),
           saveCtnKnowledgeRecords
         )
       const result = navigator.locks
         ? await navigator.locks.request("ctn-knowledge-base-write", commit)
-        : commit()
+        : await commit()
       setRecords(result.records)
       setPendingProposal(null)
       setAnalysis(null)

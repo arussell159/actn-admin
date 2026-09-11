@@ -1,3 +1,12 @@
+import {
+  reportDatabaseReadFailure,
+  clearDatabaseReadFailure,
+} from "@/lib/persistence"
+import {
+  readPendingDatabaseSave,
+  saveDatabaseDraft,
+  waitForDatabaseSave,
+} from "@/lib/persistence"
 import { createPublicClient } from "@/lib/public-client"
 import {
   readBrowserStorage,
@@ -377,63 +386,38 @@ export function loadMonthEndTemplate() {
   }
 }
 
-export async function getMonthEndTemplate() {
-  const localTemplate = loadMonthEndTemplate()
-
-  try {
-    const supabase = createPublicClient()
-    const { data, error } = await supabase
-      .from(tableName)
-      .select("template, updated_at")
-      .eq("id", templateId)
-      .maybeSingle<{
-        template: MonthEndTemplate | null
-        updated_at: string | null
-      }>()
-
-    if (error) {
-      return localTemplate
+async function getMonthEndTemplateFromDatabase() {
+  await waitForDatabaseSave("month-end-template").catch(() => {})
+  const pending =
+    readPendingDatabaseSave<MonthEndTemplate>("month-end-template")
+  if (pending) {
+    try {
+      await saveMonthEndTemplate(pending)
+    } catch {
+      return normalizeTemplate(pending)
     }
-
-    if (!data?.template) {
-      const template = normalizeTemplate(defaultTemplate)
-
-      saveLocalTemplate(template)
-      saveDatabaseTemplate(template)
-      return template
-    }
-
-    const databaseTemplate = normalizeTemplate(data.template)
-    const localUpdatedAt = templateLastUpdatedAt(localTemplate)
-    const databaseUpdatedAt = data.updated_at
-      ? timestampValue(data.updated_at)
-      : templateLastUpdatedAt(databaseTemplate)
-    const template =
-      localUpdatedAt > databaseUpdatedAt ? localTemplate : databaseTemplate
-
-    if (template === localTemplate) {
-      saveDatabaseTemplate(template)
-    }
-
-    saveLocalTemplate(template)
-    return template
-  } catch {
-    return localTemplate
   }
-}
-
-function templateLastUpdatedAt(template: MonthEndTemplate) {
-  return Math.max(
-    timestampValue(template.countriesModule?.updatedAt),
-    ...template.countries.map((country) => timestampValue(country.updatedAt)),
-    ...template.taskGroups.map((group) => timestampValue(group.updatedAt))
+  await waitForDatabaseSave("month-end-template")
+  const { data, error } = await createPublicClient()
+    .from(tableName)
+    .select("template")
+    .eq("id", templateId)
+    .maybeSingle<{ template: MonthEndTemplate | null }>()
+  if (error) throw error
+  const template = normalizeTemplate(data?.template ?? defaultTemplate)
+  // Retain the old cache for recovery before replacing it with shared state.
+  const legacy = readBrowserStorage("localStorage", storageKey)
+  if (
+    legacy &&
+    !readBrowserStorage("localStorage", storageKey + ":before-database-sync")
   )
-}
-
-function timestampValue(value: string | undefined | null) {
-  const timestamp = Date.parse(value ?? defaultUpdatedAt)
-
-  return Number.isFinite(timestamp) ? timestamp : Date.parse(defaultUpdatedAt)
+    writeBrowserStorage(
+      "localStorage",
+      storageKey + ":before-database-sync",
+      legacy
+    )
+  saveLocalTemplate(template)
+  return template
 }
 
 function normalizeTemplate(template: MonthEndTemplate): MonthEndTemplate {
@@ -611,34 +595,47 @@ function mergeDefaultCountryRows(countries: TemplateCountryRow[]) {
 }
 
 export function saveMonthEndTemplate(template: MonthEndTemplate) {
-  saveLocalTemplate(template)
-  saveDatabaseTemplate(template)
-  window.dispatchEvent(new Event("month-end:template-updated"))
+  return saveDatabaseDraft(
+    "month-end-template",
+    "Accounting settings",
+    template,
+    async (snapshot) => {
+      const { error } = await createPublicClient().from(tableName).upsert(
+        {
+          id: templateId,
+          template: snapshot,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "id" }
+      )
+      if (error) throw error
+      saveLocalTemplate(snapshot)
+    }
+  ).then(() => {
+    if (
+      typeof window !== "undefined" &&
+      !readPendingDatabaseSave("month-end-template")
+    )
+      window.dispatchEvent(new Event("month-end:template-updated"))
+  })
 }
 
 export function resetMonthEndTemplate() {
-  removeBrowserStorage("localStorage", storageKey)
-  window.dispatchEvent(new Event("month-end:template-updated"))
+  return saveMonthEndTemplate(normalizeTemplate(defaultTemplate))
 }
 
 function saveLocalTemplate(template: MonthEndTemplate) {
-  if (typeof window !== "undefined") {
+  if (typeof window !== "undefined")
     writeBrowserStorage("localStorage", storageKey, JSON.stringify(template))
-  }
 }
 
-async function saveDatabaseTemplate(template: MonthEndTemplate) {
+export async function getMonthEndTemplate() {
   try {
-    const now = new Date().toISOString()
-    const supabase = createPublicClient()
-
-    await supabase.from(tableName).upsert(
-      {
-        id: templateId,
-        template,
-        updated_at: now,
-      },
-      { onConflict: "id" }
-    )
-  } catch {}
+    const value = await getMonthEndTemplateFromDatabase()
+    clearDatabaseReadFailure("template")
+    return value
+  } catch {
+    reportDatabaseReadFailure("template", "Accounting settings")
+    return loadMonthEndTemplate()
+  }
 }

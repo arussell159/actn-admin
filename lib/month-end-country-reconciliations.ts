@@ -1,9 +1,5 @@
 import { createPublicClient } from "@/lib/public-client"
 import { assertSupabaseConfig } from "@/lib/supabase-env"
-import {
-  readJsonBrowserStorage,
-  writeBrowserStorage,
-} from "@/lib/browser-storage"
 import { getCanonicalCountryId } from "@/lib/month-end-master-records"
 
 export type MonthEndCountryReconciliationRecord<TSnapshot = unknown> = {
@@ -27,37 +23,10 @@ type MonthEndCountryReconciliationRow = {
 }
 
 const tableName = "month_end_country_reconciliations"
-const localStorageKey = "actn-month-end-country-reconciliations-v1"
 
 function getSupabaseClient() {
   assertSupabaseConfig()
   return createPublicClient()
-}
-
-function isLocalhostBrowser() {
-  if (typeof window === "undefined") {
-    return false
-  }
-
-  return (
-    window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1" ||
-    window.location.hostname === "[::1]" ||
-    window.location.hostname.endsWith(".localhost")
-  )
-}
-
-function isMissingTableError(error: unknown) {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    "message" in error &&
-    typeof error.message === "string" &&
-    (error.code === "42P01" ||
-      error.code === "PGRST205" ||
-      error.message.includes(tableName))
-  )
 }
 
 function makeCountryReconciliationId(monthEndId: string, countryId: string) {
@@ -96,113 +65,21 @@ function toRow<TSnapshot>({
   }
 }
 
-function getLocalRecords() {
-  if (typeof window === "undefined") {
-    return []
-  }
-
-  return readJsonBrowserStorage({
-    kind: "localStorage",
-    key: localStorageKey,
-    fallback: [],
-    validate: isCountryReconciliationRecordArray,
-  })
-}
-
-function isCountryReconciliationRecordArray(
-  value: unknown
-): value is MonthEndCountryReconciliationRecord[] {
-  return (
-    Array.isArray(value) &&
-    value.every((record) => {
-      if (typeof record !== "object" || record === null) {
-        return false
-      }
-
-      const candidate = record as Partial<MonthEndCountryReconciliationRecord>
-      return (
-        typeof candidate.id === "string" &&
-        typeof candidate.monthEndId === "string" &&
-        typeof candidate.period === "string" &&
-        typeof candidate.countryId === "string" &&
-        "snapshot" in candidate
-      )
-    })
-  )
-}
-
-function saveLocalRecords(records: MonthEndCountryReconciliationRecord[]) {
-  if (typeof window === "undefined") {
-    return
-  }
-
-  writeBrowserStorage("localStorage", localStorageKey, JSON.stringify(records))
-}
-
-function saveLocalRecord(record: MonthEndCountryReconciliationRecord) {
-  const records = getLocalRecords()
-  const existingIndex = records.findIndex((item) => item.id === record.id)
-  const nextRecords =
-    existingIndex >= 0
-      ? records.map((item, index) => (index === existingIndex ? record : item))
-      : [record, ...records]
-
-  saveLocalRecords(nextRecords)
-}
-
-function deleteLocalRecord(monthEndId: string, countryId: string) {
-  const canonicalCountryId = getCanonicalCountryId(countryId)
-
-  saveLocalRecords(
-    getLocalRecords().filter(
-      (record) =>
-        record.monthEndId !== monthEndId ||
-        getCanonicalCountryId(record.countryId) !== canonicalCountryId
-    )
-  )
-}
-
-export async function getMonthEndCountryReconciliation<TSnapshot = unknown>({
+export async function getMonthEndCountryReconciliation<TSnapshot>({
   monthEndId,
   countryId,
 }: {
   monthEndId: string
   countryId: string
 }) {
-  const canonicalCountryId = getCanonicalCountryId(countryId)
-
-  try {
-    const supabase = getSupabaseClient()
-    const { data, error } = await supabase
-      .from(tableName)
-      .select("*")
-      .eq("month_end_id", monthEndId)
-      .eq("country_id", canonicalCountryId)
-      .maybeSingle<MonthEndCountryReconciliationRow>()
-
-    if (error) {
-      throw error
-    }
-
-    return data ? toRecord<TSnapshot>(data) : undefined
-  } catch (error) {
-    if (isMissingTableError(error)) {
-      return undefined
-    }
-
-    if (isLocalhostBrowser()) {
-      const localRecord = getLocalRecords().find(
-        (record) =>
-          record.monthEndId === monthEndId &&
-          getCanonicalCountryId(record.countryId) === canonicalCountryId
-      )
-
-      return localRecord as
-        MonthEndCountryReconciliationRecord<TSnapshot> | undefined
-    }
-
-    throw error
-  }
+  const { data, error } = await getSupabaseClient()
+    .from(tableName)
+    .select("*")
+    .eq("month_end_id", monthEndId)
+    .eq("country_id", getCanonicalCountryId(countryId))
+    .maybeSingle<MonthEndCountryReconciliationRow>()
+  if (error) throw error
+  return data ? toRecord<TSnapshot>(data) : undefined
 }
 
 export async function saveMonthEndCountryReconciliation<TSnapshot>({
@@ -226,32 +103,10 @@ export async function saveMonthEndCountryReconciliation<TSnapshot>({
     snapshot,
     updatedAt: now,
   }
-
-  if (isLocalhostBrowser()) {
-    saveLocalRecord(record)
-  }
-
-  try {
-    const supabase = getSupabaseClient()
-    const { error } = await supabase
-      .from(tableName)
-      .upsert(toRow({ record, now }), { onConflict: "id" })
-
-    if (error) {
-      throw error
-    }
-  } catch (error) {
-    if (isMissingTableError(error)) {
-      return
-    }
-
-    if (isLocalhostBrowser()) {
-      saveLocalRecord(record)
-      return
-    }
-
-    throw error
-  }
+  const { error } = await getSupabaseClient()
+    .from(tableName)
+    .upsert(toRow({ record, now }), { onConflict: "id" })
+  if (error) throw error
 }
 
 export async function deleteMonthEndCountryReconciliation({
@@ -261,33 +116,10 @@ export async function deleteMonthEndCountryReconciliation({
   monthEndId: string
   countryId: string
 }) {
-  const canonicalCountryId = getCanonicalCountryId(countryId)
-
-  if (isLocalhostBrowser()) {
-    deleteLocalRecord(monthEndId, canonicalCountryId)
-  }
-
-  try {
-    const supabase = getSupabaseClient()
-    const { error } = await supabase
-      .from(tableName)
-      .delete()
-      .eq("month_end_id", monthEndId)
-      .eq("country_id", canonicalCountryId)
-
-    if (error) {
-      throw error
-    }
-  } catch (error) {
-    if (isMissingTableError(error)) {
-      return
-    }
-
-    if (isLocalhostBrowser()) {
-      deleteLocalRecord(monthEndId, canonicalCountryId)
-      return
-    }
-
-    throw error
-  }
+  const { error } = await getSupabaseClient()
+    .from(tableName)
+    .delete()
+    .eq("month_end_id", monthEndId)
+    .eq("country_id", getCanonicalCountryId(countryId))
+  if (error) throw error
 }

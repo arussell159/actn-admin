@@ -13,20 +13,19 @@ function unavailable() {
 export async function POST(request: Request) {
   const hostname = new URL(request.url).hostname
 
-  if (
-    process.env.NODE_ENV !== "development" ||
-    !isLocalhostRequest(hostname)
-  ) {
+  if (process.env.NODE_ENV !== "development" || !isLocalhostRequest(hostname)) {
     return unavailable()
   }
 
-  const secretKey = process.env.SUPABASE_SECRET_KEY
+  const secretKey =
+    process.env.SUPABASE_SECRET_KEY?.trim() ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
   if (!secretKey) {
     return Response.json(
       {
         ok: false,
         message:
-          "Local database access needs SUPABASE_SECRET_KEY in the development environment.",
+          "Sign in at /login with your staff account. Automatic local sign-in needs SUPABASE_SECRET_KEY in the development environment.",
       },
       { status: 503, headers: { "Cache-Control": "no-store" } }
     )

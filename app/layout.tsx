@@ -2,6 +2,7 @@ import "./globals.css"
 import { PwaRegister } from "@/components/pwa-register"
 import { AppCommandMenuLoader } from "@/components/app-command-menu-loader"
 import { AuthSessionGuard } from "@/components/auth-session-guard"
+import { PersistenceStatus } from "@/components/persistence-status"
 import { MobileAppGuard } from "@/components/mobile-app-guard"
 import { RouteScrollReset } from "@/components/route-scroll-reset"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -86,6 +87,7 @@ export default function RootLayout({
             <PwaRegister />
             <MobileAppGuard />
             <AuthSessionGuard />
+            <PersistenceStatus />
             <React.Suspense fallback={null}>
               <RouteScrollReset />
             </React.Suspense>

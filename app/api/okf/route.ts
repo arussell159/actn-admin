@@ -19,6 +19,8 @@ import {
 } from "@/lib/okf/engine"
 import { getMadagascarDropdownOptions } from "@/lib/madagascar-bsc-server"
 import {
+  correctionLearningKey,
+  normalizeCorrectionLearning,
   parseCorrectionLearning,
   type VisibleCorrectionLearning,
 } from "@/lib/okf/correction-learning"
@@ -62,16 +64,16 @@ export async function GET() {
         .from("madagascar_bsc_requests")
         .select("id,country")
         .limit(1000),
-        session.client
-          .from("okf_certificate_layouts")
-          .select("layout")
-          .limit(300),
-        session.client
-          .from("okf_intake")
-          .select("result,created_at")
-          .like("page_id", "correction-learning:%")
-          .order("created_at", { ascending: false })
-          .limit(1000),
+      session.client
+        .from("okf_certificate_layouts")
+        .select("layout")
+        .limit(300),
+      session.client
+        .from("okf_intake")
+        .select("result,created_at")
+        .like("page_id", "correction-learning:%")
+        .order("created_at", { ascending: false })
+        .limit(1000),
     ])
     databaseError(drafts.error)
     databaseError(history.error)
@@ -93,9 +95,11 @@ export async function GET() {
           }
         | undefined
       const learning = result?.learning
+        ? normalizeCorrectionLearning(result.learning)
+        : undefined
       const country = typeof result?.country === "string" ? result.country : ""
       if (learning?.version !== 1 || !learning.verified || !country) continue
-      const key = `${country}:${learning.target}:${learning.documentType}`
+      const key = correctionLearningKey(country, learning)
       if (learnedKeys.has(key)) continue
       learnedKeys.add(key)
       sourceLearnings.push({
@@ -108,7 +112,7 @@ export async function GET() {
       const learning = parseCorrectionLearning(correction.reason)
       const country = countries.get(String(correction.request_id)) ?? ""
       if (!learning?.verified || !country) continue
-      const key = `${country}:${learning.target}:${learning.documentType}`
+      const key = correctionLearningKey(country, learning)
       if (learnedKeys.has(key)) continue
       learnedKeys.add(key)
       sourceLearnings.push({

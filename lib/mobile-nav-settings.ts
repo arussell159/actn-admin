@@ -1,5 +1,10 @@
 import { createPublicClient } from "@/lib/public-client"
 import {
+  readPendingDatabaseSave,
+  saveDatabaseDraft,
+  waitForDatabaseSave,
+} from "@/lib/persistence"
+import {
   readUnknownJsonBrowserStorage,
   writeBrowserStorage,
 } from "@/lib/browser-storage"
@@ -58,6 +63,9 @@ export async function getMobileNavDockHrefs(
   maxItems: number
 ) {
   try {
+    await waitForDatabaseSave("mobile-navigation").catch(() => {})
+    const pending = readPendingDatabaseSave<string[]>("mobile-navigation")
+    if (pending) await saveMobileNavDockHrefs(pending)
     const supabase = createPublicClient()
     const { data, error } = await supabase
       .from(tableName)
@@ -86,21 +94,25 @@ export async function getMobileNavDockHrefs(
 }
 
 export async function saveMobileNavDockHrefs(dockHrefs: string[]) {
-  writeLocalDockHrefs(dockHrefs)
+  return saveDatabaseDraft(
+    "mobile-navigation",
+    "Navigation settings",
+    dockHrefs,
+    async (snapshot) => {
+      const supabase = createPublicClient()
+      const { error } = await supabase.from(tableName).upsert(
+        {
+          id: settingId,
+          value: { dockHrefs: snapshot },
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "id" }
+      )
 
-  try {
-    const supabase = createPublicClient()
-    const { error } = await supabase.from(tableName).upsert(
-      {
-        id: settingId,
-        value: { dockHrefs },
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "id" }
-    )
-
-    if (error) {
-      throw error
+      if (error) {
+        throw error
+      }
+      writeLocalDockHrefs(snapshot)
     }
-  } catch {}
+  )
 }

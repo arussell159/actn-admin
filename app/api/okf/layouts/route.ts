@@ -21,7 +21,7 @@ export async function GET(request: Request) {
     const headers = {
       ETag: etag,
       "Cache-Control": "private, no-cache",
-      Vary: "Cookie",
+      Vary: "Cookie, Authorization",
     }
     if (request.headers.get("if-none-match") === etag)
       return new Response(null, { status: 304, headers })

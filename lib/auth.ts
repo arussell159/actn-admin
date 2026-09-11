@@ -1,4 +1,5 @@
 import { createServerClient } from "@supabase/ssr"
+import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 import { NextResponse, type NextRequest } from "next/server"
 import type { CookieOptions } from "@supabase/ssr"
 
@@ -18,6 +19,7 @@ export function isLocalhostRequest(hostname: string) {
 }
 
 export function isAuthBypassPath(pathname: string) {
+  if (pathname.startsWith("/api/")) return false
   return (
     pathname === loginPath ||
     pathname.startsWith("/auth/") ||
@@ -59,40 +61,53 @@ export async function updateSession(request: NextRequest) {
   })
   const { supabaseUrl, supabaseKey } = assertSupabaseConfig()
   const isPhone = isPhoneRequest(request)
+  const token = request.headers
+    .get("authorization")
+    ?.match(/^Bearer\s+(.+)$/i)?.[1]
+  if (token) {
+    const client = createSupabaseClient(supabaseUrl, supabaseKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+      global: { fetch: (input, init) => fetchWithTimeout(input, init, 15_000) },
+    })
+    const {
+      data: { user },
+      error,
+    } = await client.auth.getUser(token)
+    if (error && (!error.status || error.status >= 500)) throw error
+    return { response, user }
+  }
 
-  const supabase = createServerClient(
-    supabaseUrl,
-    supabaseKey,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          )
-          response = NextResponse.next({
-            request,
-          })
-          cookiesToSet.forEach(({ name, value, options }) => {
-            response.cookies.set(
-              name,
-              value,
-              authCookieOptions(options, isPhone)
-            )
-          })
-        },
+  const supabase = createServerClient(supabaseUrl, supabaseKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll()
       },
-      global: {
-        fetch: (input, init) => fetchWithTimeout(input, init, 15_000),
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value }) =>
+          request.cookies.set(name, value)
+        )
+        response = NextResponse.next({
+          request,
+        })
+        cookiesToSet.forEach(({ name, value, options }) => {
+          response.cookies.set(name, value, authCookieOptions(options, isPhone))
+        })
       },
-    }
-  )
+    },
+    global: {
+      fetch: (input, init) => fetchWithTimeout(input, init, 15_000),
+    },
+  })
 
   const {
     data: { user },
+    error,
   } = await supabase.auth.getUser()
+  if (error && (!error.status || error.status >= 500)) throw error
 
   return { response, user }
 }

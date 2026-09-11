@@ -1479,6 +1479,7 @@ export function InformationView({
   const [noteSearch, setNoteSearch] = React.useState("")
   const [isNotebookLoading, setIsNotebookLoading] = React.useState(true)
   const nodesRef = React.useRef<InformationNode[]>([])
+  const notesRevisionRef = React.useRef(0)
   const titleDraftRef = React.useRef("")
   const contentDraftRef = React.useRef("")
   const activeIdRef = React.useRef<string | undefined>(undefined)
@@ -1515,6 +1516,7 @@ export function InformationView({
     let isMounted = true
 
     async function loadNotes() {
+      const loadRevision = notesRevisionRef.current
       setIsNotebookLoading(true)
       const cachedTrash = loadTrashedInformationNotes(scope)
       const cachedTrashIds = new Set(cachedTrash.map((node) => node.id))
@@ -1551,6 +1553,11 @@ export function InformationView({
       }
 
       const loadedNodes = await getInformationNotes(scope)
+      if (notesRevisionRef.current !== loadRevision) {
+        setIsNotebookLoading(false)
+        hasLoadedNotes.current = true
+        return
+      }
       const loadedTrash = loadTrashedInformationNotes(scope)
       const trashedIds = new Set(loadedTrash.map((node) => node.id))
       const loaded = loadedNodes.filter((node) => !trashedIds.has(node.id))
@@ -1591,18 +1598,10 @@ export function InformationView({
               ? undefined
               : "folders"
           : undefined)
-      const localRequested = requestedNode
-        ? nodesRef.current.find((node) => node.id === requestedNode)
-        : undefined
       const requested = requestedNode
-        ? (loaded.find((node) => node.id === requestedNode) ?? localRequested)
+        ? loaded.find((node) => node.id === requestedNode)
         : undefined
-      const nextNodes = localRequested
-        ? [
-            ...loaded.filter((node) => node.id !== localRequested.id),
-            localRequested,
-          ]
-        : loaded
+      const nextNodes = loaded
       const desktopRestoredNode = desktopState?.activeId
         ? loaded.find((node) => node.id === desktopState.activeId)
         : undefined
@@ -1619,6 +1618,7 @@ export function InformationView({
           : []
 
       if (isMounted) {
+        nodesRef.current = nextNodes
         setNodes(nextNodes)
         setTrashedNodes(loadedTrash)
         if (!hasInitializedCollapsedFolders.current) {
@@ -1987,16 +1987,20 @@ export function InformationView({
   }
 
   function persist(nextNodes: InformationNode[]) {
+    notesRevisionRef.current += 1
     nodesRef.current = nextNodes
     setNodes(nextNodes)
-    saveInformationNotes(nextNodes, scope)
+    void saveInformationNotes(nextNodes, scope).catch(() => {})
   }
 
-  function applyKnowledgeBaseUpdates(
+  async function applyKnowledgeBaseUpdates(
     nextNodes: InformationNode[],
     firstUpdatedId?: string
   ) {
-    persist(nextNodes)
+    await saveInformationNotes(nextNodes, scope)
+    notesRevisionRef.current += 1
+    nodesRef.current = nextNodes
+    setNodes(nextNodes)
     if (!firstUpdatedId) return
     const updated = nextNodes.find((node) => node.id === firstUpdatedId)
     if (!updated) return
@@ -2010,7 +2014,7 @@ export function InformationView({
 
   function persistTrash(nextTrashedNodes: TrashedInformationNode[]) {
     setTrashedNodes(nextTrashedNodes)
-    saveTrashedInformationNotes(nextTrashedNodes, scope)
+    void saveTrashedInformationNotes(nextTrashedNodes, scope).catch(() => {})
   }
 
   function updateInformationRoute(
@@ -2606,12 +2610,16 @@ export function InformationView({
         return
       }
 
+      const revision = notesRevisionRef.current
       const loaded = await getInformationNotes(scope)
+      if (revision !== notesRevisionRef.current) return
       // A stale response must not put locally deleted folders back in the tree.
       const trashedIds = new Set(
         loadTrashedInformationNotes(scope).map((node) => node.id)
       )
-      setNodes(loaded.filter((node) => !trashedIds.has(node.id)))
+      const visible = loaded.filter((node) => !trashedIds.has(node.id))
+      nodesRef.current = visible
+      setNodes(visible)
     }
 
     window.addEventListener(updatedEvent, refresh)

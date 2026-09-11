@@ -11,6 +11,9 @@ const applicationDocumentRoutes = [
   "/quote-tool",
   "/template-builder",
   "/certificate-settings",
+  "/knowledge-base",
+  "/cargo-tracking-notes/:path*",
+  "/madagascar-bsc/:path*",
 ]
 
 const nextConfig: NextConfig = {

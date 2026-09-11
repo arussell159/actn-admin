@@ -19,6 +19,23 @@ test("versions are conservative, compact, and accept legacy numeric versions", (
   }
 })
 
+test("database approval waits for persistence and retains the exact proposal after a failure", async () => {
+  const records = [record()]
+  const session = createKnowledgeReviewSession()
+  const proposal = session.stage(review(), records)
+  await assert.rejects(session.approveAsync(proposal.id, records, async () => { throw new Error("database offline") }), /database offline/)
+  let release
+  const pending = session.approveAsync(proposal.id, records, () => new Promise((resolve) => { release = resolve }))
+  let completed = false
+  pending.then(() => { completed = true })
+  await Promise.resolve()
+  assert.equal(completed, false)
+  release()
+  const result = await pending
+  assert.equal(result.records[0].version, "v2")
+  await assert.rejects(session.approveAsync(proposal.id, records, async () => {}), /no pending/)
+})
+
 test("analysis is read-only; approval commits the private exact proposal once", () => {
   const records = [record()]
   const before = structuredClone(records)

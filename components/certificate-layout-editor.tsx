@@ -1,4 +1,6 @@
 "use client"
+
+import { authenticatedFetch } from "@/lib/client"
 import { useEffect, useRef, useState } from "react"
 import {
   DndContext,
@@ -224,7 +226,7 @@ export function CertificateLayoutEditor({
         draftEdit.current = savedDraft.edit
         lastSavedDraft.current = signature
       }
-      const response = await fetch("/api/okf/layouts", {
+      const response = await authenticatedFetch("/api/okf/layouts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

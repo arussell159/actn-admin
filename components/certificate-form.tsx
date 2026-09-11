@@ -3,7 +3,6 @@
 import { type CSSProperties, type ReactNode } from "react"
 import { CertificateSection } from "@/components/certificate-section"
 import { CertificateFieldControl } from "@/components/certificate-field-control"
-import { Button as MovingBorderContainer } from "@/components/ui/moving-border"
 import { cn } from "@/lib/utils"
 import type {
   CertificateField,
@@ -62,7 +61,6 @@ export function CertificateForm({
   sectionTitle,
   groupTitle,
   groupFooter,
-  isLoading = false,
 }: {
   layout: CertificateLayout
   renderField?: (field: CertificateField) => ReactNode
@@ -76,7 +74,6 @@ export function CertificateForm({
   sectionTitle?: (section: CertificateLayout["sections"][number]) => ReactNode
   groupTitle?: (group: CertificateGroup) => ReactNode
   groupFooter?: (group: CertificateGroup) => ReactNode
-  isLoading?: boolean
 }) {
   const fieldMap = new Map(layout.fields.map((field) => [field.id, field]))
   function groupContent(
@@ -186,41 +183,27 @@ export function CertificateForm({
     )
   }
   return (
-    <MovingBorderContainer
-      active={isLoading}
-      as="div"
-      borderRadius="0.875rem"
-      duration={4200}
-      containerClassName="h-auto w-full"
-      borderClassName="h-32 w-32 opacity-95"
-      className="block h-auto bg-background p-4 text-foreground sm:p-6"
-      aria-busy={isLoading || undefined}
-      aria-label={
-        isLoading ? "Certificate fields are being populated" : undefined
-      }
+    <div
+      className="mx-auto grid w-full max-w-6xl gap-8 font-sans"
+      data-certificate-country={layout.country}
     >
-      <div
-        className="mx-auto grid w-full max-w-6xl gap-8 font-sans"
-        data-certificate-country={layout.country}
-      >
-        {layout.sections.map((section) => (
-          <CertificateSection
-            key={section.id}
-            sectionId={section.id}
-            title={sectionTitle ? sectionTitle(section) : section.title}
-            action={sectionAction?.(section)}
-            contentClassName={cn(
-              certificateGridClass(section.columns),
-              section.groups.some((group) => group.kind === "documents") &&
-                "p-0 sm:p-0"
-            )}
-          >
-            {section.groups.map((group) =>
-              groupContent(group, 0, "md", section.columns)
-            )}
-          </CertificateSection>
-        ))}
-      </div>
-    </MovingBorderContainer>
+      {layout.sections.map((section) => (
+        <CertificateSection
+          key={section.id}
+          sectionId={section.id}
+          title={sectionTitle ? sectionTitle(section) : section.title}
+          action={sectionAction?.(section)}
+          contentClassName={cn(
+            certificateGridClass(section.columns),
+            section.groups.some((group) => group.kind === "documents") &&
+              "p-0 sm:p-0"
+          )}
+        >
+          {section.groups.map((group) =>
+            groupContent(group, 0, "md", section.columns)
+          )}
+        </CertificateSection>
+      ))}
+    </div>
   )
 }

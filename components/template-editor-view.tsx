@@ -480,7 +480,7 @@ export function TemplateEditorView() {
   }, [activeCountrySettingsSection, itemForm])
 
   function persist(nextTemplate: MonthEndTemplate) {
-    saveMonthEndTemplate(nextTemplate)
+    void saveMonthEndTemplate(nextTemplate).catch(() => {})
     setTemplate(nextTemplate)
   }
 

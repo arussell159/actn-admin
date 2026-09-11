@@ -1,4 +1,5 @@
 import "server-only"
+import { headers } from "next/headers"
 import { createClient } from "@/lib/server"
 import { pageSchema, type KnowledgeState } from "./schema"
 
@@ -13,13 +14,21 @@ export class OkfError extends Error {
 export async function okfSession(
   permission: "read" | "edit" | "publish" = "read"
 ) {
-  const client = await createClient()
+  const authorization = (await headers()).get("authorization") ?? ""
+  const accessToken = authorization.match(/^Bearer\s+(.+)$/i)?.[1]
+  const client = await createClient(accessToken)
   const {
     data: { user },
     error,
-  } = await client.auth.getUser()
-  if (error || !user)
+  } = await client.auth.getUser(accessToken)
+  if (error || !user) {
+    if (error && (!error.status || error.status >= 500))
+      throw new OkfError(
+        "The server could not reach the sign-in service. Please try again.",
+        503
+      )
     throw new OkfError("Sign in with your staff account to use the OKF.", 401)
+  }
   const role = String(user.app_metadata?.okf_role ?? "staff")
   const canEdit = ["staff", "editor", "publisher", "admin"].includes(role)
   const canPublish = ["staff", "publisher", "admin"].includes(role)

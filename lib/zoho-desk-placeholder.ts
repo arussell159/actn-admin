@@ -1,5 +1,5 @@
 import type { ZohoDeskThread, ZohoDeskTicket } from "@/lib/zoho-desk"
-import { createPublicClient } from "@/lib/public-client"
+import { createClient } from "@/lib/server"
 import { hasSupabaseConfig } from "@/lib/supabase-env"
 
 type ZohoDeskPlaceholderData = {
@@ -53,23 +53,20 @@ function hourLabel(hoursBack: number) {
 
 function createPlaceholderChartData() {
   const newTickets = [
-    2, 1, 0, 3, 2, 1, 4, 6, 5, 7, 4, 3, 5, 8, 11, 14, 17, 24, 12, 3, 4, 2, 1,
-    2,
+    2, 1, 0, 3, 2, 1, 4, 6, 5, 7, 4, 3, 5, 8, 11, 14, 17, 24, 12, 3, 4, 2, 1, 2,
   ]
   const closedTickets = [
-    0, 2, 1, 4, 3, 2, 6, 8, 7, 10, 9, 6, 8, 12, 18, 22, 30, 46, 21, 5, 7, 4,
-    3, 2,
+    0, 2, 1, 4, 3, 2, 6, 8, 7, 10, 9, 6, 8, 12, 18, 22, 30, 46, 21, 5, 7, 4, 3,
+    2,
   ]
   const onHoldTickets = [
     0, 0, 1, 0, 1, 0, 1, 2, 1, 2, 1, 0, 1, 1, 2, 2, 3, 1, 0, 0, 1, 0, 0, 0,
   ]
   const incomingReplies = [
-    3, 2, 1, 4, 3, 2, 6, 7, 5, 8, 6, 4, 7, 9, 12, 15, 18, 21, 13, 4, 5, 3, 2,
-    4,
+    3, 2, 1, 4, 3, 2, 6, 7, 5, 8, 6, 4, 7, 9, 12, 15, 18, 21, 13, 4, 5, 3, 2, 4,
   ]
   const outgoingReplies = [
-    1, 2, 0, 3, 2, 1, 5, 6, 4, 7, 5, 3, 6, 8, 10, 13, 15, 19, 11, 3, 4, 2, 1,
-    3,
+    1, 2, 0, 3, 2, 1, 5, 6, 4, 7, 5, 3, 6, 8, 10, 13, 15, 19, 11, 3, 4, 2, 1, 3,
   ]
 
   return Array.from({ length: 24 }, (_, index) => ({
@@ -190,7 +187,8 @@ function thread(
     author: {
       name: authorName,
       type: direction === "out" ? "agent" : "contact",
-      email: direction === "out" ? "info@africactn.com" : "customer@example.com",
+      email:
+        direction === "out" ? "info@africactn.com" : "customer@example.com",
     },
   }
 }
@@ -403,7 +401,7 @@ async function readPlaceholderFromDatabase() {
   }
 
   try {
-    const supabase = createPublicClient()
+    const supabase = await createClient()
     const { data, error } = await supabase
       .from(tableName)
       .select("*")
@@ -426,7 +424,7 @@ async function savePlaceholderToDatabase(data: ZohoDeskPlaceholderData) {
   }
 
   try {
-    const supabase = createPublicClient()
+    const supabase = await createClient()
 
     await supabase.from(tableName).upsert(
       {

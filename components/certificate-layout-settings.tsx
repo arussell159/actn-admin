@@ -1,5 +1,7 @@
 "use client"
 
+import { authenticatedFetch } from "@/lib/client"
+
 import { useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
@@ -144,7 +146,9 @@ export function CertificateLayoutSettings() {
     navigate("new")
   }
 
-  async function createSharedNewDraft(layout: CertificateLayoutRecord["layout"]) {
+  async function createSharedNewDraft(
+    layout: CertificateLayoutRecord["layout"]
+  ) {
     setError("")
     const existing = await loadCertificateLayoutDraft("new")
     if (existing)
@@ -188,7 +192,7 @@ export function CertificateLayoutSettings() {
     setDeletingKey(row.country_key)
     setError("")
     try {
-      const response = await fetch("/api/okf/layouts", {
+      const response = await authenticatedFetch("/api/okf/layouts", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

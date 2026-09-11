@@ -1,6 +1,6 @@
 import "server-only"
 
-import { createPublicClient } from "@/lib/public-client"
+import { createClient } from "@/lib/server"
 import { hasSupabaseConfig } from "@/lib/supabase-env"
 
 type ZohoDeskCacheRow<T> = {
@@ -22,16 +22,13 @@ export async function readZohoDeskCache<T>(key: string, maxAgeMs: number) {
   return entry?.value ?? null
 }
 
-export async function readZohoDeskCacheEntry<T>(
-  key: string,
-  maxAgeMs: number
-) {
+export async function readZohoDeskCacheEntry<T>(key: string, maxAgeMs: number) {
   if (!hasSupabaseConfig()) {
     return null
   }
 
   try {
-    const supabase = createPublicClient()
+    const supabase = await createClient()
     const { data, error } = await supabase
       .from(tableName)
       .select("*")
@@ -60,7 +57,7 @@ export async function writeZohoDeskCache<T>(key: string, value: T) {
   }
 
   try {
-    const supabase = createPublicClient()
+    const supabase = await createClient()
 
     await supabase.from(tableName).upsert(
       {

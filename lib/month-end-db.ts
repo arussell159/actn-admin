@@ -94,19 +94,6 @@ function getSupabaseClient() {
   return createPublicClient()
 }
 
-function isLocalhostBrowser() {
-  if (typeof window === "undefined") {
-    return false
-  }
-
-  return (
-    window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1" ||
-    window.location.hostname === "[::1]" ||
-    window.location.hostname.endsWith(".localhost")
-  )
-}
-
 export function loadMonthEndRecords() {
   if (typeof window === "undefined") {
     return []
@@ -204,112 +191,41 @@ function toRow(record: MonthEndRecord): MonthEndRow {
 }
 
 export async function getMonthEndRecord(period = getDefaultPeriod()) {
-  try {
-    const supabase = getSupabaseClient()
-    const { data, error } = await supabase
-      .from(tableName)
-      .select("*")
-      .eq("period", period)
-      .maybeSingle<MonthEndRow>()
-
-    if (error) {
-      throw error
-    }
-
-    return data ? toRecord(data) : undefined
-  } catch (error) {
-    if (isLocalhostBrowser()) {
-      return loadMonthEndRecords().find((record) => record.period === period)
-    }
-
-    throw error
-  }
+  const { data, error } = await getSupabaseClient()
+    .from(tableName)
+    .select("*")
+    .eq("period", period)
+    .maybeSingle<MonthEndRow>()
+  if (error) throw error
+  return data ? toRecord(data) : undefined
 }
 
 export async function saveMonthEndRecord(record: MonthEndRecord) {
-  try {
-    const supabase = getSupabaseClient()
-    const { error } = await supabase.from(tableName).upsert(toRow(record), {
-      onConflict: "id",
-    })
-
-    if (error) {
-      throw error
-    }
-
-    saveLocalRecord(record)
-  } catch (error) {
-    if (isLocalhostBrowser()) {
-      saveLocalRecord(record)
-      return
-    }
-
-    throw error
-  }
+  const { error } = await getSupabaseClient()
+    .from(tableName)
+    .upsert(toRow(record), { onConflict: "id" })
+  if (error) throw error
+  saveLocalRecord(record)
 }
 
 export async function deleteMonthEndRecord(period: string) {
-  try {
-    const supabase = getSupabaseClient()
-    const { error } = await supabase
-      .from(tableName)
-      .delete()
-      .eq("period", period)
-
-    if (error) {
-      throw error
-    }
-
-    deleteLocalRecord(period)
-  } catch (error) {
-    if (isLocalhostBrowser()) {
-      deleteLocalRecord(period)
-      return
-    }
-
-    throw error
-  }
+  const { error } = await getSupabaseClient()
+    .from(tableName)
+    .delete()
+    .eq("period", period)
+  if (error) throw error
+  deleteLocalRecord(period)
 }
 
 export async function listMonthEndRecords() {
-  try {
-    const supabase = getSupabaseClient()
-    const { data, error } = await supabase
-      .from(tableName)
-      .select("*")
-      .order("period", { ascending: false })
-
-    if (error) {
-      throw error
-    }
-
-    const remoteRecords = (data ?? []).map((row) =>
-      toRecord(row as MonthEndRow)
-    )
-
-    if (!isLocalhostBrowser()) {
-      saveLocalRecords(remoteRecords)
-      return remoteRecords
-    }
-
-    const localRecords = loadMonthEndRecords()
-    const remoteIds = new Set(remoteRecords.map((record) => record.id))
-    const localOnlyRecords = localRecords.filter(
-      (record) => !remoteIds.has(record.id)
-    )
-    const mergedRecords = [...remoteRecords, ...localOnlyRecords].sort(
-      (first, second) => second.period.localeCompare(first.period)
-    )
-
-    saveLocalRecords(mergedRecords)
-    return mergedRecords
-  } catch (error) {
-    if (isLocalhostBrowser()) {
-      return loadMonthEndRecords()
-    }
-
-    throw error
-  }
+  const { data, error } = await getSupabaseClient()
+    .from(tableName)
+    .select("*")
+    .order("period", { ascending: false })
+  if (error) throw error
+  // Legacy browser copies remain available for recovery, but never override
+  // shared records or make deleted/unsaved months appear to be in the database.
+  return (data ?? []).map((row) => toRecord(row as MonthEndRow))
 }
 
 export async function ensureMonthEndRecord(period = getDefaultPeriod()) {
