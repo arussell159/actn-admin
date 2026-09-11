@@ -14,7 +14,7 @@ Preview changes shows the proposed content, affected pages, field mappings and v
 
 ## Local development
 
-Localhost uses the same Supabase authentication, database tables, Realtime subscriptions and private storage buckets as the deployed application. There is no localStorage, IndexedDB, filesystem or localhost-only data fallback. A valid staff session is therefore required locally as well as in production. Staff, publisher and admin roles can approve; editor can propose; viewer can read. Trusted app_metadata supplies roles. SQL independently enforces permissions and preview concurrency.
+Localhost uses the same Supabase database tables, Realtime subscriptions and private storage buckets as the deployed application. There is no localStorage, IndexedDB, filesystem or localhost-only data fallback. In development only, localhost obtains a short-lived local development user session from `/api/auth/local-session`; the route is unavailable on non-local hosts and in production builds, and its privileged Supabase key remains server-only. Staff, publisher and admin roles can approve; editor can propose; viewer can read. Trusted app_metadata supplies roles. SQL independently enforces permissions and preview concurrency.
 
 ## Production backend
 
@@ -23,7 +23,7 @@ The production migrations were applied to Supabase project `qxqyfhldfjvtjfjhafnl
 1. `supabase-okf.sql`
 2. `supabase-certificate-layouts.sql`
 
-The first migration creates the shared certificate request/review and Madagascar rule tables, keeps the private document bucket restricted to authenticated staff, and adds `madagascar_bsc_requests` to Supabase Realtime. The second creates the shared, revisioned Certificate Settings catalogue and shared layout drafts. Both are additive and preserve existing rows. A post-migration production query confirmed `okf_state`, `madagascar_bsc_requests`, `madagascar_bsc_rules`, `okf_certificate_layouts`, and `okf_certificate_layout_drafts`, with one OKF seed row, one layout and seven rules. Deploy the application with
+The first migration creates the shared certificate request/review and Madagascar rule tables, keeps the private document bucket restricted to authenticated staff, and adds `madagascar_bsc_requests` to Supabase Realtime. The second creates the shared, revisioned Certificate Settings catalogue and shared layout drafts. Both are additive and preserve existing rows. Production contains layouts for Angola, Djibouti, Kenya, Madagascar, Somalia, Sudan and Yemen. Deleted layouts retain their audit history; recreating one continues with the next historical revision instead of reusing revision 1. A post-migration production query confirmed `okf_state`, `madagascar_bsc_requests`, `madagascar_bsc_rules`, `okf_certificate_layouts`, and `okf_certificate_layout_drafts`, with one OKF seed row and seven rules. Deploy the application with
 `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and
 `OPENAI_API_KEY` configured in the hosting environment.
 

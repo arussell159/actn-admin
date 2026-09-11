@@ -20,6 +20,28 @@ export function AuthSessionGuard() {
     let isChecking = false
     const supabase = createClient()
 
+    async function createLocalSession() {
+      const response = await fetch("/api/auth/local-session", {
+        method: "POST",
+        cache: "no-store",
+      })
+      const result = await response.json()
+
+      if (!response.ok || !result.tokenHash) {
+        throw new Error(
+          result.message || "Could not create the local development session."
+        )
+      }
+
+      const { error } = await supabase.auth.verifyOtp({
+        token_hash: result.tokenHash,
+        type: "magiclink",
+      })
+      if (error) throw error
+      markAuthSessionStarted()
+      router.refresh()
+    }
+
     async function enforceTimeout() {
       if (
         isChecking ||
@@ -37,9 +59,22 @@ export function AuthSessionGuard() {
           error,
         } = await supabase.auth.getSession()
 
-        if (!isMounted || error || !session) {
+        if (!isMounted || error) {
           return
         }
+
+        if (!session) {
+          if (
+            ["localhost", "127.0.0.1", "[::1]"].includes(
+              window.location.hostname
+            )
+          ) {
+            await createLocalSession()
+          }
+          return
+        }
+
+        if (session.user.app_metadata.local_development === true) return
 
         if (!hasAuthSessionStarted() && !isPhoneAuthSession()) {
           markAuthSessionStarted()

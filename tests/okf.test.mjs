@@ -435,6 +435,10 @@ test("migration is additive, approval is atomic and corrections retain identity 
   assert.match(layoutsSql, /okf_save_certificate_layout_draft/)
   assert.match(layoutsSql, /Draft changed\. Reload before saving\./)
   assert.match(layoutsSql, /supabase_realtime add table public\.okf_certificate_layouts/)
+  assert.match(
+    layoutsSql,
+    /greatest\(coalesce\(previous\.revision,0\),coalesce\(max\(h\.revision\),0\)\)\+1/
+  )
 })
 
 test("field corrections retain verified source evidence for bounded OKF learning", () => {

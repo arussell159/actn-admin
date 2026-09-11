@@ -150,7 +150,7 @@ end; $$;
 
 create or replace function public.okf_publish_certificate_layout(p_country_key text,p_layout jsonb,p_expected_revision integer) returns jsonb
 language plpgsql security definer set search_path='' as $$
-declare previous public.okf_certificate_layouts; saved public.okf_certificate_layouts; names text[];
+declare previous public.okf_certificate_layouts; saved public.okf_certificate_layouts; names text[]; next_revision integer;
 begin
   if not public.okf_can_publish() then raise exception 'Publishing permission required'; end if;
   if p_expected_revision is null or p_expected_revision<0 or p_country_key is null or p_country_key !~ '^[a-z][a-z0-9-]{0,79}$'
@@ -163,7 +163,9 @@ begin
   if exists(select 1 from public.okf_certificate_layouts l cross join lateral jsonb_array_elements_text(jsonb_build_array(l.layout->>'country') || (l.layout->'aliases')) n
     where l.country_key<>p_country_key and public.okf_country_key(n)=any(names)) then raise exception 'Country name or alias is already used'; end if;
   if previous.layout=p_layout then return to_jsonb(previous); end if;
-  insert into public.okf_certificate_layouts(country_key,layout,revision,updated_by) values(p_country_key,p_layout,p_expected_revision+1,auth.uid())
+  select greatest(coalesce(previous.revision,0),coalesce(max(h.revision),0))+1 into next_revision
+    from public.okf_certificate_layout_history h where h.country_key=p_country_key;
+  insert into public.okf_certificate_layouts(country_key,layout,revision,updated_by) values(p_country_key,p_layout,next_revision,auth.uid())
     on conflict(country_key) do update set layout=excluded.layout,revision=excluded.revision,updated_at=now(),updated_by=excluded.updated_by returning * into saved;
   insert into public.okf_certificate_layout_history(country_key,layout,revision,updated_at,updated_by) values(saved.country_key,saved.layout,saved.revision,saved.updated_at,saved.updated_by);
   delete from public.okf_certificate_layout_drafts where draft_key=p_country_key or (p_expected_revision=0 and draft_key='new');
