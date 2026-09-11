@@ -60,6 +60,7 @@ export type ReportMappingField =
   | "sourceClass"
   | "sourceInternalId"
   | "sourceCountryName"
+  | "customerName"
 
 export type ReportExtraFieldMapping = {
   id: string
@@ -127,6 +128,7 @@ export const defaultMasterReportMapping: ReportFieldMapping = {
     amount: "Amount",
     transactionDate: "Date",
     sourceClass: "Class",
+    customerName: "Name",
   },
   extraFields: [],
 }
@@ -189,7 +191,19 @@ export function isDefaultCountryReportMapping(
 export function isDefaultMasterReportMapping(
   mapping: ReportFieldMapping | undefined
 ) {
-  return reportMappingsEqual(mapping, defaultMasterReportMapping)
+  if (reportMappingsEqual(mapping, defaultMasterReportMapping)) return true
+  if (!mapping || mapping.fields.customerName) return false
+
+  return reportMappingsEqual(
+    {
+      ...mapping,
+      fields: {
+        ...mapping.fields,
+        customerName: defaultMasterReportMapping.fields.customerName,
+      },
+    },
+    defaultMasterReportMapping
+  )
 }
 
 export const workflowTasks = [

@@ -109,6 +109,7 @@ export type CorrectionSourceCandidate = {
   supportingText: string
   matchedValue: string
   confidence: number
+  missedReason: string | null
 }
 
 const correctionVerificationSchema = z.object({
@@ -119,6 +120,7 @@ const correctionVerificationSchema = z.object({
       page: nullablePage,
       supportingText: nullableString,
       matchedValue: nullableString,
+      missedReason: nullableString,
       confidence: z.number().min(0).max(1),
     })
   ),
@@ -779,7 +781,7 @@ export async function verifyCorrectionSources(
         const result = await structuredResponse({
           schema: correctionVerificationSchema,
           schemaName: "correction_source_verification",
-          instructions: `${systemInstruction} Verify whether each staff-corrected field value is visibly supported by this one ${documentType}. Search the entire document, including rated or charges sections. Numeric formatting, currency symbols and thousands separators may differ, but the value and meaning must match. Do not infer that a value belongs to a field merely because the same number appears elsewhere. Set found only when completely certain, with direct evidence, its one-based page and a short verbatim supporting excerpt. Otherwise set found false so staff can explain the decision. Return every requested target once.`,
+          instructions: `${systemInstruction} Rescan this ${documentType} after a staff correction. Verify whether each corrected value is visibly supported. Search the entire document, including rated and charges sections. Numeric formatting may differ, but the value and meaning must match. Do not match a number merely because it appears elsewhere. When the document itself clearly shows a reusable reason the field may have been missed—such as an alternate label, unusual section, split text, or nonstandard format—write one short factual sentence in missedReason. Do not speculate about model behavior. Use null when the reason is not directly verifiable. Set found only when completely certain, with direct evidence, its one-based page and a short excerpt. Return every requested target once.`,
           data: {
             originalFilename: file.name,
             expectedDocumentType: documentType,
@@ -813,6 +815,7 @@ export async function verifyCorrectionSources(
                   supportingText: match.supportingText.slice(0, 800),
                   matchedValue: (match.matchedValue ?? "").slice(0, 500),
                   confidence: match.confidence,
+                  missedReason: match.missedReason?.slice(0, 300) ?? null,
                 },
               ]
             : []

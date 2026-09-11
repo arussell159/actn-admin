@@ -22,6 +22,7 @@ import {
 } from "lucide-react"
 
 import { CertificateCorrections } from "@/components/certificate-corrections"
+import { FileDropWorkspace } from "@/components/file-drop-workspace"
 import {
   CertificateForm,
   certificateFieldGridClass,
@@ -40,7 +41,7 @@ import {
 import { AppLink } from "@/components/app-link"
 import { PageFrame } from "@/components/page-frame"
 import { SectionNavigation } from "@/components/section-navigation"
-import { CountryCell } from "@/components/country-cell"
+import { CountryCell, CountryFlag } from "@/components/country-cell"
 import { CountryTableFilters } from "@/components/country-table-filters"
 import type { PendingRequestEdit } from "@/components/okf-request-review"
 import { okfApi } from "@/lib/okf/client"
@@ -89,6 +90,7 @@ import {
   createMadagascarId,
   madagascarFieldGroups,
   requestReference,
+  extractedBillOfLadingReference,
   type MadagascarAnalysis,
   type MadagascarInvoiceValue,
   type MadagascarRequest,
@@ -160,13 +162,6 @@ type KnowledgeChatApiResponse = {
   analysis?: KnowledgeAnalysis
   message?: string
 }
-type CorrectionSourceQuestion = {
-  correctionId: string
-  target: string
-  label: string
-  question: string
-}
-
 const knowledgeAnchors = Extension.create({
   name: "knowledgeAnchors",
   addGlobalAttributes() {
@@ -340,11 +335,18 @@ function statusVariant(status: string) {
 }
 
 function getBillOfLadingTitle(request: MadagascarRequest) {
-  return (
-    request.analysis.fields.find(
-      (field) => field.key === "billOfLadingReference"
-    )?.value || request.reference
-  )
+  const extracted = extractedBillOfLadingReference(request.analysis)
+  if (extracted) return extracted
+  return /^ECTN Certificate\b/i.test(request.reference)
+    ? "Not extracted"
+    : request.reference || "Not extracted"
+}
+
+function getRecordCountryTitle(request: MadagascarRequest) {
+  const observedCountry = request.analysis.okf?.observations.country
+  return observedCountry?.status === "supported" && observedCountry.name
+    ? observedCountry.name
+    : request.country || "Unknown Country"
 }
 
 function formatDateTime(value?: string) {
@@ -408,17 +410,15 @@ function AnalysisView({
   const [pendingEdits, setPendingEdits] = React.useState<PendingRequestEdit[]>(
     []
   )
+  const pendingEditsRef = React.useRef<PendingRequestEdit[]>([])
+  const saveFieldEditsRef = React.useRef<() => Promise<void>>(async () => {})
   const [isSavingEdits, setIsSavingEdits] = React.useState(false)
   const [saveEditError, setSaveEditError] = React.useState("")
-  const [saveEditMessage, setSaveEditMessage] = React.useState("")
-  const [sourceQuestions, setSourceQuestions] = React.useState<
-    CorrectionSourceQuestion[]
-  >([])
-  const [sourceAnswers, setSourceAnswers] = React.useState<
-    Record<string, string>
-  >({})
-  const [savingSourceQuestionId, setSavingSourceQuestionId] = React.useState("")
+  const [goodsDirty, setGoodsDirty] = React.useState(false)
+  const [isSavingGoods, setIsSavingGoods] = React.useState(false)
   const savedRequestRef = React.useRef(request)
+  const goodsTableRef = React.useRef<HTMLDivElement>(null)
+  const shouldFocusNewGoodsLineRef = React.useRef(false)
   const catalog = useCertificateLayouts()
   const analysis = editableRequest.analysis
   const observedCountry = analysis.okf?.observations.country
@@ -473,18 +473,23 @@ function AnalysisView({
   }, [pendingEdits.length, request])
 
   React.useEffect(() => {
-    let active = true
-    okfApi<{ sourceQuestions?: CorrectionSourceQuestion[] }>(
-      `/api/okf/requests?id=${encodeURIComponent(request.id)}`
-    )
-      .then((result) => {
-        if (active) setSourceQuestions(result.sourceQuestions ?? [])
-      })
-      .catch(() => undefined)
-    return () => {
-      active = false
-    }
-  }, [request.id])
+    pendingEditsRef.current = pendingEdits
+  }, [pendingEdits])
+
+  React.useEffect(() => {
+    if (!shouldFocusNewGoodsLineRef.current) return
+    shouldFocusNewGoodsLineRef.current = false
+
+    const frame = window.requestAnimationFrame(() => {
+      goodsTableRef.current
+        ?.querySelector<HTMLElement>(
+          '[data-goods-line]:last-of-type input, [data-goods-line]:last-of-type textarea, [data-goods-line]:last-of-type button:not([tabindex="-1"])'
+        )
+        ?.focus()
+    })
+
+    return () => window.cancelAnimationFrame(frame)
+  }, [analysis.invoiceItems.length])
 
   function requestValue(target: string, source = savedRequestRef.current) {
     if (target.startsWith("invoiceValue:")) {
@@ -498,12 +503,14 @@ function AnalysisView({
 
   function stageFieldEdit(target: string, label: string, value: string) {
     setSaveEditError("")
-    setSaveEditMessage("")
     setPendingEdits((current) => {
       const withoutTarget = current.filter((edit) => edit.target !== target)
-      return requestValue(target) === value
-        ? withoutTarget
-        : [...withoutTarget, { target, label, value }]
+      const next =
+        requestValue(target) === value
+          ? withoutTarget
+          : [...withoutTarget, { target, label, value }]
+      pendingEditsRef.current = next
+      return next
     })
     setEditableRequest((current) => {
       if (target.startsWith("invoiceValue:")) {
@@ -576,18 +583,59 @@ function AnalysisView({
     )
   }
 
+  function updateGoodsItems(
+    change: (items: MadagascarAnalysis["invoiceItems"]) => void
+  ) {
+    setEditableRequest((current) => {
+      const items = structuredClone(current.analysis.invoiceItems)
+      change(items)
+      return {
+        ...current,
+        analysis: { ...current.analysis, invoiceItems: items },
+      }
+    })
+    setGoodsDirty(true)
+    setSaveEditError("")
+  }
+
+  React.useEffect(() => {
+    if (!goodsDirty || isSavingGoods) return
+    const timeout = window.setTimeout(async () => {
+      setIsSavingGoods(true)
+      try {
+        const current = editableRequest
+        const result = await okfApi<{ request: MadagascarRequest }>(
+          "/api/okf/requests",
+          {
+            action: "save-goods-table",
+            requestId: current.id,
+            expectedUpdatedAt: savedRequestRef.current.updatedAt,
+            items: current.analysis.invoiceItems,
+          }
+        )
+        savedRequestRef.current = result.request
+        setGoodsDirty(false)
+      } catch (error) {
+        setSaveEditError(
+          error instanceof Error ? error.message : "Could not save goods."
+        )
+      } finally {
+        setIsSavingGoods(false)
+      }
+    }, 900)
+    return () => window.clearTimeout(timeout)
+  }, [editableRequest, goodsDirty, isSavingGoods])
+
   async function saveFieldEdits() {
     if (!pendingEdits.length || isSavingEdits) return
     const editsToSave = [...pendingEdits]
     setIsSavingEdits(true)
     setSaveEditError("")
-    setSaveEditMessage("")
     try {
       const savedRequest = savedRequestRef.current
       const result = await okfApi<{
         request: MadagascarRequest
         sourceLearnings: CorrectionSourceLearning[]
-        sourceQuestions: CorrectionSourceQuestion[]
       }>("/api/okf/requests", {
         action: "correct-batch",
         requestId: savedRequest.id,
@@ -604,15 +652,16 @@ function AnalysisView({
       })
       const latestRequest = result.request
       savedRequestRef.current = latestRequest
-      setEditableRequest(latestRequest)
-      setPendingEdits([])
-      setSourceQuestions(result.sourceQuestions)
-      const verified = result.sourceLearnings.filter(
-        (learning) => learning.verified
-      ).length
-      setSaveEditMessage(
-        `${editsToSave.length} correction${editsToSave.length === 1 ? "" : "s"} saved to the AI learning history${verified ? `; ${verified} source${verified === 1 ? "" : "s"} verified in the uploaded documents` : "; no source match was verified"}.`
+      const remainingEdits = pendingEditsRef.current.filter(
+        (pending) =>
+          !editsToSave.some(
+            (saved) =>
+              saved.target === pending.target && saved.value === pending.value
+          )
       )
+      pendingEditsRef.current = remainingEdits
+      setPendingEdits(remainingEdits)
+      if (!remainingEdits.length) setEditableRequest(latestRequest)
     } catch (error) {
       setSaveEditError(
         error instanceof Error ? error.message : "Could not save corrections."
@@ -622,41 +671,32 @@ function AnalysisView({
     }
   }
 
-  async function saveSourceExplanation(question: CorrectionSourceQuestion) {
-    const explanation = sourceAnswers[question.correctionId]?.trim() ?? ""
-    if (!explanation || savingSourceQuestionId) return
-    setSavingSourceQuestionId(question.correctionId)
-    setSaveEditError("")
-    try {
-      await okfApi<{ learning: CorrectionSourceLearning }>(
-        "/api/okf/requests",
-        {
-          action: "explain-source",
-          correctionId: question.correctionId,
-          explanation,
-        }
-      )
-      setSourceQuestions((current) =>
-        current.filter((item) => item.correctionId !== question.correctionId)
-      )
-      setSourceAnswers((current) => {
-        const next = { ...current }
-        delete next[question.correctionId]
-        return next
-      })
-      setSaveEditMessage(
-        `${question.label} source explanation saved to the OKF learning history.`
-      )
-    } catch (error) {
-      setSaveEditError(
-        error instanceof Error
-          ? error.message
-          : "Could not save the source explanation."
-      )
-    } finally {
-      setSavingSourceQuestionId("")
+  saveFieldEditsRef.current = saveFieldEdits
+
+  React.useEffect(() => {
+    if (!pendingEdits.length || isSavingEdits) return
+    const timeout = window.setTimeout(
+      () => void saveFieldEditsRef.current(),
+      900
+    )
+    return () => window.clearTimeout(timeout)
+  }, [pendingEdits, isSavingEdits])
+
+  React.useEffect(() => {
+    const flushPendingEdits = () => {
+      if (pendingEditsRef.current.length) void saveFieldEditsRef.current()
     }
-  }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") flushPendingEdits()
+    }
+    window.addEventListener("pagehide", flushPendingEdits)
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+    return () => {
+      window.removeEventListener("pagehide", flushPendingEdits)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
+      flushPendingEdits()
+    }
+  }, [])
 
   async function downloadInvoiceItems() {
     setDownloadError("")
@@ -788,64 +828,8 @@ function AnalysisView({
           aria-labelledby="certificate-header-fields certificate-mobile-fields"
           className="grid gap-8"
         >
-          {pendingEdits.length ? (
-            <div className="sticky top-2 z-10 flex items-center justify-between gap-4 rounded-lg border bg-background/95 px-4 py-3 shadow-sm backdrop-blur">
-              <p className="text-sm text-muted-foreground">
-                {pendingEdits.length} unsaved field change
-                {pendingEdits.length === 1 ? "" : "s"}
-              </p>
-              <Button
-                type="button"
-                size="sm"
-                disabled={isSavingEdits}
-                onClick={() => void saveFieldEdits()}
-              >
-                <CheckIcon />
-                {isSavingEdits ? "Checking sources…" : "Save changes"}
-              </Button>
-            </div>
-          ) : null}
           {saveEditError ? (
             <p className="text-sm text-destructive">{saveEditError}</p>
-          ) : null}
-          {saveEditMessage ? (
-            <p className="text-sm text-muted-foreground">{saveEditMessage}</p>
-          ) : null}
-          {sourceQuestions.length ? (
-            <div className="grid gap-3 rounded-lg border bg-muted/20 p-4">
-              {sourceQuestions.map((question) => (
-                <div className="grid gap-2" key={question.correctionId}>
-                  <p className="text-sm font-medium">{question.question}</p>
-                  <div className="flex items-end gap-2 max-sm:flex-col max-sm:items-stretch">
-                    <Textarea
-                      rows={2}
-                      value={sourceAnswers[question.correctionId] ?? ""}
-                      placeholder="For example: It is in the rated Bill of Lading on page 2."
-                      aria-label={`Explain the source for ${question.label}`}
-                      onChange={(event) =>
-                        setSourceAnswers((current) => ({
-                          ...current,
-                          [question.correctionId]: event.target.value,
-                        }))
-                      }
-                    />
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={
-                        !sourceAnswers[question.correctionId]?.trim() ||
-                        Boolean(savingSourceQuestionId)
-                      }
-                      onClick={() => void saveSourceExplanation(question)}
-                    >
-                      {savingSourceQuestionId === question.correctionId
-                        ? "Saving…"
-                        : "Save explanation"}
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
           ) : null}
           {savedLayout ? (
             <CertificateForm
@@ -956,40 +940,112 @@ function AnalysisView({
                   return isFieldLoading("invoiceItems") ? (
                     <AiTextShimmer />
                   ) : (
-                    <div className="overflow-x-auto rounded-lg border">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            {fields.map((field) => (
-                              <TableHead key={field.id}>
-                                {field.label}
-                              </TableHead>
-                            ))}
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {analysis.invoiceItems.map((item, index) => (
-                            <TableRow key={index}>
+                    <div className="grid gap-3">
+                      <div
+                        ref={goodsTableRef}
+                        className="overflow-x-auto rounded-lg border"
+                      >
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
                               {fields.map((field) => (
-                                <TableCell
-                                  key={field.id}
-                                  className={
-                                    field.id === "invoiceItems.description"
-                                      ? "min-w-56"
-                                      : undefined
-                                  }
-                                >
-                                  {String(
-                                    item[
-                                      field.id.slice(13) as keyof typeof item
-                                    ] || "Missing"
-                                  )}
-                                </TableCell>
+                                <TableHead key={field.id}>
+                                  {field.label}
+                                </TableHead>
                               ))}
+                              <TableHead className="w-12">
+                                <span className="sr-only">Actions</span>
+                              </TableHead>
                             </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                          </TableHeader>
+                          <TableBody>
+                            {analysis.invoiceItems.map((item, index) => (
+                              <TableRow key={index} data-goods-line>
+                                {fields.map((field) => {
+                                  const itemKey = field.id.slice(13)
+                                  const itemRecord = item as unknown as Record<
+                                    string,
+                                    unknown
+                                  >
+                                  return (
+                                    <TableCell
+                                      key={field.id}
+                                      className={
+                                        field.id === "invoiceItems.description"
+                                          ? "min-w-56"
+                                          : undefined
+                                      }
+                                    >
+                                      <CertificateFieldControl
+                                        field={{ ...field, label: "" }}
+                                        value={String(
+                                          itemRecord[itemKey] ?? ""
+                                        )}
+                                        onValueChange={(value) =>
+                                          updateGoodsItems((items) => {
+                                            const row = items[
+                                              index
+                                            ] as unknown as Record<
+                                              string,
+                                              unknown
+                                            >
+                                            row[itemKey] = value
+                                          })
+                                        }
+                                      />
+                                    </TableCell>
+                                  )
+                                })}
+                                <TableCell className="w-12">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    aria-label={`Remove goods line ${index + 1}`}
+                                    onClick={() =>
+                                      updateGoodsItems((items) =>
+                                        items.splice(index, 1)
+                                      )
+                                    }
+                                  >
+                                    <Trash2Icon />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                      <Button
+                        variant="outline"
+                        className="w-fit"
+                        onClick={() => {
+                          shouldFocusNewGoodsLineRef.current = true
+                          updateGoodsItems((items) => {
+                            const row = Object.fromEntries(
+                              fields.map((field) => [field.id.slice(13), ""])
+                            )
+                            items.push({
+                              description: "",
+                              hsCode: "",
+                              brand: "",
+                              reference: "",
+                              originCountry: "",
+                              packageType: "",
+                              quantity: "",
+                              unitOfMeasurement: "",
+                              unitPrice: "",
+                              totalPrice: "",
+                              currency: "",
+                              isSecondHand: "",
+                              source: "Staff added",
+                              issues: [],
+                              ...row,
+                            })
+                          })
+                        }}
+                      >
+                        <PlusIcon /> Add goods line
+                      </Button>
                     </div>
                   )
                 if (group.kind === "documents")
@@ -1135,6 +1191,7 @@ function NewRequest() {
   const [savedRequest, setSavedRequest] = React.useState<MadagascarRequest>()
   const [isAnalyzing, setIsAnalyzing] = React.useState(false)
   const [error, setError] = React.useState("")
+  const uploadInputRef = React.useRef<HTMLInputElement>(null)
 
   function attachFiles(nextFiles?: FileList | File[]) {
     const accepted = Array.from(nextFiles ?? []).filter(
@@ -1374,47 +1431,47 @@ function NewRequest() {
   }
 
   return (
-    <Card>
+    <Card className="h-[44rem] overflow-hidden">
       <CardHeader>
         <CardTitle>{newRequestLabel}</CardTitle>
         <CardDescription>
-          Upload the shipment documents together. AI identifies the consignee
-          country, loads its published Certificate Settings layout, then
-          extracts and checks the documents.
+          Upload the shipping documents to create a certificate.
         </CardDescription>
       </CardHeader>
-      <CardContent className="grid gap-4">
-        <label
-          className="flex min-h-40 cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border border-dashed bg-background p-6 text-center transition-colors hover:bg-muted/50"
-          onDragOver={(event) => event.preventDefault()}
-          onDrop={(event) => {
-            event.preventDefault()
-            attachFiles(event.dataTransfer.files)
-          }}
-        >
-          <UploadIcon className="size-7 text-muted-foreground" />
-          <span className="font-medium">
-            Drag and drop certificate documents
-          </span>
-          <span className="max-w-xl text-sm text-muted-foreground">
-            Bill of Lading, Commercial Invoice, Packing List, Export/Customs
-            Declaration, DU (Documento Unico), and Freight Invoice. Certificate
-            fields and document sources come from Certificate Settings; country
-            requirements come from published knowledge. PDF or image.
-          </span>
-          <span className="text-sm text-muted-foreground">
-            {files.length
-              ? `${files.length} file${files.length === 1 ? "" : "s"} ready`
-              : "or click to choose files"}
-          </span>
-          <input
-            type="file"
-            accept="application/pdf,image/*"
-            multiple
-            className="sr-only"
-            onChange={(event) => attachFiles(event.target.files ?? undefined)}
-          />
-        </label>
+      <CardContent className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto_auto_auto] gap-4 overflow-y-auto">
+        <FileDropWorkspace
+          className="min-h-0"
+          title="Upload Shipping Documents"
+          description={<p>Drop the files here or choose documents.</p>}
+          icon={<UploadIcon className="size-6 text-muted-foreground" />}
+          actions={
+            <Button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                uploadInputRef.current?.click()
+              }}
+            >
+              <FileSearchIcon />
+              Choose Documents
+            </Button>
+          }
+          footer={
+            files.length
+              ? `${files.length} file${files.length === 1 ? "" : "s"} ready for AI`
+              : "PDF or image files"
+          }
+          onChooseFile={() => uploadInputRef.current?.click()}
+          onFiles={attachFiles}
+        />
+        <input
+          ref={uploadInputRef}
+          type="file"
+          accept="application/pdf,image/*"
+          multiple
+          className="sr-only"
+          onChange={(event) => attachFiles(event.target.files ?? undefined)}
+        />
         {files.length ? (
           <div className="grid gap-2 rounded-lg border bg-muted/30 p-3">
             {files.map((file) => (
@@ -1556,6 +1613,7 @@ function Requests({
       (selectedFilter === "ready" && request.status === "Ready")
     const searchableValues = [
       request.reference,
+      getBillOfLadingTitle(request),
       request.country,
       request.status,
       ...request.documents.map((document) => document.name),
@@ -1663,7 +1721,7 @@ function Requests({
                 <TableRow key={request.id}>
                   <TableCell className="font-medium">
                     <AppLink href={requestHref} className="block">
-                      {request.reference}
+                      {getBillOfLadingTitle(request)}
                     </AppLink>
                   </TableCell>
                   <TableCell>
@@ -2718,13 +2776,13 @@ export function MadagascarBscView({ section }: { section: Section }) {
   ]
 
   const title =
-    section === "requests" && selectedRequest
-      ? getBillOfLadingTitle(selectedRequest)
+    section === "requests"
+      ? selectedRequest
+        ? `${getRecordCountryTitle(selectedRequest)} - ${getBillOfLadingTitle(selectedRequest)}`
+        : moduleLabel
       : section === "new"
-        ? `${moduleLabel} - ${newRequestLabel}`
-        : section === "requests"
-          ? `${moduleLabel} - ${requestsLabel}`
-          : rulesLabel
+        ? newRequestLabel
+        : rulesLabel
   const showCertificateBackButton = section === "requests" && selectedRequest
   const certificateBackButtonLabel = `Back to ${requestsLabel.toLowerCase()}`
   const handleSelectedRequestChange = React.useCallback(
@@ -2751,6 +2809,14 @@ export function MadagascarBscView({ section }: { section: Section }) {
       header={
         <SiteHeader
           title={title}
+          titleContent={
+            selectedRequest ? (
+              <span className="flex min-w-0 items-center gap-2">
+                <CountryFlag country={getRecordCountryTitle(selectedRequest)} />
+                <span className="truncate">{title}</span>
+              </span>
+            ) : undefined
+          }
           leadingContent={
             showCertificateBackButton ? (
               <Button

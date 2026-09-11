@@ -126,7 +126,7 @@ export function validateChanges(
       for (const ref of section.references)
         if (!ids.has(ref)) throw new Error(`Unknown reference: ${ref}`)
     for (const rule of p.content.rules) {
-      if (rule.country !== p.country || p.country !== "Madagascar")
+      if (rule.country !== p.country)
         throw new Error("Country requirements must remain in their country.")
       if (p.template === "document" && rule.document !== p.title)
         throw new Error("Place the rule on its matching document page.")
@@ -318,7 +318,7 @@ export function evaluateReview(
         observations.documents.some((d) => d.fileName === v.document)
     )
   const country = observations.country
-  const countrySupported = pages.some(page => page.country === country.name)
+  const countrySupported = pages.some((page) => page.country === country.name)
   if (
     country.status === "supported" &&
     (!countrySupported ||
@@ -327,9 +327,7 @@ export function evaluateReview(
       !validEvidence(country.evidence))
   ) {
     country.status =
-      country.name && !countrySupported
-        ? "unsupported"
-        : "unconfirmed"
+      country.name && !countrySupported ? "unsupported" : "unconfirmed"
   }
   const safe =
     country.status === "supported" &&
@@ -563,7 +561,9 @@ export function evaluateReview(
       ? ["Separate the identified shipments and review each document group."]
       : []),
     ...(!countrySupported
-      ? [`Publish ${country.name || "country"} knowledge before authoritative country checks.`]
+      ? [
+          `Publish ${country.name || "country"} knowledge before authoritative country checks.`,
+        ]
       : []),
     ...(safe && !mappedFields.length
       ? [

@@ -29,6 +29,7 @@ type SearchPickerProps = {
   disabled?: boolean
   className?: string
   contentClassName?: string
+  listClassName?: string
   variant?: React.ComponentProps<typeof Button>["variant"]
   displayValue?: string
   footerAction?: {
@@ -59,6 +60,7 @@ export function SearchPicker(props: SearchPickerProps) {
     disabled,
     className,
     contentClassName,
+    listClassName,
     variant = "outline",
     displayValue,
     footerAction,
@@ -77,6 +79,9 @@ export function SearchPicker(props: SearchPickerProps) {
       choice.pinned ||
       choice.label.toLowerCase().includes(query.trim().toLowerCase())
   )
+  const focusSearchInput = React.useCallback(() => {
+    window.requestAnimationFrame(() => input.current?.focus())
+  }, [])
   React.useEffect(() => {
     if (
       (autoOpenOnDesktop || focusSignal) &&
@@ -84,9 +89,9 @@ export function SearchPicker(props: SearchPickerProps) {
     ) {
       setQuery("")
       setOpen(true)
-      input.current?.focus()
+      focusSearchInput()
     }
-  }, [autoOpenOnDesktop, focusSignal])
+  }, [autoOpenOnDesktop, focusSignal, focusSearchInput])
   function choose(id: string) {
     if (props.multiple)
       props.onValueChange(
@@ -104,10 +109,21 @@ export function SearchPicker(props: SearchPickerProps) {
       open={open}
       onOpenChange={(value) => {
         setOpen(value)
-        if (value) setQuery("")
+        if (value) {
+          setQuery("")
+          focusSearchInput()
+        }
       }}
     >
       <PopoverTrigger
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return
+
+          event.preventDefault()
+          setQuery("")
+          setOpen(true)
+          focusSearchInput()
+        }}
         render={
           <Button
             id={id}
@@ -139,7 +155,7 @@ export function SearchPicker(props: SearchPickerProps) {
             value={query}
             onValueChange={setQuery}
           />
-          <CommandList>
+          <CommandList className={listClassName}>
             {footerAction ? (
               !filteredChoices.length ? (
                 <p role="status" className="py-6 text-center text-sm">

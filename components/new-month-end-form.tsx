@@ -8,6 +8,7 @@ import {
   UploadIcon,
 } from "lucide-react"
 
+import { FileDropWorkspace } from "@/components/file-drop-workspace"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -38,6 +39,10 @@ import {
 import { parseCsv } from "@/lib/csv"
 import {
   getMasterTransactionDateCheckedValues,
+  getMasterCustomerNamesCheckedValue,
+  getMasterAnalyticsRecordsCheckedValue,
+  masterAnalyticsRecordsKey,
+  masterCustomerNamesKey,
   isMasterCsv,
   parseMonthEndMasterCsv,
   saveMonthEndMasterRecords,
@@ -294,6 +299,7 @@ export function NewMonthEndForm({
   >([])
   const [createError, setCreateError] = React.useState("")
   const [isCreating, setIsCreating] = React.useState(false)
+  const uploadInputRef = React.useRef<HTMLInputElement>(null)
   const period = `${year}-${month}`
 
   async function attachCsv(files?: FileList | File[]) {
@@ -359,6 +365,10 @@ export function NewMonthEndForm({
         checked,
         getMasterTransactionDateCheckedValues(masterRecords)
       )
+      checked[masterCustomerNamesKey] =
+        getMasterCustomerNamesCheckedValue(masterRecords)
+      checked[masterAnalyticsRecordsKey] =
+        getMasterAnalyticsRecordsCheckedValue(masterRecords)
       const record: MonthEndRecord = {
         id: period,
         period,
@@ -382,7 +392,7 @@ export function NewMonthEndForm({
   }
 
   return (
-    <Card className="rounded-lg shadow-sm">
+    <Card className="h-[44rem] overflow-hidden rounded-lg shadow-sm">
       <CardHeader>
         <CardTitle>New Month End</CardTitle>
         <CardDescription>
@@ -390,7 +400,7 @@ export function NewMonthEndForm({
           have it.
         </CardDescription>
       </CardHeader>
-      <CardContent className="grid gap-4">
+      <CardContent className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)_auto_auto_auto] gap-4 overflow-y-auto">
         <div className="grid gap-4 md:grid-cols-2">
           <div className="grid gap-2">
             <Label>Month</Label>
@@ -441,31 +451,44 @@ export function NewMonthEndForm({
             </Select>
           </div>
         </div>
-        <label
-          className="flex min-h-32 cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border border-dashed bg-background p-6 text-center transition-colors hover:bg-muted/50"
-          onDragOver={(event) => event.preventDefault()}
-          onDrop={(event) => {
-            event.preventDefault()
-            attachCsv(event.dataTransfer.files)
-          }}
-        >
-          <UploadIcon className="size-6 text-muted-foreground" />
-          <span className="font-medium">
-            Drag and drop the exchange rate and master report files
-          </span>
-          <span className="text-sm text-muted-foreground">
-            {uploadedFiles.length
+        <FileDropWorkspace
+          className="min-h-0"
+          title={`Upload ${formatPeriod(period)} Reports`}
+          description={
+            <p>
+              Drop the NetSuite master report and prepaid exchange rate report
+              here. You can start with either file and add the other later.
+            </p>
+          }
+          icon={<UploadIcon className="size-6 text-muted-foreground" />}
+          actions={
+            <Button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                uploadInputRef.current?.click()
+              }}
+            >
+              <FileSpreadsheetIcon />
+              Choose Reports
+            </Button>
+          }
+          footer={
+            uploadedFiles.length
               ? `${uploadedFiles.length} file${uploadedFiles.length === 1 ? "" : "s"} ready`
-              : "or click to choose files"}
-          </span>
-          <input
-            type="file"
-            accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            multiple
-            className="sr-only"
-            onChange={(event) => attachCsv(event.target.files ?? undefined)}
-          />
-        </label>
+              : "CSV or Excel files"
+          }
+          onChooseFile={() => uploadInputRef.current?.click()}
+          onFiles={attachCsv}
+        />
+        <input
+          ref={uploadInputRef}
+          type="file"
+          accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          multiple
+          className="sr-only"
+          onChange={(event) => attachCsv(event.target.files ?? undefined)}
+        />
         {uploadedFiles.length ? (
           <div className="grid gap-2 rounded-lg border bg-muted/30 p-3">
             {uploadedFiles.map((file) => {

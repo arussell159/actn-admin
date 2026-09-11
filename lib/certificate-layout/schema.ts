@@ -19,6 +19,7 @@ export type FieldPlacement = {
   label?: string
   row?: number
   column?: number
+  rowColumns?: number
 }
 export type CertificateGroup = {
   id: string
@@ -55,6 +56,7 @@ export const certificateGroupSchema: z.ZodType<CertificateGroup> = z.lazy(() =>
           label: z.string().max(160).optional(),
           row: z.number().int().min(1).max(100).optional(),
           column: columns.optional(),
+          rowColumns: columns.optional(),
         })
       )
       .max(100),
@@ -129,14 +131,21 @@ export const certificateLayoutSchema = z
           if (placement.span > group.columns)
             fail(`Field ${placement.fieldId} exceeds its subsection's columns.`)
           if (placement.column && placement.column > group.columns)
-            fail(
-              `Field ${placement.fieldId} starts beyond its subsection's columns.`
-            )
+            if (!placement.rowColumns)
+              fail(
+                `Field ${placement.fieldId} starts beyond its subsection's columns.`
+              )
+          if (
+            placement.rowColumns &&
+            placement.column &&
+            placement.column > placement.rowColumns
+          )
+            fail(`Field ${placement.fieldId} starts beyond its row's columns.`)
           if (
             placement.fieldId.startsWith("invoiceItems.") !==
             (group.kind === "invoice-items")
           )
-            fail("Invoice item columns belong in an Invoice items subsection.")
+            fail("Goods columns belong in a Goods table block.")
         }
         groups(group.groups, group.columns, depth + 1)
       }

@@ -19,6 +19,7 @@ import { AppLink } from "@/components/app-link"
 import { PageFrame } from "@/components/page-frame"
 import { CountryTableFilters } from "@/components/country-table-filters"
 import { HeaderActionMenuTrigger } from "@/components/header-action-menu-trigger"
+import { FileDropWorkspace } from "@/components/file-drop-workspace"
 import {
   CountryJournalBodySkeleton,
   CountryReconciliationSkeleton,
@@ -4622,58 +4623,23 @@ function CountryReportUploadStep({
   onPasteReport: () => void
   onFiles: (files: File[]) => void
 }) {
-  const [isDragging, setIsDragging] = React.useState(false)
-
-  function handleDrop(event: React.DragEvent<HTMLDivElement>) {
-    event.preventDefault()
-    setIsDragging(false)
-
-    const files = Array.from(event.dataTransfer.files ?? [])
-
-    if (files.length) {
-      onFiles(files)
-    }
-  }
-
   return (
-    <section
-      role="button"
-      tabIndex={0}
-      className={
-        "grid min-h-[22rem] cursor-pointer place-items-center rounded-xl border border-dashed bg-background p-6 text-center transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-h-[26rem] " +
-        (isDragging ? "border-primary bg-muted/60" : "hover:bg-muted/40")
+    <FileDropWorkspace
+      title={
+        isAntaserPackage
+          ? "Upload Antaser Documents"
+          : `Upload ${countryReportLabel}`
       }
-      onClick={onChooseFile}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault()
-          onChooseFile()
-        }
-      }}
-      onDragOver={(event) => {
-        event.preventDefault()
-        setIsDragging(true)
-      }}
-      onDragLeave={() => setIsDragging(false)}
-      onDrop={handleDrop}
-    >
-      <div className="grid max-w-xl gap-4">
-        <div className="mx-auto grid size-14 place-items-center rounded-full bg-muted">
-          <UploadIcon className="size-6 text-muted-foreground" />
-        </div>
-        <div>
-          <h2 className="text-2xl font-semibold tracking-normal">
-            {isAntaserPackage
-              ? "Upload Antaser Documents"
-              : `Upload ${countryReportLabel}`}
-          </h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {isAntaserPackage
-              ? "Select the CIS invoice, CIS overview, JACR invoice, and commission note together."
-              : "Drop the country report here, or choose the file you downloaded from the country portal. After import, this page will move you to the records that still need to be found in NetSuite."}
-          </p>
-        </div>
-        <div className="flex flex-wrap justify-center gap-2">
+      description={
+        <p>
+          {isAntaserPackage
+            ? "Select the CIS invoice, CIS overview, JACR invoice, and commission note together."
+            : "Drop the country report here, or choose the file you downloaded from the country portal. After import, this page will move you to the records that still need to be found in NetSuite."}
+        </p>
+      }
+      icon={<UploadIcon className="size-6 text-muted-foreground" />}
+      actions={
+        <>
           <Button
             type="button"
             onClick={(event) => {
@@ -4702,12 +4668,12 @@ function CountryReportUploadStep({
               Paste Report
             </Button>
           ) : null}
-        </div>
-        <div className="text-xs text-muted-foreground">
-          NetSuite master: {pluralize(masterCount, "record")} loaded
-        </div>
-      </div>
-    </section>
+        </>
+      }
+      footer={`NetSuite master: ${pluralize(masterCount, "record")} loaded`}
+      onChooseFile={onChooseFile}
+      onFiles={onFiles}
+    />
   )
 }
 

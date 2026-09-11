@@ -589,10 +589,49 @@ function optionsValue(options: MadagascarDropdownOptions, key: string) {
   return options[key] ?? []
 }
 
-export function requestReference(analysis: MadagascarAnalysis) {
-  const field = analysis.fields.find(
-    (item) => item.key === "billOfLadingReference"
-  )
+export function extractedBillOfLadingReference(analysis: MadagascarAnalysis) {
+  const isBillReference = (key: string, label = "") => {
+    const name = `${key} ${label}`.toLocaleLowerCase().replace(/[^a-z0-9]/g, "")
+    return (
+      /billoflading(?:reference|number|no)/.test(name) ||
+      /(?:bl|bol)(?:reference|number|no)/.test(name)
+    )
+  }
+  const cleanReference = (value?: string | null) =>
+    value
+      ?.trim()
+      .replace(
+        /^(?:bill\s*of\s*lading|b\/?l|bol)\s*(?:(?:number|no\.?|reference|ref\.?)\s*)?[:#-]?\s*/i,
+        ""
+      )
+      .trim() ?? ""
+  const displayed = analysis.fields
+    .filter((item) => isBillReference(item.key, item.label))
+    .flatMap((item) => [
+      item.value,
+      (item as MadagascarExtractedField & { observedText?: string })
+        .observedText,
+    ])
+  const reviewed =
+    analysis.okf?.mappedFields
+      .filter(
+        (item) => item.row === null && isBillReference(item.key)
+      )
+      .flatMap((item) => [item.value, item.observedText]) ?? []
+  const observed =
+    analysis.okf?.observations.fields
+      .filter((item) => isBillReference(item.id))
+      .flatMap((item) => [item.value, item.observedText]) ?? []
 
-  return field?.value || `ECTN Certificate ${new Date().toLocaleDateString()}`
+  return (
+    [...displayed, ...reviewed, ...observed]
+      .map(cleanReference)
+      .find(Boolean) ?? ""
+  )
+}
+
+export function requestReference(analysis: MadagascarAnalysis) {
+  const reference = extractedBillOfLadingReference(analysis)
+
+  return reference || `ECTN Certificate ${new Date().toLocaleDateString()}`
 }

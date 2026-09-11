@@ -13,13 +13,11 @@ import {
   PopoverContent,
 } from "@/components/ui/popover"
 import {
-  Select,
-  SelectTrigger,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectValue,
-} from "@/components/ui/select"
+  Combobox,
+  ComboboxTrigger,
+  ComboboxContent,
+  ComboboxItem,
+} from "@/components/ui/combobox"
 import { cn } from "@/lib/utils"
 import type { CertificateField } from "@/lib/certificate-layout/schema"
 
@@ -90,6 +88,14 @@ export function CertificateFieldControl({
   const label = field.label
   const [draftValue, setDraftValue] = React.useState(value)
   const [isCtrlPressed, setIsCtrlPressed] = React.useState(false)
+  const [isDateOpen, setIsDateOpen] = React.useState(false)
+  const [isChooserOpen, setIsChooserOpen] = React.useState(false)
+  const [highlightedChooserIndex, setHighlightedChooserIndex] =
+    React.useState(-1)
+  const [calendarMonth, setCalendarMonth] = React.useState(
+    () => parseDateValue(value) ?? new Date()
+  )
+  const [typedDay, setTypedDay] = React.useState("")
   const draftValueRef = React.useRef(value)
   const isDate = field.control === "date"
   const chooserOptions = field.options
@@ -153,7 +159,7 @@ export function CertificateFieldControl({
       "border-destructive/35 shadow-[0_0_0_1px_hsl(var(--destructive)/0.08),0_0_10px_hsl(var(--destructive)/0.10)] placeholder:text-destructive/60 focus-visible:border-destructive/50 focus-visible:ring-destructive/15"
   )
   const chooserFieldClassName = cn(
-    "h-9 w-full min-w-0 flex-1 cursor-pointer justify-start gap-2 px-3 text-left text-[15px] font-medium data-[size=default]:h-9",
+    "h-9 w-full min-w-0 flex-1 cursor-pointer justify-start gap-2 px-3 text-left text-[15px] font-medium data-[empty=true]:text-muted-foreground data-[size=default]:h-9",
     isMissing && !isLoading
       ? "border-destructive/35 shadow-[0_0_0_1px_hsl(var(--destructive)/0.08),0_0_10px_hsl(var(--destructive)/0.10)] hover:bg-background focus-visible:border-destructive/50 focus-visible:ring-destructive/15"
       : "data-[empty=true]:text-muted-foreground"
@@ -164,6 +170,7 @@ export function CertificateFieldControl({
       variant="ghost"
       size="icon"
       aria-label={`Copy ${label}`}
+      tabIndex={-1}
       className="absolute top-1/2 right-1 size-7 -translate-y-1/2 text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:text-foreground"
       onClick={copyDraftValue}
     >
@@ -176,6 +183,7 @@ export function CertificateFieldControl({
       variant="ghost"
       size="icon"
       aria-label={`Copy ${label}`}
+      tabIndex={-1}
       className="size-9 shrink-0 text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:text-foreground"
       onClick={copyDraftValue}
     >
@@ -203,7 +211,15 @@ export function CertificateFieldControl({
           {isDate ? (
             <div className="flex min-w-0 items-center gap-1">
               <Popover
+                open={isDateOpen}
                 onOpenChange={(open) => {
+                  setIsDateOpen(open)
+                  if (open) {
+                    setCalendarMonth(
+                      parseDateValue(draftValueRef.current) ?? new Date()
+                    )
+                    setTypedDay("")
+                  }
                   if (!open) commitValue(draftValueRef.current)
                 }}
               >
@@ -224,14 +240,78 @@ export function CertificateFieldControl({
                   {displayDateValue(draftValue) ||
                     (isLoading ? "\u00a0" : "mm-dd-yyyy")}
                 </PopoverTrigger>
-                <PopoverContent align="start" className="w-auto p-0">
+                <PopoverContent
+                  align="start"
+                  className="w-auto p-0"
+                  onKeyDownCapture={(event) => {
+                    if (
+                      event.key === "ArrowLeft" ||
+                      event.key === "ArrowRight"
+                    ) {
+                      event.preventDefault()
+                      const direction = event.key === "ArrowLeft" ? -1 : 1
+                      setCalendarMonth(
+                        (current) =>
+                          new Date(
+                            current.getFullYear(),
+                            current.getMonth() + direction,
+                            1
+                          )
+                      )
+                      return
+                    }
+
+                    if (/^\d$/.test(event.key)) {
+                      event.preventDefault()
+                      setTypedDay((current) =>
+                        current.length >= 2 ? event.key : current + event.key
+                      )
+                      return
+                    }
+
+                    if (event.key === "Backspace" && typedDay) {
+                      event.preventDefault()
+                      setTypedDay((current) => current.slice(0, -1))
+                      return
+                    }
+
+                    if (event.key === "Enter" && typedDay) {
+                      const day = Number(typedDay)
+                      const daysInMonth = new Date(
+                        calendarMonth.getFullYear(),
+                        calendarMonth.getMonth() + 1,
+                        0
+                      ).getDate()
+
+                      if (day >= 1 && day <= daysInMonth) {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        const nextValue = formatDateValue(
+                          new Date(
+                            calendarMonth.getFullYear(),
+                            calendarMonth.getMonth(),
+                            day
+                          )
+                        )
+                        setDraftValue(nextValue)
+                        draftValueRef.current = nextValue
+                        commitValue(nextValue)
+                        setIsDateOpen(false)
+                      }
+                    }
+                  }}
+                >
                   <Calendar
                     mode="single"
+                    month={calendarMonth}
+                    onMonthChange={setCalendarMonth}
                     selected={parseDateValue(draftValue)}
                     onSelect={(selectedDate) => {
                       const nextValue = formatDateValue(selectedDate)
                       setDraftValue(nextValue)
                       draftValueRef.current = nextValue
+                      commitValue(nextValue)
+                      setIsDateOpen(false)
                     }}
                   />
                 </PopoverContent>
@@ -240,38 +320,100 @@ export function CertificateFieldControl({
             </div>
           ) : isChooser ? (
             <div className="flex min-w-0 items-center gap-1">
-              <Select
+              <Combobox
+                items={chooserOptions}
+                open={isChooserOpen}
+                onOpenChange={(open) => {
+                  setIsChooserOpen(open)
+                  if (open) {
+                    setHighlightedChooserIndex(
+                      Math.max(0, chooserOptions.indexOf(draftValueRef.current))
+                    )
+                  }
+                }}
                 value={draftValue || null}
                 onValueChange={(nextValue) => {
                   const selectedValue = nextValue ?? ""
                   setDraftValue(selectedValue)
                   draftValueRef.current = selectedValue
                   commitValue(selectedValue)
+                  setIsChooserOpen(false)
                 }}
               >
-                <SelectTrigger
+                <ComboboxTrigger
                   aria-label={label}
                   aria-disabled={isLoading || undefined}
                   tabIndex={isLoading ? -1 : undefined}
+                  data-empty={!draftValue}
                   className={chooserFieldClassName}
                   onClick={copyOnCtrlClick}
                   onBlur={() => commitValue(draftValueRef.current)}
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                      event.preventDefault()
+                      const direction = event.key === "ArrowDown" ? 1 : -1
+                      setIsChooserOpen(true)
+                      setHighlightedChooserIndex((current) => {
+                        const selectedIndex = chooserOptions.indexOf(
+                          draftValueRef.current
+                        )
+                        const startingIndex =
+                          current >= 0
+                            ? current
+                            : selectedIndex >= 0
+                              ? selectedIndex
+                              : direction > 0
+                                ? -1
+                                : 0
+
+                        return (
+                          (startingIndex + direction + chooserOptions.length) %
+                          chooserOptions.length
+                        )
+                      })
+                      return
+                    }
+
+                    if (
+                      event.key === "Enter" &&
+                      isChooserOpen &&
+                      highlightedChooserIndex >= 0
+                    ) {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      const selectedValue =
+                        chooserOptions[highlightedChooserIndex]
+                      setDraftValue(selectedValue)
+                      draftValueRef.current = selectedValue
+                      commitValue(selectedValue)
+                      setIsChooserOpen(false)
+                      return
+                    }
+
+                    if (event.key === "Escape" && isChooserOpen) {
+                      event.preventDefault()
+                      setIsChooserOpen(false)
+                    }
+                  }}
                 >
-                  <SelectValue
-                    placeholder={isLoading ? "\u00a0" : "Choose value"}
-                  />
-                </SelectTrigger>
-                <SelectContent align="start" className="min-w-48">
-                  <SelectGroup>
-                    {chooserOptions.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              {externalCopyButton}
+                  {draftValue || (isLoading ? "\u00a0" : "Choose Value")}
+                </ComboboxTrigger>
+                <ComboboxContent className="min-w-48">
+                  {chooserOptions.map((option, optionIndex) => (
+                    <ComboboxItem
+                      key={option}
+                      value={option}
+                      index={optionIndex}
+                      className={cn(
+                        optionIndex === highlightedChooserIndex &&
+                          "bg-accent text-accent-foreground"
+                      )}
+                    >
+                      {option}
+                    </ComboboxItem>
+                  ))}
+                </ComboboxContent>
+              </Combobox>
             </div>
           ) : field.control === "textarea" ? (
             <>

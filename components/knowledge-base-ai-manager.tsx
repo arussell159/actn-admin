@@ -21,12 +21,16 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import {
   createInformationId,
+  linkRequiredDocumentNotes,
+  organizeDocumentKnowledgePages,
   type InformationNode,
 } from "@/lib/information-notes"
+import { canonicalDocumentTitle } from "@/lib/okf/required-documents"
 
 type KnowledgeUpdate = {
   country: string
   title: string
+  pageType: "required-documents" | "document" | "procedure" | "learned-rule" | "other"
   body: string
   reason: string
 }
@@ -56,22 +60,49 @@ function nodeText(content?: string) {
 }
 
 function markdownDocument(markdown: string) {
-  const content = markdown.split(/\r?\n/).map((line) => {
+  const content: Array<Record<string, unknown>> = []
+  let bullets: string[] = []
+  const flushBullets = () => {
+    if (!bullets.length) return
+    content.push({
+      type: "bulletList",
+      content: bullets.map((text) => ({
+        type: "listItem",
+        content: [
+          {
+            type: "paragraph",
+            attrs: { textAlign: null },
+            content: [{ type: "text", text }],
+          },
+        ],
+      })),
+    })
+    bullets = []
+  }
+  for (const line of markdown.split(/\r?\n/)) {
+    const bullet = /^[-*]\s+(.+)$/.exec(line.trim())
+    if (bullet) {
+      bullets.push(bullet[1])
+      continue
+    }
+    flushBullets()
     const heading = /^(#{1,3})\s+(.+)$/.exec(line.trim())
     if (heading) {
-      return {
+      content.push({
         type: "heading",
         attrs: { textAlign: null, level: heading[1].length },
         content: [{ type: "text", text: heading[2] }],
-      }
+      })
+      continue
     }
     const text = line.trim().replace(/^[-*]\s+/, "• ")
-    return {
+    content.push({
       type: "paragraph",
       attrs: { textAlign: null },
       content: text ? [{ type: "text", text }] : undefined,
-    }
-  })
+    })
+  }
+  flushBullets()
 
   return JSON.stringify({
     type: "doc",
@@ -83,11 +114,19 @@ function markdownDocument(markdown: string) {
 
 function wikiSnapshot(nodes: InformationNode[]) {
   const byId = new Map(nodes.map((node) => [node.id, node]))
+  const path = (node: InformationNode) => {
+    const titles = [node.title]
+    let parent = node.parentId ? byId.get(node.parentId) : undefined
+    while (parent) {
+      titles.unshift(parent.title)
+      parent = parent.parentId ? byId.get(parent.parentId) : undefined
+    }
+    return titles.join(" / ")
+  }
   return nodes
     .filter((node) => node.type === "note")
     .map((node) => {
-      const parent = node.parentId ? byId.get(node.parentId) : undefined
-      return `PAGE: ${parent?.title ? `${parent.title} / ` : ""}${node.title}\n${nodeText(node.content)}`
+      return `PAGE: ${path(node)}\n${nodeText(node.content)}`
     })
     .join("\n\n---\n\n")
 }
@@ -214,12 +253,39 @@ export function KnowledgeBaseAiManager({
         next.push(folder)
       }
 
+      const isDocument =
+        update.pageType === "document" || !!canonicalDocumentTitle(update.title)
+      let pageParent = folder
+      if (isDocument) {
+        let documents = next.find(
+          (node) =>
+            node.type === "folder" &&
+            node.parentId === folder?.id &&
+            node.title.toLocaleLowerCase() === "documents"
+        )
+        if (!documents) {
+          documents = {
+            id: createInformationId(`${country}-documents`),
+            parentId: folder.id,
+            type: "folder",
+            title: "Documents",
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          }
+          next.push(documents)
+        }
+        pageParent = documents
+      }
+      const pageTitle =
+        update.pageType === "required-documents"
+          ? "Required Documents"
+          : (canonicalDocumentTitle(update.title) ?? update.title.trim())
       const existingIndex = next.findIndex(
         (node) =>
           node.type === "note" &&
-          node.parentId === folder?.id &&
+          node.parentId === pageParent.id &&
           node.title.toLocaleLowerCase() ===
-            update.title.trim().toLocaleLowerCase()
+            pageTitle.toLocaleLowerCase()
       )
       if (existingIndex >= 0) {
         next[existingIndex] = {
@@ -230,16 +296,16 @@ export function KnowledgeBaseAiManager({
         firstUpdatedId ??= next[existingIndex].id
         if (
           draftPage &&
-          update.title.trim().toLocaleLowerCase() ===
+          pageTitle.toLocaleLowerCase() ===
             draftPage.title.trim().toLocaleLowerCase()
         )
           editedPageId = next[existingIndex].id
       } else {
         const page: InformationNode = {
           id: createInformationId(update.title),
-          parentId: folder.id,
+          parentId: pageParent.id,
           type: "note",
-          title: update.title.trim(),
+          title: pageTitle,
           content: markdownDocument(update.body),
           createdAt: timestamp,
           updatedAt: timestamp,
@@ -248,7 +314,7 @@ export function KnowledgeBaseAiManager({
         firstUpdatedId ??= page.id
         if (
           draftPage &&
-          update.title.trim().toLocaleLowerCase() ===
+          pageTitle.toLocaleLowerCase() ===
             draftPage.title.trim().toLocaleLowerCase()
         )
           editedPageId = page.id
@@ -257,7 +323,10 @@ export function KnowledgeBaseAiManager({
 
     setLoading(true)
     try {
-      await onApply(next, editedPageId ?? firstUpdatedId)
+      await onApply(
+        linkRequiredDocumentNotes(organizeDocumentKnowledgePages(next)),
+        editedPageId ?? firstUpdatedId
+      )
     } catch {
       setError(
         "Could not save the approved changes. Your proposal is still available; retry when the connection is restored."

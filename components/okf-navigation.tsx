@@ -1,10 +1,6 @@
 "use client"
 
-import {
-  ChevronRightIcon,
-  FileTextIcon,
-  FolderIcon,
-} from "lucide-react"
+import { ChevronRightIcon, FileTextIcon, FolderIcon } from "lucide-react"
 import { NotebookTreeCaret } from "@/components/notebook-layout"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -18,43 +14,51 @@ export type KnowledgeNode = {
 }
 export const knowledgeRoot = "knowledge"
 
-export function knowledgeNodes(pages: KnowledgePage[]): KnowledgeNode[] {
+export function knowledgeNodes(
+  pages: KnowledgePage[],
+  certificateCountries: string[] = []
+): KnowledgeNode[] {
   return [
     ...[
       ...new Set(
-        pages.filter((p) => p.country !== "Shared").map((p) => p.country)
+        [
+          ...pages.filter((p) => p.country !== "Shared").map((p) => p.country),
+          ...certificateCountries,
+        ].filter(Boolean)
       ),
-    ].flatMap((country) => {
-      const id = "country-" + country.toLowerCase()
-      const countryPages = pages.filter((p) => p.country === country)
-      return [
-        { id, title: country, folder: true },
-        ...countryPages
-          .filter((p) => ["overview", "process"].includes(p.template))
-          .map((p) => ({
-            id: p.id,
-            title: p.template === "overview" ? "Required documents" : p.title,
-            parent: id,
-          })),
-        ...(countryPages.some((p) => p.template === "document")
-          ? [
-              {
-                id: id + "-documents",
-                title: "Documents",
-                parent: id,
-                folder: true,
-              },
-            ]
-          : []),
-        ...countryPages
-          .filter((p) => p.template === "document")
-          .map((p) => ({
-            id: p.id,
-            title: p.title,
-            parent: id + "-documents",
-          })),
-      ]
-    }),
+    ]
+      .sort((a, b) => a.localeCompare(b))
+      .flatMap((country) => {
+        const id = "country-" + country.toLowerCase()
+        const countryPages = pages.filter((p) => p.country === country)
+        return [
+          { id, title: country, folder: true },
+          ...countryPages
+            .filter((p) => ["overview", "process"].includes(p.template))
+            .map((p) => ({
+              id: p.id,
+              title: p.template === "overview" ? "Required Documents" : p.title,
+              parent: id,
+            })),
+          ...(countryPages.some((p) => p.template === "document")
+            ? [
+                {
+                  id: id + "-documents",
+                  title: "Documents",
+                  parent: id,
+                  folder: true,
+                },
+              ]
+            : []),
+          ...countryPages
+            .filter((p) => p.template === "document")
+            .map((p) => ({
+              id: p.id,
+              title: p.title,
+              parent: id + "-documents",
+            })),
+        ]
+      }),
     { id: "updates", title: "Country Updates" },
   ]
 }

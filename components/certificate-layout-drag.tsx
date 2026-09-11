@@ -1,7 +1,7 @@
 "use client"
 
 import { useDraggable, useDroppable } from "@dnd-kit/core"
-import { GripVerticalIcon } from "lucide-react"
+import { GripVerticalIcon, PlusIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type {
@@ -27,6 +27,11 @@ export function LayoutDragField({
     disabled: library,
     data: { fieldId: field.id, groupId },
   })
+  const rightDrop = useDroppable({
+    id: id + ":right",
+    disabled: library,
+    data: { fieldId: field.id, groupId, placement: "right" },
+  })
   return (
     <div
       ref={(node) => {
@@ -35,7 +40,7 @@ export function LayoutDragField({
       }}
       data-drag-field={field.id}
       className={cn(
-        "group flex min-w-0 items-center gap-1 rounded-md border bg-background transition-colors",
+        "group relative flex min-w-0 items-center gap-1 rounded-md border bg-background transition-colors",
         library
           ? "border-transparent hover:border-border"
           : "hover:border-primary/50",
@@ -43,6 +48,23 @@ export function LayoutDragField({
         drop.isOver && "border-primary ring-2 ring-primary/20"
       )}
     >
+      {!library ? (
+        <div
+          ref={rightDrop.setNodeRef}
+          className={cn(
+            "pointer-events-none absolute inset-y-0 right-0 z-20 flex w-1/2 items-center justify-end border-r-4 border-transparent transition-colors",
+            rightDrop.isOver && "border-primary"
+          )}
+          aria-hidden="true"
+        >
+          {rightDrop.isOver ? (
+            <span className="absolute top-1/2 left-full ml-2 flex -translate-y-1/2 items-center gap-1 rounded-full bg-primary px-2 py-1 text-xs font-semibold whitespace-nowrap text-primary-foreground shadow-lg">
+              <PlusIcon className="size-3" />
+              Add Column
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       <Button
         variant="ghost"
         size="icon-sm"
@@ -69,11 +91,7 @@ export function LayoutDragField({
   )
 }
 
-export function LayoutDropSlot({
-  group,
-}: {
-  group: CertificateGroup
-}) {
+export function LayoutDropSlot({ group }: { group: CertificateGroup }) {
   const drop = useDroppable({
     id: "group:" + group.id,
     data: { groupId: group.id },

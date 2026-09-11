@@ -1,0 +1,12 @@
+export const okfWritingStandard = `OKF WRITING STANDARD
+- One page represents one operational concept. Update its existing canonical page instead of repeating the same fact elsewhere.
+- Write only usable knowledge. Do not add introductions, maintenance guidance, summaries of the editing process, future-work text, or empty sections.
+- Use a short, specific title. Begin with the rule, fact, or action. Use direct sentences, bullets for requirements, numbered steps for procedures, and tables only for repeated field definitions.
+- Keep conditions beside the instruction they qualify. Preserve exact field names, document names, codes, dates, limits, and exceptions.
+- Use these page purposes: Requirements for mandatory or optional inputs; Procedure for ordered work; Documents for document-specific extraction; Sources for source records that do not fit on the governed page; Rules (Learned) for repeated correction evidence only.
+- Put each source on the page whose claim it supports. Record only sources that were actually supplied or retained. Never invent a citation, authority, date, URL, or verification.
+- Distinguish authorship from verification. AI-authored content is not human-verified. Unverified content remains draft or unresolved; verified current content is stable; replaced content is deprecated and retained in audit history.
+- Link related concepts instead of copying their content. Do not create manual index pages; the hierarchy is the index. Do not create manual change-log pages; the application audit trail is the log.
+- A Required Documents page contains only the document checklist. Link each listed document to its canonical page under Documents when that page exists. Keep document-specific requirements, extraction instructions and exceptions on that document page.
+- For a learned correction entry, use exactly: Field, Applies When, Instruction, Source, Status. A single correction is a note, never a permanent rule. Promote a rule only after comparable evidence from at least two independent requests.
+- Prefer the shortest wording that preserves the complete operational meaning. Remove duplication and filler without removing evidence, scope, conditions, exceptions, or provenance.`

@@ -14,6 +14,7 @@ export type MonthEndMasterRecord = {
   period: string
   countryId: string
   countryName: string
+  customerName?: string
   salesOrderNumber: string
   billOfLadingNumber: string
   ctnNumber: string
@@ -32,6 +33,7 @@ type MonthEndMasterRecordRow = {
   period: string
   country_id: string
   country_name: string
+  customer_name?: string
   sales_order_number: string
   bill_of_lading_number: string
   ctn_number: string
@@ -46,6 +48,43 @@ type MonthEndMasterRecordRow = {
 
 const tableName = "month_end_master_records"
 const masterRecordBatchSize = 500
+export const masterCustomerNamesKey = "__master_customer_names"
+export const masterAnalyticsRecordsKey = "__master_analytics_records"
+
+export function getMasterCustomerNamesCheckedValue(
+  records: MonthEndMasterRecord[]
+) {
+  const names = Object.fromEntries(
+    records
+      .filter((record) => record.customerName?.trim())
+      .map((record) => [
+        record.sourceInternalId ||
+          record.salesOrderNumber ||
+          record.billOfLadingNumber ||
+          record.id,
+        record.customerName?.trim() ?? "",
+      ])
+  )
+
+  return JSON.stringify(names)
+}
+
+export function getMasterAnalyticsRecordsCheckedValue(
+  records: MonthEndMasterRecord[]
+) {
+  return JSON.stringify(
+    records.map((record) => ({
+      id: record.id,
+      countryId: record.countryId,
+      countryName: record.countryName,
+      customerName: record.customerName ?? "",
+      salesOrderNumber: record.salesOrderNumber,
+      billOfLadingNumber: record.billOfLadingNumber,
+      amount: record.amount,
+      sourceInternalId: record.sourceInternalId,
+    }))
+  )
+}
 
 export function masterTransactionDatesKey(countryId: string) {
   return `${countryId}__master_transaction_dates`
@@ -106,6 +145,7 @@ function toRecord(row: MonthEndMasterRecordRow): MonthEndMasterRecord {
     period: row.period,
     countryId: row.country_id,
     countryName: row.country_name,
+    customerName: row.customer_name ?? "",
     salesOrderNumber: row.sales_order_number,
     billOfLadingNumber: row.bill_of_lading_number,
     ctnNumber: row.ctn_number,
@@ -126,6 +166,7 @@ function toRow(record: MonthEndMasterRecord): MonthEndMasterRecordRow {
     period: record.period,
     country_id: record.countryId,
     country_name: record.countryName,
+    customer_name: record.customerName ?? "",
     sales_order_number: record.salesOrderNumber,
     bill_of_lading_number: record.billOfLadingNumber,
     ctn_number: record.ctnNumber,
@@ -144,9 +185,21 @@ async function upsertMasterRows(
 ) {
   for (let index = 0; index < rows.length; index += masterRecordBatchSize) {
     const batch = rows.slice(index, index + masterRecordBatchSize)
-    const { error } = await supabase
+    let { error } = await supabase
       .from(tableName)
       .upsert(batch, { onConflict: "id" })
+
+    if (error?.message.includes("customer_name")) {
+      const legacyBatch = batch.map((row) => {
+        const legacyRow = { ...row }
+        delete legacyRow.customer_name
+        return legacyRow
+      })
+      const legacyResult = await supabase
+        .from(tableName)
+        .upsert(legacyBatch, { onConflict: "id" })
+      error = legacyResult.error
+    }
 
     if (error) return error
   }
@@ -331,6 +384,7 @@ export function parseMonthEndMasterCsv({
   const statusIndex = findCsvColumn(headers, ["ctnstatus"])
   const classIndex = findCsvColumn(headers, ["classnohierarchy", "class"])
   const amountIndex = findCsvColumn(headers, ["amount"])
+  const customerIndex = findCsvColumn(headers, ["customer", "name", "entity"])
 
   if (
     salesOrderIndex === -1 ||
@@ -367,6 +421,8 @@ export function parseMonthEndMasterCsv({
       period,
       countryId: country.id,
       countryName: country.name,
+      customerName:
+        customerIndex >= 0 ? (row[customerIndex]?.trim() ?? "") : "",
       salesOrderNumber: cleanSalesOrder(row[salesOrderIndex]?.trim() ?? ""),
       billOfLadingNumber: row[billOfLadingIndex]?.trim() ?? "",
       ctnNumber: row[ctnIndex]?.trim() ?? "",
@@ -415,6 +471,7 @@ export function parseCountryMasterCsv({
   const ctnIndex = findCsvColumn(headers, ["ctnnumber", "ctn"])
   const statusIndex = findCsvColumn(headers, ["ctnstatus", "status"])
   const amountIndex = findCsvColumn(headers, ["amount", "total"])
+  const customerIndex = findCsvColumn(headers, ["customer", "name", "entity"])
   const classIndex = findCsvColumn(headers, ["classnohierarchy", "class"])
 
   if (
@@ -452,6 +509,8 @@ export function parseCountryMasterCsv({
       period,
       countryId: country.id,
       countryName: country.name,
+      customerName:
+        customerIndex >= 0 ? (row[customerIndex]?.trim() ?? "") : "",
       salesOrderNumber: cleanSalesOrder(row[salesOrderIndex]?.trim() ?? ""),
       billOfLadingNumber: row[billOfLadingIndex]?.trim() ?? "",
       ctnNumber: row[ctnIndex]?.trim() ?? "",
@@ -541,6 +600,15 @@ export function parseMappedCountryMasterCsv({
   const ctnIndex = mappedColumnIndex(headers, mapping, "ctnNumber")
   const statusIndex = mappedColumnIndex(headers, mapping, "status")
   const amountIndex = mappedColumnIndex(headers, mapping, "amount")
+  const mappedCustomerIndex = mappedColumnIndex(
+    headers,
+    mapping,
+    "customerName"
+  )
+  const customerIndex =
+    mappedCustomerIndex >= 0 || genericColumnMapping
+      ? mappedCustomerIndex
+      : findCsvColumn(headers, ["customer", "name", "entity"])
   const classIndex = mappedColumnIndex(headers, mapping, "sourceClass")
 
   if (
@@ -560,10 +628,9 @@ export function parseMappedCountryMasterCsv({
     const matchedCountries = sourceClass
       ? findCountries(sourceClass, targetCountries)
       : targetCountries
-    const countriesToApply =
-      sourceClass && matchedCountries.length
-        ? [matchedCountries[0]]
-        : targetCountries
+    const countriesToApply = sourceClass
+      ? matchedCountries.slice(0, 1)
+      : targetCountries
 
     return countriesToApply.map((country) => ({
       id: makeRecordId(
@@ -576,6 +643,8 @@ export function parseMappedCountryMasterCsv({
       period,
       countryId: country.id,
       countryName: country.name,
+      customerName:
+        customerIndex >= 0 ? (row[customerIndex]?.trim() ?? "") : "",
       salesOrderNumber:
         salesOrderIndex >= 0
           ? cleanSalesOrder(row[salesOrderIndex]?.trim() ?? "")

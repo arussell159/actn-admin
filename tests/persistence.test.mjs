@@ -101,6 +101,40 @@ const loadWithDb = (db) =>
     "@/lib/supabase-env": env,
   })
 
+test("legacy recovery copies only known app data and confirms it after the database accepts it", async () => {
+  const values = browser()
+  const sourceKey = "actn-month-end-country-reconciliations-v1"
+  const original = JSON.stringify([
+    { id: "existing-local-work", snapshot: { checked: true } },
+  ])
+  values.set(sourceKey, original)
+  values.set("sb-project-auth-token", "must never be copied")
+  values.set("unrelated-private-data", "must never be copied")
+  let fail = true
+  const writes = []
+  const load = loadWithDb(
+    database((table, calls) => {
+      assert.equal(table, "app_settings")
+      writes.push(calls.find(([method]) => method === "upsert"))
+      return { error: fail ? new Error("offline") : null }
+    })
+  )
+  const { captureLegacyBrowserData, preserveLegacyBrowserData } = load(
+    "lib/browser-data-recovery.ts"
+  )
+  const copies = captureLegacyBrowserData()
+  assert.deepEqual(copies, [{ storageKey: sourceKey, serialized: original }])
+  await assert.rejects(preserveLegacyBrowserData(copies), /offline/)
+  assert.equal(captureLegacyBrowserData().length, 1)
+  assert.equal(values.get(sourceKey), original)
+  fail = false
+  await preserveLegacyBrowserData(copies)
+  assert.equal(captureLegacyBrowserData().length, 0)
+  assert.equal(writes[1][2].ignoreDuplicates, true)
+  assert.equal(writes[1][1].value.serialized, original)
+  assert.equal(values.get(sourceKey), original)
+})
+
 test("all report rows are fetched beyond the database's single-request limit", async () => {
   const { readAllRows } = loadApplication()("lib/database-records.ts")
   const expected = Array.from({ length: 1251 }, (_, id) => ({ id }))

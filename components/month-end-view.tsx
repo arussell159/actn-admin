@@ -1,11 +1,10 @@
 "use client"
 
 import * as React from "react"
-import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
 import {
+  AlertTriangleIcon,
   ArrowLeftIcon,
-  ArrowRightIcon,
   Building2Icon,
   CheckIcon,
   CheckCircle2Icon,
@@ -17,13 +16,14 @@ import {
   ListTodoIcon,
   MessageSquareTextIcon,
   MoreHorizontalIcon,
-  NotebookPenIcon,
   Trash2Icon,
   UploadIcon,
+  UserRoundCheckIcon,
   XIcon,
 } from "lucide-react"
 
 import { AppLink } from "@/components/app-link"
+import { MonthEndValueByDayChart } from "@/components/month-end-dashboard-charts"
 import { SectionNavigation } from "@/components/section-navigation"
 import { PageFrame } from "@/components/page-frame"
 import { CountryTableFilters } from "@/components/country-table-filters"
@@ -34,6 +34,12 @@ import {
 } from "@/components/page-skeletons"
 import { SiteHeader, SiteHeaderBackButton } from "@/components/site-header"
 import { Badge } from "@/components/ui/badge"
+import {
+  Alert,
+  AlertAction,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { ButtonGroup } from "@/components/ui/button-group"
 import {
@@ -45,10 +51,25 @@ import {
 } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
+  Combobox,
+  ComboboxContent,
+  ComboboxItem,
+  ComboboxTrigger,
+} from "@/components/ui/combobox"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
@@ -58,6 +79,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -69,16 +91,25 @@ import {
   formatPeriod,
   loadMonthEndRecords,
   listMonthEndRecords,
+  monthEndRecordsStorageKey,
   saveMonthEndRecord,
   type MonthEndValue,
   type MonthEndRecord,
 } from "@/lib/month-end-db"
 import {
   getMasterTransactionDateCheckedValues,
+  getMasterCustomerNamesCheckedValue,
+  getMasterAnalyticsRecordsCheckedValue,
+  isMasterCsv,
+  listMonthEndMasterRecords,
   masterTransactionDatesKey,
+  masterCustomerNamesKey,
+  masterAnalyticsRecordsKey,
+  parseMonthEndMasterCsv,
   parseMappedCountryMasterCsv,
   parseCountryMasterCsv,
   saveMonthEndMasterRecords,
+  type MonthEndMasterRecord,
 } from "@/lib/month-end-master-records"
 import { monthEndCountryHref } from "@/lib/month-end-country-route"
 import { extractWorkbookRows } from "@/lib/country-report-import"
@@ -103,6 +134,7 @@ import {
   saveMonthEndReturnRecord,
   saveMonthEndReturnPoint,
 } from "@/lib/month-end-return-point"
+import { createClient } from "@/lib/client"
 import { simpleMapAfricaPaths } from "@/lib/simplemap-africa-paths"
 import { cn } from "@/lib/utils"
 
@@ -114,10 +146,19 @@ const workflowTaskIcons: Record<CloseTaskId, React.ElementType> = {
 
 const dashboardHandoffNoteKey = "__dashboard_handoff_note"
 const dashboardHandoffUpdatedAtKey = "__dashboard_handoff_updated_at"
+const dashboardHandoffCompleteKey = "__dashboard_handoff_complete"
+const dashboardHandoffAuthorKey = "__dashboard_handoff_author"
+const topCustomerSortOptions = ["Most Invoices", "Highest Value"] as const
+const countryMoverSortOptions = ["Invoice Swing", "Value Swing"] as const
+
+function noteCompleteKey(rowId: string) {
+  return `${rowId}__note_complete`
+}
 
 type MonthEndSectionId = "dashboard" | "countries" | "tasks" | string
 type CountryTableFilterId = "all" | "not-reconciled" | "missing-invoice"
-type DashboardMetricDetailId = "countries" | "invoices" | "shared-tasks"
+type DashboardMetricDetailId =
+  "countries" | "invoices" | "shared-tasks" | "customers" | "comments"
 type CountryHeatMapDetail = {
   name: string
   tasks: Array<{ id: string; label: string; isComplete: boolean }>
@@ -190,6 +231,36 @@ function noteUpdatedAtKey(rowId: string) {
   return `${rowId}__note_updated_at`
 }
 
+function noteAuthorKey(rowId: string) {
+  return `${rowId}__note_author`
+}
+
+function userDisplayName(user: {
+  email?: string | null
+  user_metadata?: Record<string, unknown>
+}) {
+  const metadataName = [
+    user.user_metadata?.full_name,
+    user.user_metadata?.display_name,
+    user.user_metadata?.name,
+  ].find((value): value is string =>
+    Boolean(typeof value === "string" && value.trim())
+  )
+
+  if (metadataName) return metadataName.trim()
+  if (user.email === "local-development@africactn.invalid") {
+    return "Alex Russell"
+  }
+
+  const emailName = user.email
+    ?.split("@")[0]
+    ?.replace(/[._-]+/g, " ")
+    .trim()
+  return emailName
+    ? emailName.replace(/\b\w/g, (character) => character.toUpperCase())
+    : "Africa CTN User"
+}
+
 function formatNoteTimestamp(value: string) {
   const timestamp = new Date(value)
 
@@ -203,6 +274,111 @@ function formatNoteTimestamp(value: string) {
     hour: "numeric",
     minute: "2-digit",
   }).format(timestamp)
+}
+
+type InvoiceSummary = {
+  name: string
+  invoiceCount: number
+  amount: number
+}
+
+function invoiceIdentity(record: MonthEndMasterRecord) {
+  return (
+    record.sourceInternalId ||
+    record.salesOrderNumber ||
+    record.billOfLadingNumber ||
+    record.id
+  )
+}
+
+function customerDisplayName(value: string) {
+  return value.replace(/^\d+(?::\d+)?\s+/, "").trim()
+}
+
+function summarizeInvoices(
+  records: MonthEndMasterRecord[],
+  nameForRecord: (record: MonthEndMasterRecord) => string,
+  deduplicate = false
+) {
+  const summaries = new Map<string, InvoiceSummary>()
+  const seenInvoices = new Set<string>()
+
+  for (const record of records) {
+    const name = nameForRecord(record).trim()
+    const invoiceId = invoiceIdentity(record)
+
+    if (!name || (deduplicate && seenInvoices.has(invoiceId))) continue
+    if (deduplicate) seenInvoices.add(invoiceId)
+
+    const summary = summaries.get(name) ?? {
+      name,
+      invoiceCount: 0,
+      amount: 0,
+    }
+    summary.invoiceCount += 1
+    summary.amount += record.amount
+    summaries.set(name, summary)
+  }
+
+  return Array.from(summaries.values()).sort(
+    (first, second) =>
+      second.amount - first.amount ||
+      second.invoiceCount - first.invoiceCount ||
+      first.name.localeCompare(second.name)
+  )
+}
+
+function formatDashboardCurrency(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(value)
+}
+
+function transactionDayInPeriod(value: string | undefined, period: string) {
+  const trimmedValue = value?.trim()
+  if (!trimmedValue) return undefined
+
+  const isoMatch = trimmedValue.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
+  if (isoMatch) {
+    const recordPeriod = `${isoMatch[1]}-${isoMatch[2].padStart(2, "0")}`
+    return recordPeriod === period ? Number(isoMatch[3]) : undefined
+  }
+
+  const parsedDate = new Date(trimmedValue)
+  if (Number.isNaN(parsedDate.getTime())) return undefined
+
+  const recordPeriod = `${parsedDate.getFullYear()}-${String(
+    parsedDate.getMonth() + 1
+  ).padStart(2, "0")}`
+  return recordPeriod === period ? parsedDate.getDate() : undefined
+}
+
+function readMasterCustomerNames(value: MonthEndValue | undefined) {
+  if (typeof value !== "string" || !value) return new Map<string, string>()
+
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>
+    return new Map(
+      Object.entries(parsed).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string"
+      )
+    )
+  } catch {
+    return new Map<string, string>()
+  }
+}
+
+function readMasterAnalyticsRecords(value: MonthEndValue | undefined) {
+  if (typeof value !== "string" || !value) return []
+
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? (parsed as MonthEndMasterRecord[]) : []
+  } catch {
+    return []
+  }
 }
 
 function masterSourceFileNameKey(rowId: string) {
@@ -296,6 +472,11 @@ function MonthEndMetricCard({
   value,
   icon: Icon,
   progress,
+  caption,
+  stats,
+  iconActionLabel,
+  onIconActivate,
+  iconActionDisabled = false,
   isActive = false,
   onActivate,
   expandedContent,
@@ -304,6 +485,11 @@ function MonthEndMetricCard({
   value: string
   icon: React.ElementType
   progress?: number
+  caption?: string
+  stats?: Array<{ label: string; value: string }>
+  iconActionLabel?: string
+  onIconActivate?: () => void
+  iconActionDisabled?: boolean
   isActive?: boolean
   onActivate?: () => void
   expandedContent?: React.ReactNode
@@ -311,21 +497,42 @@ function MonthEndMetricCard({
   return (
     <Card
       className={cn(
-        "gap-0 py-0 shadow-sm",
-        isActive && "ring-primary/40",
+        "relative gap-0 py-0 shadow-sm transition-colors",
+        onActivate && "hover:bg-muted/40",
+        isActive && "bg-muted/20 ring-primary/40",
         isActive && expandedContent && "sm:col-span-2 md:col-span-1"
       )}
     >
+      {onIconActivate && iconActionLabel ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="absolute top-3 right-3 z-10 bg-background"
+          disabled={iconActionDisabled}
+          onClick={onIconActivate}
+        >
+          <Icon />
+          {iconActionLabel}
+        </Button>
+      ) : null}
       <div
         className={cn(
           "grid gap-3 py-4 text-left",
           onActivate &&
-            "cursor-pointer transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-          isActive && "bg-muted/30"
+            "cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         )}
         role={onActivate ? "button" : undefined}
         tabIndex={onActivate ? 0 : undefined}
-        aria-label={onActivate ? `${title}: ${value}` : undefined}
+        aria-label={
+          onActivate
+            ? `${title}: ${
+                stats
+                  ?.map((stat) => `${stat.value} ${stat.label}`)
+                  .join(", ") ?? `${value}${caption ? `, ${caption}` : ""}`
+              }`
+            : undefined
+        }
         aria-expanded={onActivate ? isActive : undefined}
         onClick={onActivate}
         onKeyDown={(event) => {
@@ -337,14 +544,44 @@ function MonthEndMetricCard({
           onActivate()
         }}
       >
-        <CardHeader className="flex flex-row items-center justify-between px-4">
+        <CardHeader
+          className={cn(
+            "flex flex-row items-center justify-between px-4",
+            onIconActivate && iconActionLabel && "pr-24"
+          )}
+        >
           <CardDescription className="font-medium text-foreground">
             {title}
           </CardDescription>
-          <Icon className="size-4 text-muted-foreground" />
+          {!onIconActivate ? (
+            <Icon className="size-4 text-muted-foreground" />
+          ) : null}
         </CardHeader>
         <CardContent className="grid gap-3 px-4">
-          <div className="text-2xl font-semibold tabular-nums">{value}</div>
+          {stats?.length ? (
+            <div className="grid grid-cols-2 divide-x">
+              {stats.map((stat) => (
+                <div
+                  key={stat.label}
+                  className="grid gap-0.5 px-3 first:pl-0 last:pr-0"
+                >
+                  <span className="text-2xl font-semibold tabular-nums">
+                    {stat.value}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {stat.label}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <>
+              <div className="text-2xl font-semibold tabular-nums">{value}</div>
+              {caption ? (
+                <div className="text-xs text-muted-foreground">{caption}</div>
+              ) : null}
+            </>
+          )}
           {progress !== undefined ? (
             <div
               className="h-2 overflow-hidden rounded-full bg-muted"
@@ -569,23 +806,6 @@ function MonthEndCountryHeatMap({
   )
 }
 
-function MonthEndDashboardChartsSkeleton() {
-  return (
-    <section className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(19rem,0.75fr)]">
-      <Skeleton className="h-[376px] rounded-xl" />
-      <Skeleton className="h-[376px] rounded-xl" />
-    </section>
-  )
-}
-
-const MonthEndDashboardCharts = dynamic(
-  () =>
-    import("@/components/month-end-dashboard-charts").then(
-      (module) => module.MonthEndDashboardCharts
-    ),
-  { ssr: false, loading: () => <MonthEndDashboardChartsSkeleton /> }
-)
-
 function MonthEndSectionNavigation({
   items,
   activeSection,
@@ -612,54 +832,79 @@ function MonthEndTaskGroupsList({
   updateTask,
   isReadOnly = false,
 }: {
-  groups: MonthEndTemplate["taskGroups"]
+  groups: Array<{
+    id: string
+    title: string
+    tasks: Array<{ id: string; label: string; key?: string }>
+  }>
   checked: Record<string, MonthEndValue>
   updateTask: (key: string, value: boolean) => void
   isReadOnly?: boolean
 }) {
+  const columns: [typeof groups, typeof groups] = [[], []]
+  const columnWeights = [0, 0]
+
+  for (const group of groups) {
+    const columnIndex = columnWeights[0] <= columnWeights[1] ? 0 : 1
+    columns[columnIndex].push(group)
+    columnWeights[columnIndex] +=
+      2 +
+      group.tasks.reduce(
+        (height, task) =>
+          height + Math.max(1, Math.ceil(task.label.length / 55)),
+        0
+      )
+  }
+
   return (
     <div className="grid max-w-5xl items-start gap-5 md:grid-cols-2">
-      {groups.map((group) => (
-        <Card
-          key={group.id}
-          data-task-group={group.id}
-          className={cn(
-            "gap-0 py-0 shadow-none",
-            group.tasks.length > 0 &&
-              group.tasks.every((task) =>
-                asBool(checked[taskKey(group.id, task.id)])
-              ) &&
-              "border-emerald-300 bg-emerald-100 text-emerald-950 dark:border-emerald-700 dark:bg-emerald-900/35 dark:text-emerald-50"
-          )}
-        >
-          <CardHeader className="px-4 pt-4 pb-2">
-            <CardTitle className="text-lg">{group.title}</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-0 px-0">
-            {group.tasks.map((task, taskIndex) => {
-              const key = taskKey(group.id, task.id)
+      {columns.map((column, columnIndex) => (
+        <div key={columnIndex} className="grid gap-5">
+          {column.map((group) => (
+            <Card
+              key={group.id}
+              data-task-group={group.id}
+              className={cn(
+                "gap-0 py-0 shadow-none",
+                group.tasks.length > 0 &&
+                  group.tasks.every((task) =>
+                    asBool(checked[task.key ?? taskKey(group.id, task.id)])
+                  ) &&
+                  "border-emerald-300 bg-emerald-100 text-emerald-950 dark:border-emerald-700 dark:bg-emerald-900/35 dark:text-emerald-50"
+              )}
+            >
+              <CardHeader className="px-4 pt-4 pb-2">
+                <CardTitle className="text-lg">{group.title}</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-0 px-0">
+                {group.tasks.map((task, taskIndex) => {
+                  const key = task.key ?? taskKey(group.id, task.id)
 
-              return (
-                <label
-                  key={task.id}
-                  className={cn(
-                    "flex min-h-11 items-center justify-between gap-3 px-4 py-2 text-sm font-medium hover:bg-muted/60",
-                    taskIndex > 0 && "border-t",
-                    asBool(checked[key]) &&
-                      "bg-emerald-100 hover:bg-emerald-100/80 dark:bg-emerald-900/35 dark:hover:bg-emerald-900/45"
-                  )}
-                >
-                  <span className="min-w-0 flex-1">{task.label}</span>
-                  <Checkbox
-                    checked={asBool(checked[key])}
-                    disabled={isReadOnly}
-                    onCheckedChange={(value) => updateTask(key, value === true)}
-                  />
-                </label>
-              )
-            })}
-          </CardContent>
-        </Card>
+                  return (
+                    <label
+                      key={task.id}
+                      className={cn(
+                        "flex min-h-11 items-center justify-between gap-3 px-4 py-2 text-sm font-medium hover:bg-muted/60",
+                        taskIndex > 0 && "border-t",
+                        asBool(checked[key]) &&
+                          "bg-emerald-100 hover:bg-emerald-100/80 dark:bg-emerald-900/35 dark:hover:bg-emerald-900/45"
+                      )}
+                    >
+                      <span className="min-w-0 flex-1">{task.label}</span>
+                      <Checkbox
+                        checked={asBool(checked[key])}
+                        disabled={isReadOnly}
+                        onCheckedChange={(value) =>
+                          updateTask(key, value === true)
+                        }
+                      />
+                    </label>
+                  )
+                })}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       ))}
     </div>
   )
@@ -705,10 +950,14 @@ export function MonthEndView({ period }: { period?: string } = {}) {
   )
   const [noteDraft, setNoteDraft] = React.useState("")
   const [dashboardHandoffDraft, setDashboardHandoffDraft] = React.useState("")
+  const [currentUserName, setCurrentUserName] =
+    React.useState("Africa CTN User")
   const [isSavingDashboardHandoff, setIsSavingDashboardHandoff] =
     React.useState(false)
   const [dashboardHandoffSaveError, setDashboardHandoffSaveError] =
     React.useState("")
+  const [isDashboardCommentDialogOpen, setIsDashboardCommentDialogOpen] =
+    React.useState(false)
   const [editingExchangeRateRowId, setEditingExchangeRateRowId] =
     React.useState<string | null>(null)
   const [exchangeRateDraft, setExchangeRateDraft] = React.useState("")
@@ -718,6 +967,12 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     )
   const [activeDashboardMetric, setActiveDashboardMetric] =
     React.useState<DashboardMetricDetailId | null>(null)
+  const [showAllTopCustomers, setShowAllTopCustomers] = React.useState(false)
+  const [showAllCountryMovers, setShowAllCountryMovers] = React.useState(false)
+  const [topCustomerSort, setTopCustomerSort] =
+    React.useState<(typeof topCustomerSortOptions)[number]>("Most Invoices")
+  const [countryMoverSort, setCountryMoverSort] =
+    React.useState<(typeof countryMoverSortOptions)[number]>("Invoice Swing")
   const [selectedDashboardCountryId, setSelectedDashboardCountryId] =
     React.useState("")
   const [highlightedDashboardCountryId, setHighlightedDashboardCountryId] =
@@ -746,10 +1001,81 @@ export function MonthEndView({ period }: { period?: string } = {}) {
   const [loadRetryNonce, setLoadRetryNonce] = React.useState(0)
   const [recordSaveError, setRecordSaveError] = React.useState("")
   const [saveRetryNonce, setSaveRetryNonce] = React.useState(0)
+  const [masterAnalyticsRecords, setMasterAnalyticsRecords] = React.useState<
+    MonthEndMasterRecord[]
+  >([])
+  const [previousMasterAnalyticsRecords, setPreviousMasterAnalyticsRecords] =
+    React.useState<MonthEndMasterRecord[]>([])
+  const [previousAnalyticsChecked, setPreviousAnalyticsChecked] =
+    React.useState<Record<string, MonthEndValue>>({})
+  const [masterAnalyticsRefreshNonce, setMasterAnalyticsRefreshNonce] =
+    React.useState(0)
   const masterUploadInputRef = React.useRef<HTMLInputElement>(null)
   const pendingReturnScrollYRef = React.useRef<number | null>(
     initialReturnPoint?.scrollY ?? null
   )
+
+  React.useEffect(() => {
+    let isMounted = true
+
+    async function loadCurrentUserName() {
+      const response = await createClient().auth.getUser()
+
+      if (isMounted && response.data.user) {
+        setCurrentUserName(userDisplayName(response.data.user))
+      }
+    }
+
+    void loadCurrentUserName()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  React.useEffect(() => {
+    let isMounted = true
+
+    async function loadMasterAnalytics() {
+      if (!record?.id || !record.period) {
+        if (isMounted) {
+          setMasterAnalyticsRecords([])
+          setPreviousMasterAnalyticsRecords([])
+          setPreviousAnalyticsChecked({})
+        }
+        return
+      }
+
+      const monthEnds = await listMonthEndRecords()
+      const previousMonthEnd = monthEnds
+        .filter((item) => item.period < record.period)
+        .sort((first, second) => second.period.localeCompare(first.period))[0]
+      const [currentRecords, previousRecords] = await Promise.all([
+        listMonthEndMasterRecords({ monthEndId: record.id }),
+        previousMonthEnd
+          ? listMonthEndMasterRecords({ monthEndId: previousMonthEnd.id })
+          : Promise.resolve([]),
+      ])
+
+      if (isMounted) {
+        setMasterAnalyticsRecords(currentRecords)
+        setPreviousMasterAnalyticsRecords(previousRecords)
+        setPreviousAnalyticsChecked(previousMonthEnd?.checked ?? {})
+      }
+    }
+
+    void loadMasterAnalytics().catch(() => {
+      if (isMounted) {
+        setMasterAnalyticsRecords([])
+        setPreviousMasterAnalyticsRecords([])
+        setPreviousAnalyticsChecked({})
+      }
+    })
+
+    return () => {
+      isMounted = false
+    }
+  }, [masterAnalyticsRefreshNonce, record?.id, record?.period])
 
   React.useEffect(() => {
     if (activeDashboardMetric !== "countries") {
@@ -897,12 +1223,19 @@ export function MonthEndView({ period }: { period?: string } = {}) {
         setSaveRetryNonce((current) => current + 1)
       }
     }
+    const reloadAfterMonthEndUpdate = (event: StorageEvent) => {
+      if (event.key === monthEndRecordsStorageKey) {
+        setLoadRetryNonce((current) => current + 1)
+      }
+    }
 
     window.addEventListener("online", retryAfterResume)
+    window.addEventListener("storage", reloadAfterMonthEndUpdate)
     document.addEventListener("visibilitychange", retryAfterResume)
 
     return () => {
       window.removeEventListener("online", retryAfterResume)
+      window.removeEventListener("storage", reloadAfterMonthEndUpdate)
       document.removeEventListener("visibilitychange", retryAfterResume)
     }
   }, [loadError, recordSaveError])
@@ -911,7 +1244,8 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     if (
       !hasLoaded ||
       !recordRef.current ||
-      recordRef.current.status === "Closed"
+      recordRef.current.status === "Closed" ||
+      recordRef.current.checked === checked
     ) {
       return
     }
@@ -1025,6 +1359,20 @@ export function MonthEndView({ period }: { period?: string } = {}) {
         .length,
     0
   )
+  const dashboardCommentTaskKeys = [
+    ...(asString(checked[dashboardHandoffNoteKey]).trim()
+      ? [dashboardHandoffCompleteKey]
+      : []),
+    ...checkableRows
+      .filter((row) => asString(checked[noteKey(row.id)]).trim())
+      .map((row) => noteCompleteKey(row.id)),
+  ]
+  const commentTaskTotal = dashboardCommentTaskKeys.length
+  const commentTaskDone = dashboardCommentTaskKeys.filter((key) =>
+    asBool(checked[key])
+  ).length
+  const displayedTaskTotal = supplementalTaskTotal + commentTaskTotal
+  const displayedTaskDone = supplementalTaskDone + commentTaskDone
   const supplementalTaskSummaryOrder: Record<string, number> = {
     statements: 0,
     "prepaid-accounts": 1,
@@ -1049,8 +1397,8 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     { id: "countries", label: countriesModule.tab },
     { id: "tasks", label: "Tasks" },
   ]
-  const grandTotalTasks = totalTasks + supplementalTaskTotal
-  const totalDone = countryDone + supplementalTaskDone
+  const grandTotalTasks = totalTasks + displayedTaskTotal
+  const totalDone = countryDone + displayedTaskDone
   const completion = grandTotalTasks
     ? Math.round((totalDone / grandTotalTasks) * 100)
     : 0
@@ -1077,13 +1425,190 @@ export function MonthEndView({ period }: { period?: string } = {}) {
       asBool(checked[taskKey(row.id, "reconcile")])
     )
   const approvedRollInternalIds = listApprovedInternalIds(checked)
+  const approvedRollIdSet = new Set(approvedRollInternalIds)
+  const previousRollIdSet = new Set(
+    listApprovedInternalIds(previousAnalyticsChecked)
+  )
+  const savedCustomerNames = readMasterCustomerNames(
+    checked[masterCustomerNamesKey]
+  )
+  const previousSavedCustomerNames = readMasterCustomerNames(
+    previousAnalyticsChecked[masterCustomerNamesKey]
+  )
+  const currentAnalyticsRecords = masterAnalyticsRecords.length
+    ? masterAnalyticsRecords
+    : readMasterAnalyticsRecords(checked[masterAnalyticsRecordsKey])
+  const previousAnalyticsRecords = previousMasterAnalyticsRecords.length
+    ? previousMasterAnalyticsRecords
+    : readMasterAnalyticsRecords(
+        previousAnalyticsChecked[masterAnalyticsRecordsKey]
+      )
+  const includedMasterRecords = currentAnalyticsRecords
+    .filter((item) => !approvedRollIdSet.has(item.sourceInternalId))
+    .map((item) => ({
+      ...item,
+      customerName:
+        item.customerName ||
+        savedCustomerNames.get(invoiceIdentity(item)) ||
+        "",
+    }))
+  const includedPreviousMasterRecords = previousAnalyticsRecords
+    .filter((item) => !previousRollIdSet.has(item.sourceInternalId))
+    .map((item) => ({
+      ...item,
+      customerName:
+        item.customerName ||
+        previousSavedCustomerNames.get(invoiceIdentity(item)) ||
+        "",
+    }))
+  const customerSummaries = summarizeInvoices(
+    includedMasterRecords,
+    (item) => customerDisplayName(item.customerName ?? ""),
+    true
+  )
+  const customersByInvoiceCount = [...customerSummaries].sort(
+    (first, second) =>
+      second.invoiceCount - first.invoiceCount ||
+      second.amount - first.amount ||
+      first.name.localeCompare(second.name)
+  )
+  const repeatCustomers = customersByInvoiceCount.filter(
+    (customer) => customer.invoiceCount > 1
+  )
+  const oneTimeCustomers = customersByInvoiceCount.filter(
+    (customer) => customer.invoiceCount === 1
+  )
+  const topCustomers =
+    topCustomerSort === "Most Invoices"
+      ? customersByInvoiceCount
+      : [...customerSummaries].sort(
+          (first, second) =>
+            second.amount - first.amount ||
+            second.invoiceCount - first.invoiceCount ||
+            first.name.localeCompare(second.name)
+        )
+  const currentCountrySummaries = summarizeInvoices(
+    includedMasterRecords,
+    (item) => item.countryName
+  )
+  const topCountries = currentCountrySummaries.slice(0, 5)
+  const currentCountrySummaryByName = new Map(
+    currentCountrySummaries.map((item) => [item.name, item])
+  )
+  const previousCountrySummaries = summarizeInvoices(
+    includedPreviousMasterRecords,
+    (item) => item.countryName
+  )
+  const previousCountrySummaryByName = new Map(
+    previousCountrySummaries.map((item) => [item.name, item])
+  )
+  const countryMovers = Array.from(
+    new Set([
+      ...currentCountrySummaryByName.keys(),
+      ...previousCountrySummaryByName.keys(),
+    ])
+  )
+    .map((name) => {
+      const current = currentCountrySummaryByName.get(name) ?? {
+        name,
+        invoiceCount: 0,
+        amount: 0,
+      }
+      const previous = previousCountrySummaryByName.get(name) ?? {
+        name,
+        invoiceCount: 0,
+        amount: 0,
+      }
+
+      return {
+        name,
+        invoiceCount: current.invoiceCount,
+        amount: current.amount,
+        invoiceChange: current.invoiceCount - previous.invoiceCount,
+        amountChange: current.amount - previous.amount,
+      }
+    })
+    .filter((item) => item.invoiceChange !== 0 || item.amountChange !== 0)
+  const sortedCountryMovers = [...countryMovers].sort((first, second) =>
+    countryMoverSort === "Invoice Swing"
+      ? Math.abs(second.invoiceChange) - Math.abs(first.invoiceChange) ||
+        Math.abs(second.amountChange) - Math.abs(first.amountChange) ||
+        first.name.localeCompare(second.name)
+      : Math.abs(second.amountChange) - Math.abs(first.amountChange) ||
+        Math.abs(second.invoiceChange) - Math.abs(first.invoiceChange) ||
+        first.name.localeCompare(second.name)
+  )
   const canDownloadRollInvoices =
     Boolean(record) &&
     areAllCountryReconciliationsComplete &&
     approvedRollInternalIds.length > 0
   const isClosed = record?.status === "Closed"
+  React.useEffect(() => {
+    function openCommentDialog(event: KeyboardEvent) {
+      const target = event.target
+      const isTyping =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+
+      if (
+        event.key.toLowerCase() !== "c" ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        isTyping ||
+        isClosed
+      )
+        return
+
+      event.preventDefault()
+      setDashboardHandoffDraft("")
+      setDashboardHandoffSaveError("")
+      setIsDashboardCommentDialogOpen(true)
+    }
+
+    window.addEventListener("keydown", openCommentDialog)
+    return () => window.removeEventListener("keydown", openCommentDialog)
+  }, [isClosed])
   const shouldShowPreviousBackButton = Boolean(period && isClosed)
   const activePeriod = record?.period ?? period ?? ""
+  const [activeYear, activeMonth] = activePeriod.split("-").map(Number)
+  const daysInActivePeriod =
+    Number.isInteger(activeYear) && Number.isInteger(activeMonth)
+      ? new Date(activeYear, activeMonth, 0).getDate()
+      : 31
+  const invoiceValueByDay = new Map<number, number>()
+  const chartedInvoiceIds = new Set<string>()
+
+  for (const item of includedMasterRecords) {
+    const invoiceId = invoiceIdentity(item)
+    const day = transactionDayInPeriod(item.transactionDate, activePeriod)
+    if (!day || chartedInvoiceIds.has(invoiceId)) continue
+
+    chartedInvoiceIds.add(invoiceId)
+    invoiceValueByDay.set(day, (invoiceValueByDay.get(day) ?? 0) + item.amount)
+  }
+
+  const monthlyValueByDay = Array.from(
+    { length: daysInActivePeriod },
+    (_, index) => ({
+      day: index + 1,
+      amount: invoiceValueByDay.get(index + 1) ?? 0,
+    })
+  )
+  const previousMonthMetrics = (() => {
+    const invoiceIds = new Set<string>()
+    const revenue = includedPreviousMasterRecords.reduce((total, item) => {
+      const invoiceId = invoiceIdentity(item)
+      if (invoiceIds.has(invoiceId)) return total
+
+      invoiceIds.add(invoiceId)
+      return total + item.amount
+    }, 0)
+
+    return { revenue, invoiceCount: invoiceIds.size }
+  })()
   const countryProgressRows = checkableRows.map((row) => {
     const requiredTasks = getRequiredTasks(row)
     const done = requiredTasks.filter((task) =>
@@ -1197,12 +1722,14 @@ export function MonthEndView({ period }: { period?: string } = {}) {
   const dashboardCountryNotes = checkableRows
     .map((row) => ({
       id: row.id,
-      label: row.name,
       note: asString(checked[noteKey(row.id)]),
       updatedAt:
         asString(checked[noteUpdatedAtKey(row.id)]) || record?.updatedAt || "",
+      label: asString(checked[noteAuthorKey(row.id)]) || currentUserName,
       row,
       isHandoff: false,
+      taskKey: noteCompleteKey(row.id),
+      isComplete: asBool(checked[noteCompleteKey(row.id)]),
     }))
     .filter((item) => Boolean(item.note.trim()))
   const dashboardNotes = [
@@ -1210,7 +1737,8 @@ export function MonthEndView({ period }: { period?: string } = {}) {
       ? [
           {
             id: "handoff",
-            label: "Handoff",
+            label:
+              asString(checked[dashboardHandoffAuthorKey]) || currentUserName,
             note: savedDashboardHandoffNote,
             updatedAt:
               asString(checked[dashboardHandoffUpdatedAtKey]) ||
@@ -1218,14 +1746,33 @@ export function MonthEndView({ period }: { period?: string } = {}) {
               "",
             row: undefined,
             isHandoff: true,
+            taskKey: dashboardHandoffCompleteKey,
+            isComplete: asBool(checked[dashboardHandoffCompleteKey]),
           },
         ]
       : []),
     ...dashboardCountryNotes,
   ].sort(
     (first, second) =>
+      Number(first.isComplete) - Number(second.isComplete) ||
       new Date(second.updatedAt).getTime() - new Date(first.updatedAt).getTime()
   )
+  const taskPageGroups = [
+    ...orderedTaskGroups,
+    ...(dashboardNotes.length
+      ? [
+          {
+            id: "comments",
+            title: "Comments",
+            tasks: dashboardNotes.map((item) => ({
+              id: item.id,
+              label: `${item.label}: ${item.note}`,
+              key: item.taskKey,
+            })),
+          },
+        ]
+      : []),
+  ]
   const countrySearchTerm = countrySearchQuery.trim().toLowerCase()
 
   function rowMatchesCountryTableFilter(row: TemplateCountryRow) {
@@ -1309,9 +1856,12 @@ export function MonthEndView({ period }: { period?: string } = {}) {
       if (cleanNote) {
         nextChecked[noteKey(rowId)] = cleanNote
         nextChecked[noteUpdatedAtKey(rowId)] = new Date().toISOString()
+        nextChecked[noteAuthorKey(rowId)] = currentUserName
+        nextChecked[noteCompleteKey(rowId)] = false
       } else {
         delete nextChecked[noteKey(rowId)]
         delete nextChecked[noteUpdatedAtKey(rowId)]
+        delete nextChecked[noteAuthorKey(rowId)]
       }
 
       return nextChecked
@@ -1329,6 +1879,8 @@ export function MonthEndView({ period }: { period?: string } = {}) {
 
       delete nextChecked[noteKey(rowId)]
       delete nextChecked[noteUpdatedAtKey(rowId)]
+      delete nextChecked[noteAuthorKey(rowId)]
+      delete nextChecked[noteCompleteKey(rowId)]
 
       return nextChecked
     })
@@ -1336,6 +1888,18 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     if (editingNoteRowId === rowId) {
       cancelEditNote()
     }
+  }
+
+  function deleteDashboardComment() {
+    if (isClosed) return
+    setChecked((current) => {
+      const nextChecked = { ...current }
+      delete nextChecked[dashboardHandoffNoteKey]
+      delete nextChecked[dashboardHandoffUpdatedAtKey]
+      delete nextChecked[dashboardHandoffCompleteKey]
+      delete nextChecked[dashboardHandoffAuthorKey]
+      return nextChecked
+    })
   }
 
   async function saveDashboardHandoffNote() {
@@ -1355,6 +1919,8 @@ export function MonthEndView({ period }: { period?: string } = {}) {
       ...checked,
       [dashboardHandoffNoteKey]: cleanNote,
       [dashboardHandoffUpdatedAtKey]: new Date().toISOString(),
+      [dashboardHandoffCompleteKey]: false,
+      [dashboardHandoffAuthorKey]: currentUserName,
     }
     const updatedRecord: MonthEndRecord = {
       ...activeRecord,
@@ -1371,6 +1937,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
       setRecord(updatedRecord)
       setChecked(nextChecked)
       setDashboardHandoffDraft("")
+      setIsDashboardCommentDialogOpen(false)
       window.dispatchEvent(new Event("month-end:records-updated"))
     } catch {
       setDashboardHandoffSaveError("Could not save the handoff note.")
@@ -1524,25 +2091,35 @@ export function MonthEndView({ period }: { period?: string } = {}) {
         (country) => country.checkable !== false
       )
       const csvText = await reportFileToCsvText(file, activeRecord.period)
-      const mappedMasterRecords = targetCountries.flatMap((country) =>
-        isDefaultMasterReportMapping(country.masterReportMapping)
-          ? []
-          : (parseMappedCountryMasterCsv({
-              csvText,
-              monthEndId: activeRecord.id,
-              period: activeRecord.period,
-              targetCountries: [country],
-              mapping: country.masterReportMapping,
-            }) ?? [])
-      )
-      const masterRecords = mappedMasterRecords.length
-        ? mappedMasterRecords
-        : await parseCountryMasterCsv({
+      const masterRecords = isMasterCsv(csvText)
+        ? parseMonthEndMasterCsv({
             csvText,
+            countries: activeTemplate.countries,
             monthEndId: activeRecord.id,
             period: activeRecord.period,
-            targetCountries,
           })
+        : (() => {
+            const mappedMasterRecords = targetCountries.flatMap((country) =>
+              isDefaultMasterReportMapping(country.masterReportMapping)
+                ? []
+                : (parseMappedCountryMasterCsv({
+                    csvText,
+                    monthEndId: activeRecord.id,
+                    period: activeRecord.period,
+                    targetCountries: [country],
+                    mapping: country.masterReportMapping,
+                  }) ?? [])
+            )
+
+            return mappedMasterRecords.length
+              ? mappedMasterRecords
+              : parseCountryMasterCsv({
+                  csvText,
+                  monthEndId: activeRecord.id,
+                  period: activeRecord.period,
+                  targetCountries,
+                })
+          })()
 
       await saveMonthEndMasterRecords(activeRecord.id, masterRecords)
 
@@ -1564,6 +2141,10 @@ export function MonthEndView({ period }: { period?: string } = {}) {
         nextChecked,
         getMasterTransactionDateCheckedValues(masterRecords)
       )
+      nextChecked[masterCustomerNamesKey] =
+        getMasterCustomerNamesCheckedValue(masterRecords)
+      nextChecked[masterAnalyticsRecordsKey] =
+        getMasterAnalyticsRecordsCheckedValue(masterRecords)
 
       const updatedRecord: MonthEndRecord = {
         ...activeRecord,
@@ -1575,6 +2156,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
       recordRef.current = updatedRecord
       setRecord(updatedRecord)
       setChecked(nextChecked)
+      setMasterAnalyticsRefreshNonce((current) => current + 1)
       setMasterUploadMessage(
         `Master sheet reuploaded with ${masterRecords.length} NetSuite record${
           masterRecords.length === 1 ? "" : "s"
@@ -1630,13 +2212,21 @@ export function MonthEndView({ period }: { period?: string } = {}) {
         ? "Country Completion"
         : metric === "invoices"
           ? "Invoice Completion"
-          : "Task Completion"
+          : metric === "shared-tasks"
+            ? "Task Completion"
+            : metric === "customers"
+              ? "Customers"
+              : "Comments"
     const description =
       metric === "countries"
         ? `${completedCountryCount} complete, ${inProgressCountryCount} in progress, and ${notStartedCountryCount} not started`
         : metric === "invoices"
           ? `${completedInvoiceRows} complete and ${openInvoiceRows} remaining`
-          : `${supplementalTaskDone} complete and ${supplementalTaskTotal - supplementalTaskDone} remaining`
+          : metric === "shared-tasks"
+            ? `${supplementalTaskDone} complete and ${supplementalTaskTotal - supplementalTaskDone} remaining`
+            : metric === "customers"
+              ? `${repeatCustomers.length} repeat and ${oneTimeCustomers.length} one-time customers`
+              : `${commentTaskDone} complete and ${commentTaskTotal - commentTaskDone} remaining`
 
     return (
       <Card
@@ -1762,6 +2352,167 @@ export function MonthEndView({ period }: { period?: string } = {}) {
               })}
             </div>
           </CardContent>
+        ) : metric === "customers" ? (
+          <CardContent className="grid items-start gap-4 p-4 lg:grid-cols-2">
+            {[
+              { title: "Repeat Customers", rows: repeatCustomers },
+              { title: "One-Time Customers", rows: oneTimeCustomers },
+            ].map((group) => {
+              const totals = group.rows.reduce(
+                (total, customer) => ({
+                  invoiceCount: total.invoiceCount + customer.invoiceCount,
+                  amount: total.amount + customer.amount,
+                }),
+                { invoiceCount: 0, amount: 0 }
+              )
+
+              return (
+                <div
+                  key={group.title}
+                  className="overflow-hidden rounded-lg border"
+                >
+                  <div className="flex items-center justify-between border-b px-4 py-3">
+                    <h3 className="font-medium">{group.title}</h3>
+                    <Badge variant="secondary">{group.rows.length}</Badge>
+                  </div>
+                  {group.rows.length ? (
+                    <div className="max-h-96 overflow-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="pl-4">Customer</TableHead>
+                            <TableHead className="text-right">
+                              Invoices
+                            </TableHead>
+                            <TableHead className="pr-4 text-right">
+                              Total
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {group.rows.map((customer) => (
+                            <TableRow key={customer.name}>
+                              <TableCell className="max-w-64 truncate pl-4 font-medium">
+                                {customer.name}
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums">
+                                {customer.invoiceCount}
+                              </TableCell>
+                              <TableCell className="pr-4 text-right font-medium tabular-nums">
+                                {formatDashboardCurrency(customer.amount)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                        <TableFooter>
+                          <TableRow>
+                            <TableCell className="pl-4">Total</TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {totals.invoiceCount}
+                            </TableCell>
+                            <TableCell className="pr-4 text-right tabular-nums">
+                              {formatDashboardCurrency(totals.amount)}
+                            </TableCell>
+                          </TableRow>
+                        </TableFooter>
+                      </Table>
+                    </div>
+                  ) : (
+                    <p className="px-4 py-6 text-sm text-muted-foreground">
+                      No customers match this category.
+                    </p>
+                  )}
+                </div>
+              )
+            })}
+          </CardContent>
+        ) : metric === "comments" ? (
+          <CardContent className="grid gap-2 p-2">
+            {dashboardNotes.length ? (
+              dashboardNotes.map((item) => (
+                <Alert
+                  key={item.id}
+                  className={cn(
+                    "py-2 pr-12 shadow-none",
+                    item.isComplete
+                      ? "border-emerald-300 bg-emerald-100 text-emerald-950 dark:border-emerald-700 dark:bg-emerald-900/35 dark:text-emerald-50"
+                      : "border-orange-200 bg-orange-50 text-orange-950 dark:border-orange-900 dark:bg-orange-950/30 dark:text-orange-50"
+                  )}
+                >
+                  {item.isComplete ? (
+                    <CheckCircle2Icon className="text-emerald-700 dark:text-emerald-300" />
+                  ) : (
+                    <AlertTriangleIcon className="text-orange-600 dark:text-orange-400" />
+                  )}
+                  <AlertTitle>
+                    {item.label}
+                    <time
+                      className="ml-2 text-xs font-normal opacity-65"
+                      dateTime={item.updatedAt}
+                    >
+                      {formatNoteTimestamp(item.updatedAt)}
+                    </time>
+                  </AlertTitle>
+                  <AlertDescription
+                    className={cn(
+                      item.isComplete
+                        ? "text-emerald-900 dark:text-emerald-100"
+                        : "text-orange-900 dark:text-orange-100"
+                    )}
+                  >
+                    <p className="whitespace-pre-wrap">{item.note}</p>
+                  </AlertDescription>
+                  <AlertAction>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <HeaderActionMenuTrigger
+                            label={`Actions for ${item.label} comment`}
+                            className="size-8 border-0 bg-transparent shadow-none"
+                          />
+                        }
+                      />
+                      <DropdownMenuContent
+                        align="end"
+                        className="w-max min-w-48"
+                      >
+                        <DropdownMenuItem
+                          className="whitespace-nowrap"
+                          disabled={isClosed}
+                          onClick={() =>
+                            updateTask(item.taskKey, !item.isComplete)
+                          }
+                        >
+                          {item.isComplete ? <XIcon /> : <CheckCircle2Icon />}
+                          {item.isComplete
+                            ? "Mark as Incomplete"
+                            : "Mark as Complete"}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="whitespace-nowrap"
+                          variant="destructive"
+                          disabled={isClosed}
+                          onClick={() =>
+                            item.row
+                              ? deleteNote(item.row.id)
+                              : deleteDashboardComment()
+                          }
+                        >
+                          <Trash2Icon />
+                          Delete Comment
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </AlertAction>
+                </Alert>
+              ))
+            ) : (
+              <p className="px-2 py-4 text-sm text-muted-foreground">
+                No comments yet.
+              </p>
+            )}
+          </CardContent>
         ) : (
           <CardContent className="p-4 sm:p-6">
             <div className="mx-auto max-w-5xl">
@@ -1775,6 +2526,67 @@ export function MonthEndView({ period }: { period?: string } = {}) {
           </CardContent>
         )}
       </Card>
+    )
+  }
+
+  function renderCountryMoverRow(country: (typeof countryMovers)[number]) {
+    const invoiceChangeLabel =
+      country.invoiceChange < 0
+        ? `↓ ${Math.abs(country.invoiceChange)}`
+        : country.invoiceChange > 0
+          ? `↑ ${country.invoiceChange}`
+          : "No change"
+    const amountChangeLabel =
+      country.amountChange === 0
+        ? "No change"
+        : `${country.amountChange < 0 ? "↓" : "↑"} ${formatDashboardCurrency(
+            Math.abs(country.amountChange)
+          )}`
+
+    return (
+      <TableRow key={country.name} className="h-12">
+        <TableCell className="max-w-52 truncate pl-4 font-medium">
+          {country.name}
+        </TableCell>
+        <TableCell className="text-center tabular-nums">
+          <span className="inline-flex items-center justify-center gap-2">
+            <span className="font-semibold text-foreground">
+              {country.invoiceCount}
+            </span>
+            <span
+              className={cn(
+                "text-xs font-medium",
+                country.invoiceChange < 0
+                  ? "text-destructive"
+                  : country.invoiceChange > 0
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-muted-foreground"
+              )}
+            >
+              {invoiceChangeLabel}
+            </span>
+          </span>
+        </TableCell>
+        <TableCell className="pr-4 text-center tabular-nums">
+          <span className="inline-flex items-center justify-center gap-2">
+            <span className="font-semibold text-foreground">
+              {formatDashboardCurrency(country.amount)}
+            </span>
+            <span
+              className={cn(
+                "text-xs font-medium",
+                country.amountChange < 0
+                  ? "text-destructive"
+                  : country.amountChange > 0
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-muted-foreground"
+              )}
+            >
+              {amountChangeLabel}
+            </span>
+          </span>
+        </TableCell>
+      </TableRow>
     )
   }
 
@@ -1795,6 +2607,18 @@ export function MonthEndView({ period }: { period?: string } = {}) {
           <DropdownMenuItem render={<AppLink href="/previous-month-ends" />}>
             <HistoryIcon />
             View previous months
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={isClosed}
+            onClick={() => {
+              setDashboardHandoffDraft("")
+              setDashboardHandoffSaveError("")
+              setIsDashboardCommentDialogOpen(true)
+            }}
+          >
+            <MessageSquareTextIcon />
+            Add Comment
+            <DropdownMenuShortcut>C</DropdownMenuShortcut>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -2005,7 +2829,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
 
         {activeMonthEndSection === "dashboard" ? (
           <div className="grid gap-6">
-            <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
               <MonthEndMetricCard
                 title="Overall Progress"
                 value={`${completion}%`}
@@ -2024,28 +2848,6 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                   )
                 }
               />
-              {activeDashboardMetric === "countries" ? (
-                <div className="col-span-full hidden md:block xl:hidden">
-                  {renderDashboardMetricDetail("countries")}
-                </div>
-              ) : null}
-              <MonthEndMetricCard
-                title="Invoices Complete"
-                value={`${completedInvoiceRows}/${invoiceRequiredRows.length}`}
-                icon={FileTextIcon}
-                isActive={activeDashboardMetric === "invoices"}
-                expandedContent={renderDashboardMetricDetail("invoices", true)}
-                onActivate={() =>
-                  setActiveDashboardMetric((current) =>
-                    current === "invoices" ? null : "invoices"
-                  )
-                }
-              />
-              {activeDashboardMetric === "invoices" ? (
-                <div className="col-span-full hidden md:block xl:hidden">
-                  {renderDashboardMetricDetail("invoices")}
-                </div>
-              ) : null}
               <MonthEndMetricCard
                 title="Tasks"
                 value={`${supplementalTaskDone}/${supplementalTaskTotal}`}
@@ -2061,12 +2863,55 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                   )
                 }
               />
-              {activeDashboardMetric === "shared-tasks" ? (
-                <div className="col-span-full hidden md:block xl:hidden">
-                  {renderDashboardMetricDetail("shared-tasks")}
-                </div>
-              ) : null}
+              <MonthEndMetricCard
+                title="Customers"
+                value={`${customerSummaries.length}`}
+                stats={[
+                  { label: "Repeat", value: `${repeatCustomers.length}` },
+                  { label: "One-time", value: `${oneTimeCustomers.length}` },
+                ]}
+                icon={UserRoundCheckIcon}
+                isActive={activeDashboardMetric === "customers"}
+                expandedContent={renderDashboardMetricDetail("customers", true)}
+                onActivate={() =>
+                  setActiveDashboardMetric((current) =>
+                    current === "customers" ? null : "customers"
+                  )
+                }
+              />
+              <MonthEndMetricCard
+                title="Comments"
+                value={`${dashboardNotes.length}`}
+                stats={[
+                  {
+                    label: "Open",
+                    value: `${commentTaskTotal - commentTaskDone}`,
+                  },
+                  { label: "Complete", value: `${commentTaskDone}` },
+                ]}
+                icon={MessageSquareTextIcon}
+                iconActionLabel="Add"
+                iconActionDisabled={isClosed}
+                onIconActivate={() => {
+                  setDashboardHandoffDraft("")
+                  setDashboardHandoffSaveError("")
+                  setIsDashboardCommentDialogOpen(true)
+                }}
+                isActive={activeDashboardMetric === "comments"}
+                expandedContent={renderDashboardMetricDetail("comments", true)}
+                onActivate={() =>
+                  setActiveDashboardMetric((current) =>
+                    current === "comments" ? null : "comments"
+                  )
+                }
+              />
             </section>
+
+            {activeDashboardMetric ? (
+              <div className="hidden md:block xl:hidden">
+                {renderDashboardMetricDetail(activeDashboardMetric)}
+              </div>
+            ) : null}
 
             {activeDashboardMetric ? (
               <div className="hidden xl:block">
@@ -2074,197 +2919,305 @@ export function MonthEndView({ period }: { period?: string } = {}) {
               </div>
             ) : null}
 
-            <MonthEndDashboardCharts
-              workflowData={workflowChartData}
-              countryStatusData={countryStatusChartData}
-            />
+            <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(18rem,1fr)]">
+              <MonthEndValueByDayChart
+                data={monthlyValueByDay}
+                invoiceCount={chartedInvoiceIds.size}
+                previousInvoiceCount={previousMonthMetrics.invoiceCount}
+                previousTotalRevenue={previousMonthMetrics.revenue}
+              />
 
-            <section className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(20rem,0.75fr)]">
-              <Card className="gap-0 overflow-hidden py-0 shadow-sm">
-                <CardHeader className="flex flex-row items-center justify-between gap-3 border-b py-5">
-                  <div>
-                    <CardTitle>Country Progress</CardTitle>
-                    <CardDescription>
-                      Completed tasks and the next required step for each
-                      country
-                    </CardDescription>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => showCountryWork()}
-                  >
-                    View all
-                    <ArrowRightIcon data-icon="inline-end" />
-                  </Button>
+              <Card className="h-full gap-0 py-0 shadow-none">
+                <CardHeader className="px-4 pt-4 pb-3">
+                  <CardTitle>Top Countries</CardTitle>
+                  <CardDescription>
+                    Highest invoice value this month
+                  </CardDescription>
                 </CardHeader>
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader className="bg-muted/50">
-                      <TableRow>
-                        <TableHead className="pl-6">Country</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="hidden sm:table-cell">
-                          Next Step
-                        </TableHead>
-                        <TableHead className="pr-6 text-right">
-                          Progress
-                        </TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {countryDashboardRows.map((item) => {
-                        const isComplete =
-                          item.total > 0 && item.done === item.total
-                        const isInProgress = item.done > 0 && !isComplete
-
-                        return (
-                          <TableRow key={item.row.id}>
-                            <TableCell className="pl-6 font-medium">
-                              <AppLink
-                                className="hover:underline"
-                                href={countryRecordHref(
-                                  activePeriod,
-                                  item.row.id,
-                                  item.row,
-                                  checked
-                                )}
-                                onClick={() =>
-                                  saveCurrentMonthEndReturnPoint(item.row.id)
-                                }
-                              >
-                                {item.row.name}
-                              </AppLink>
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant={isComplete ? "secondary" : "outline"}
-                              >
-                                {isComplete
-                                  ? "Complete"
-                                  : isInProgress
-                                    ? "In progress"
-                                    : "Not started"}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="hidden max-w-52 truncate text-muted-foreground sm:table-cell">
-                              {item.nextTask?.label ?? "—"}
-                            </TableCell>
-                            <TableCell className="pr-6 text-right tabular-nums">
-                              {item.done}/{item.total}
-                            </TableCell>
+                <CardContent className="flex flex-1 flex-col px-0 pb-0">
+                  {topCountries.length ? (
+                    <>
+                      <Table className="table-fixed">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-1/2 pl-4">
+                              Country
+                            </TableHead>
+                            <TableHead className="w-1/4 text-center">
+                              Invoices
+                            </TableHead>
+                            <TableHead className="w-1/4 pr-4 text-center">
+                              Value
+                            </TableHead>
                           </TableRow>
-                        )
-                      })}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-
-              <Card className="shadow-sm">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <NotebookPenIcon className="size-4" />
-                    Handoff Notes
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="grid gap-4">
-                  <Textarea
-                    value={dashboardHandoffDraft}
-                    disabled={isClosed}
-                    rows={5}
-                    className="min-h-28 resize-y"
-                    placeholder="Add an update or blocker..."
-                    onChange={(event) =>
-                      setDashboardHandoffDraft(event.target.value)
-                    }
-                    onKeyDown={(event) => {
-                      if (
-                        (event.ctrlKey || event.metaKey) &&
-                        event.key === "Enter"
-                      ) {
-                        event.preventDefault()
-                        saveDashboardHandoffNote()
-                      }
-                    }}
-                  />
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs text-muted-foreground">
-                      {isClosed ? "Read only" : "Ctrl + Enter to save"}
-                    </span>
-                    <Button
-                      size="sm"
-                      disabled={
-                        isClosed ||
-                        isSavingDashboardHandoff ||
-                        !dashboardHandoffDraft.trim()
-                      }
-                      onClick={saveDashboardHandoffNote}
-                    >
-                      {isSavingDashboardHandoff ? "Saving..." : "Save"}
-                    </Button>
-                  </div>
-                  {dashboardHandoffSaveError ? (
-                    <p className="text-xs text-destructive">
-                      {dashboardHandoffSaveError}
-                    </p>
-                  ) : null}
-                  {dashboardNotes.length ? (
-                    <div className="grid gap-4">
-                      {dashboardNotes.map((item) => (
-                        <div key={item.id} className="flex gap-3">
-                          <MessageSquareTextIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                              {item.row ? (
-                                <AppLink
-                                  className="text-sm font-medium hover:underline"
-                                  href={countryRecordHref(
-                                    activePeriod,
-                                    item.row.id,
-                                    item.row,
-                                    checked
-                                  )}
-                                  onClick={() =>
-                                    saveCurrentMonthEndReturnPoint(item.row.id)
-                                  }
-                                >
-                                  {item.label}
-                                </AppLink>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="text-sm font-medium hover:underline disabled:no-underline"
-                                  disabled={isClosed}
-                                  onClick={() =>
-                                    setDashboardHandoffDraft(item.note)
-                                  }
-                                >
-                                  {item.label}
-                                </button>
-                              )}
-                              <time
-                                className="text-xs text-muted-foreground"
-                                dateTime={item.updatedAt}
-                              >
-                                {formatNoteTimestamp(item.updatedAt)}
-                              </time>
-                            </div>
-                            <p className="mt-1 text-sm whitespace-pre-wrap text-muted-foreground">
-                              {item.note}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                        </TableHeader>
+                        <TableBody>
+                          {topCountries.map((country) => (
+                            <TableRow key={country.name} className="h-12">
+                              <TableCell className="max-w-52 truncate pl-4 font-medium">
+                                {country.name}
+                              </TableCell>
+                              <TableCell className="text-center tabular-nums">
+                                {country.invoiceCount}
+                              </TableCell>
+                              <TableCell className="pr-4 text-center font-medium tabular-nums">
+                                {formatDashboardCurrency(country.amount)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </>
                   ) : (
-                    <p className="text-xs text-muted-foreground">
-                      No notes yet.
+                    <p className="flex-1 border-t px-4 py-6 text-sm text-muted-foreground">
+                      No invoice data is available in this month&apos;s master
+                      report.
                     </p>
                   )}
                 </CardContent>
               </Card>
             </section>
+
+            <section className="grid items-stretch gap-4 xl:grid-cols-2">
+              <Card className="h-full gap-0 py-0 shadow-none">
+                <CardHeader className="flex min-h-17 flex-row items-start justify-between gap-3 px-4 pt-4 pb-3">
+                  <div className="grid gap-1.5">
+                    <CardTitle>Top Customers</CardTitle>
+                    <CardDescription>
+                      {topCustomerSort === "Most Invoices"
+                        ? "Most invoices this month"
+                        : "Highest invoice value this month"}
+                    </CardDescription>
+                  </div>
+                  <Combobox
+                    items={[...topCustomerSortOptions]}
+                    value={topCustomerSort}
+                    onValueChange={(value) => {
+                      if (
+                        value === "Most Invoices" ||
+                        value === "Highest Value"
+                      ) {
+                        setTopCustomerSort(value)
+                        setShowAllTopCustomers(false)
+                      }
+                    }}
+                  >
+                    <ComboboxTrigger
+                      aria-label="Sort top customers"
+                      className="h-7 w-auto min-w-36 shrink-0 cursor-pointer rounded-md px-2.5 text-sm"
+                    >
+                      {topCustomerSort}
+                    </ComboboxTrigger>
+                    <ComboboxContent focusListOnOpen>
+                      {topCustomerSortOptions.map((option) => (
+                        <ComboboxItem
+                          key={option}
+                          value={option}
+                          className="cursor-pointer"
+                        >
+                          {option}
+                        </ComboboxItem>
+                      ))}
+                    </ComboboxContent>
+                  </Combobox>
+                </CardHeader>
+                <CardContent className="flex flex-1 flex-col px-0 pb-0">
+                  {topCustomers.length ? (
+                    <Table className="table-fixed">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-1/2 pl-4">Customer</TableHead>
+                          <TableHead className="w-1/4 text-center">
+                            Invoices
+                          </TableHead>
+                          <TableHead className="w-1/4 pr-4 text-center">
+                            Value
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {topCustomers
+                          .slice(0, showAllTopCustomers ? undefined : 5)
+                          .map((customer) => (
+                            <TableRow key={customer.name} className="h-12">
+                              <TableCell className="max-w-52 truncate pl-4 font-medium">
+                                {customer.name}
+                              </TableCell>
+                              <TableCell className="text-center tabular-nums">
+                                {customer.invoiceCount}
+                              </TableCell>
+                              <TableCell className="pr-4 text-center font-medium tabular-nums">
+                                {formatDashboardCurrency(customer.amount)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <p className="flex-1 border-t px-4 py-6 text-sm text-muted-foreground">
+                      No customer data is available in this month&apos;s master
+                      report.
+                    </p>
+                  )}
+                  {topCustomers.length > 5 ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="mt-auto w-full rounded-none border-t"
+                      onClick={() =>
+                        setShowAllTopCustomers((current) => !current)
+                      }
+                    >
+                      {showAllTopCustomers
+                        ? "Show fewer"
+                        : `Show ${topCustomers.length - 5} more`}
+                    </Button>
+                  ) : null}
+                </CardContent>
+              </Card>
+
+              <Card className="h-full gap-0 py-0 shadow-none">
+                <CardHeader className="flex min-h-17 flex-row items-start justify-between gap-3 px-4 pt-4 pb-3">
+                  <div className="grid gap-1.5">
+                    <CardTitle>Biggest Movers</CardTitle>
+                    <CardDescription>
+                      {countryMoverSort === "Invoice Swing"
+                        ? "Largest invoice swings from last month"
+                        : "Largest value swings from last month"}
+                    </CardDescription>
+                  </div>
+                  <Combobox
+                    items={[...countryMoverSortOptions]}
+                    value={countryMoverSort}
+                    onValueChange={(value) => {
+                      if (
+                        value === "Invoice Swing" ||
+                        value === "Value Swing"
+                      ) {
+                        setCountryMoverSort(value)
+                        setShowAllCountryMovers(false)
+                      }
+                    }}
+                  >
+                    <ComboboxTrigger
+                      aria-label="Sort biggest movers"
+                      className="h-7 w-auto min-w-36 shrink-0 cursor-pointer rounded-md px-2.5 text-sm"
+                    >
+                      {countryMoverSort}
+                    </ComboboxTrigger>
+                    <ComboboxContent focusListOnOpen>
+                      {countryMoverSortOptions.map((option) => (
+                        <ComboboxItem
+                          key={option}
+                          value={option}
+                          className="cursor-pointer"
+                        >
+                          {option}
+                        </ComboboxItem>
+                      ))}
+                    </ComboboxContent>
+                  </Combobox>
+                </CardHeader>
+                <CardContent className="flex flex-1 flex-col px-0 pb-0">
+                  {sortedCountryMovers.length ? (
+                    <Table className="table-fixed">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-1/2 pl-4">Country</TableHead>
+                          <TableHead className="w-1/4 text-center">
+                            Invoices
+                          </TableHead>
+                          <TableHead className="w-1/4 pr-4 text-center">
+                            Value
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {sortedCountryMovers
+                          .slice(0, showAllCountryMovers ? undefined : 5)
+                          .map((country) => renderCountryMoverRow(country))}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <p className="flex-1 border-t px-4 py-6 text-sm text-muted-foreground">
+                      {previousAnalyticsRecords.length
+                        ? "No country movement from last month."
+                        : "A previous month master report is needed for comparison."}
+                    </p>
+                  )}
+                  {sortedCountryMovers.length > 5 ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="mt-auto w-full rounded-none border-t"
+                      onClick={() =>
+                        setShowAllCountryMovers((current) => !current)
+                      }
+                    >
+                      {showAllCountryMovers
+                        ? "Show fewer"
+                        : `Show ${sortedCountryMovers.length - 5} more`}
+                    </Button>
+                  ) : null}
+                </CardContent>
+              </Card>
+            </section>
+            <Dialog
+              open={isDashboardCommentDialogOpen}
+              onOpenChange={setIsDashboardCommentDialogOpen}
+            >
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Add Comment</DialogTitle>
+                  <DialogDescription>
+                    Add a visible note or blocker for this month end.
+                  </DialogDescription>
+                </DialogHeader>
+                <Textarea
+                  autoFocus
+                  value={dashboardHandoffDraft}
+                  disabled={isClosed}
+                  rows={7}
+                  className="min-h-40 resize-y"
+                  placeholder="Write a comment..."
+                  onChange={(event) =>
+                    setDashboardHandoffDraft(event.target.value)
+                  }
+                  onKeyDown={(event) => {
+                    if (
+                      (event.ctrlKey || event.metaKey) &&
+                      event.key === "Enter"
+                    ) {
+                      event.preventDefault()
+                      saveDashboardHandoffNote()
+                    }
+                  }}
+                />
+                {dashboardHandoffSaveError ? (
+                  <p className="text-sm text-destructive">
+                    {dashboardHandoffSaveError}
+                  </p>
+                ) : null}
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsDashboardCommentDialogOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    disabled={
+                      isClosed ||
+                      isSavingDashboardHandoff ||
+                      !dashboardHandoffDraft.trim()
+                    }
+                    onClick={saveDashboardHandoffNote}
+                  >
+                    {isSavingDashboardHandoff ? "Saving..." : "Comment"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         ) : null}
 
@@ -2884,7 +3837,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
         ) : null}
         {activeMonthEndSection === "tasks" ? (
           <MonthEndTaskGroupsList
-            groups={orderedTaskGroups}
+            groups={taskPageGroups}
             checked={checked}
             updateTask={updateTask}
             isReadOnly={isClosed}

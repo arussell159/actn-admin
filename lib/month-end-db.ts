@@ -30,7 +30,7 @@ type MonthEndRow = {
 
 const tableName = "month_end_records"
 const monthTitleKey = "__month_title"
-const localStorageKey = "actn-month-end-records-v1"
+export const monthEndRecordsStorageKey = "actn-month-end-records-v1"
 
 export function exchangeRateKey(rowId: string) {
   return `${rowId}__exchange_rate`
@@ -101,7 +101,7 @@ export function loadMonthEndRecords() {
 
   return readJsonBrowserStorage({
     kind: "localStorage",
-    key: localStorageKey,
+    key: monthEndRecordsStorageKey,
     fallback: [],
     validate: isMonthEndRecordArray,
   })
@@ -140,7 +140,11 @@ function saveLocalRecords(records: MonthEndRecord[]) {
     return
   }
 
-  writeBrowserStorage("localStorage", localStorageKey, JSON.stringify(records))
+  writeBrowserStorage(
+    "localStorage",
+    monthEndRecordsStorageKey,
+    JSON.stringify(records)
+  )
 }
 
 function saveLocalRecord(record: MonthEndRecord) {

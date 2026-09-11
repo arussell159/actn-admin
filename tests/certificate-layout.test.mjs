@@ -19,6 +19,7 @@ const {
   createEmptyCertificateLayout,
   layoutWithoutFields,
   moveLayoutField,
+  placeLayoutFieldRight,
   newLayoutGroup,
 } = require("../lib/certificate-layout/editing.ts")
 const { createInitialPages } = require("../lib/okf/seed.ts")
@@ -81,6 +82,34 @@ test("dragging fields between groups preserves IDs and labels, clamps widths and
     ["incoterm", "exporterName"]
   )
   assert.equal(moveLayoutField(layout, "exporterName", "invoice-items"), false)
+  assert.equal(certificateLayoutSchema.safeParse(layout).success, true)
+})
+
+test("dropping a field to the right creates the next column in the same row", () => {
+  const { layout } = createMadagascarLayout()
+  const exporter = layout.sections[0].groups[0]
+  assert.equal(exporter.columns, 1)
+  assert.equal(
+    placeLayoutFieldRight(layout, "importerName", "exporter", "exporterName"),
+    true
+  )
+  assert.equal(exporter.columns, 1)
+  assert.deepEqual(exporter.fields, [
+    {
+      fieldId: "exporterName",
+      span: 1,
+      row: 1,
+      column: 1,
+      rowColumns: 2,
+    },
+    {
+      fieldId: "importerName",
+      span: 1,
+      row: 1,
+      column: 2,
+      rowColumns: 2,
+    },
+  ])
   assert.equal(certificateLayoutSchema.safeParse(layout).success, true)
 })
 
@@ -310,7 +339,7 @@ test("layout cache checks the full catalogue, reuses it and cannot roll back a j
             authenticatedFetch: (...args) => globalThis.fetch(...args),
             createClient: () => ({}),
           }
-      : original(id)
+        : original(id)
   adapter._compile(
     ts.transpileModule(fs.readFileSync(filename, "utf8"), {
       compilerOptions: {

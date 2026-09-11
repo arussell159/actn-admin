@@ -44,6 +44,7 @@ create table if not exists public.month_end_master_records (
   period text not null,
   country_id text not null,
   country_name text not null,
+  customer_name text not null default '',
   sales_order_number text not null default '',
   bill_of_lading_number text not null default '',
   ctn_number text not null default '',
@@ -61,6 +62,9 @@ add column if not exists amount numeric not null default 0;
 
 alter table public.month_end_master_records
 add column if not exists transaction_date text not null default '';
+
+alter table public.month_end_master_records
+add column if not exists customer_name text not null default '';
 
 notify pgrst, 'reload schema';
 

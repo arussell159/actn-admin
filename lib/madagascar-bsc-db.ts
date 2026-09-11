@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/client"
 import {
   createMadagascarId,
+  extractedBillOfLadingReference,
   type MadagascarRequest,
   type MadagascarRule,
 } from "@/lib/madagascar-bsc"
@@ -66,9 +67,10 @@ export function subscribeToMadagascarRequestChanges(
 }
 
 function toRequest(row: RequestRow): MadagascarRequest {
+  const extractedReference = extractedBillOfLadingReference(row.analysis)
   return {
     id: row.id,
-    reference: row.reference,
+    reference: extractedReference || row.reference,
     country:
       row.country ||
       (row.analysis?.okf?.observations.country.status === "supported"

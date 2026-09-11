@@ -114,6 +114,12 @@ export const pageSchema = z.object({
   revision: z.number().int().nonnegative(),
   version: z.string().nullable(),
   publishedAt: z.string().nullable(),
+  generated: z
+    .object({ by: z.string(), at: z.string() })
+    .optional(),
+  verified: z.array(z.object({ by: z.string(), at: z.string() })).optional(),
+  staleAfter: z.string().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 })
 export const changeSchema = z.object({
   pageId: id,

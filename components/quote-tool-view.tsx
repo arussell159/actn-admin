@@ -16,13 +16,11 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+  Combobox,
+  ComboboxContent,
+  ComboboxItem,
+  ComboboxTrigger,
+} from "@/components/ui/combobox"
 import {
   Table,
   TableBody,
@@ -55,6 +53,45 @@ const antaserOutOfTerritoryCountries = new Set([
   "southsudan",
   "togo",
 ])
+
+function QuoteSearchCombobox({
+  label,
+  value,
+  options,
+  onChange,
+  large = false,
+}: {
+  label: string
+  value: string
+  options: string[]
+  onChange: (value: string) => void
+  large?: boolean
+}) {
+  return (
+    <Combobox
+      items={options}
+      autoHighlight
+      value={value}
+      onValueChange={(nextValue) => {
+        if (nextValue) onChange(nextValue)
+      }}
+    >
+      <ComboboxTrigger
+        aria-label={label}
+        className={large ? "h-11 rounded-xl text-base" : undefined}
+      >
+        {value}
+      </ComboboxTrigger>
+      <ComboboxContent focusListOnOpen>
+        {options.map((option) => (
+          <ComboboxItem key={option} value={option}>
+            {option}
+          </ComboboxItem>
+        ))}
+      </ComboboxContent>
+    </Combobox>
+  )
+}
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -177,6 +214,7 @@ function CountrySearchField({
       onValueChange={onChange}
       autoOpenOnDesktop={autoOpenOnDesktop}
       focusSignal={focusSignal}
+      listClassName="mt-1"
     />
   )
 }
@@ -499,53 +537,29 @@ export function QuoteToolView() {
             <div className="grid grid-cols-2 gap-2">
               <Field>
                 <FieldLabel>Zone</FieldLabel>
-                <Select
+                <QuoteSearchCombobox
+                  label="Zone"
                   value={zone}
-                  onValueChange={(value) => {
-                    if (value) {
-                      setZone(value)
-                      setQuantities({})
-                    }
+                  options={zones}
+                  large
+                  onChange={(value) => {
+                    setZone(value)
+                    setQuantities({})
                   }}
-                >
-                  <SelectTrigger className="h-11 w-full rounded-xl px-3 text-base">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {zones.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {option}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                />
               </Field>
               <Field>
                 <FieldLabel>Type</FieldLabel>
-                <Select
+                <QuoteSearchCombobox
+                  label="Type"
                   value={sortingField}
-                  onValueChange={(value) => {
-                    if (value) {
-                      setSortingField(value)
-                      setQuantities({})
-                    }
+                  options={selectableSortingFields}
+                  large
+                  onChange={(value) => {
+                    setSortingField(value)
+                    setQuantities({})
                   }}
-                >
-                  <SelectTrigger className="h-11 w-full rounded-xl px-3 text-base">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {selectableSortingFields.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {option}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                />
               </Field>
             </div>
           </div>
@@ -568,53 +582,27 @@ export function QuoteToolView() {
             </Field>
             <Field>
               <FieldLabel>Zone</FieldLabel>
-              <Select
+              <QuoteSearchCombobox
+                label="Zone"
                 value={zone}
-                onValueChange={(value) => {
-                  if (value) {
-                    setZone(value)
-                    setQuantities({})
-                  }
+                options={zones}
+                onChange={(value) => {
+                  setZone(value)
+                  setQuantities({})
                 }}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {zones.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+              />
             </Field>
             <Field>
               <FieldLabel>Sorting Field</FieldLabel>
-              <Select
+              <QuoteSearchCombobox
+                label="Sorting Field"
                 value={sortingField}
-                onValueChange={(value) => {
-                  if (value) {
-                    setSortingField(value)
-                    setQuantities({})
-                  }
+                options={selectableSortingFields}
+                onChange={(value) => {
+                  setSortingField(value)
+                  setQuantities({})
                 }}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {selectableSortingFields.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+              />
             </Field>
             <Field className="justify-end">
               <FieldLabel className="sr-only">Reset Quote</FieldLabel>

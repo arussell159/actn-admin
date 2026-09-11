@@ -1,7 +1,7 @@
 "use client"
 
+import * as React from "react"
 import { useId, type ReactNode } from "react"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Field, FieldLabel } from "@/components/ui/field"
@@ -21,11 +21,10 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { formPresentation } from "@/lib/okf/seed"
-import {
-  stages,
-  type KnowledgeContent,
-  type KnowledgePage,
-  type KnowledgeRule,
+import type {
+  KnowledgeContent,
+  KnowledgePage,
+  KnowledgeRule,
 } from "@/lib/okf/schema"
 
 export function TextEdit({
@@ -132,6 +131,155 @@ function GridTable({
 export const okfHref = (id: string) =>
   `/knowledge-base?page=${encodeURIComponent(id)}`
 
+function editableSectionHasContent(page: KnowledgePage, heading: string) {
+  if (
+    page.content.sections.find((section) => section.heading === heading)?.text
+  )
+    return true
+  if (heading === "When required")
+    return page.content.rules.some((rule) => rule.kind === "document")
+  if (heading === "Requirements")
+    return page.content.rules.some((rule) => rule.kind !== "document")
+  if (heading === "Fields to extract") return page.content.fields.length > 0
+  return false
+}
+
+function editableMarkdown(page: KnowledgePage) {
+  const lines: string[] = []
+  for (const section of page.content.sections.filter((section) =>
+    editableSectionHasContent(page, section.heading)
+  )) {
+    lines.push(`## ${section.heading}`, "")
+    if (section.heading === "When required")
+      for (const rule of page.content.rules.filter(
+        (rule) => rule.kind === "document"
+      ))
+        lines.push(`- ${rule.instruction}`)
+    if (section.heading === "Requirements")
+      for (const rule of page.content.rules.filter(
+        (rule) => rule.kind !== "document"
+      ))
+        lines.push(`- ${rule.instruction}`)
+    if (section.heading === "Fields to extract")
+      for (const field of page.content.fields)
+        lines.push(`- ${field.label}: ${field.instruction}`)
+    if (section.text) lines.push(section.text)
+    lines.push("")
+  }
+  return lines.join("\n").trimEnd() + "\n"
+}
+
+function contentFromMarkdown(page: KnowledgePage, markdown: string) {
+  const matches = [...markdown.matchAll(/^## (.+)$/gm)]
+  const headings = matches.map((match) => match[1].trim())
+  const expected = page.content.sections.map((section) => section.heading)
+  const required = expected.filter((heading) =>
+    editableSectionHasContent(page, heading)
+  )
+  if (
+    headings.some((heading) => !expected.includes(heading)) ||
+    JSON.stringify(headings) !== JSON.stringify(required)
+  )
+    throw new Error(
+      "Keep the existing useful headings unchanged. Use AI Update when a new section is needed."
+    )
+  const bodies = matches.map((match, index) =>
+    markdown
+      .slice(
+        match.index! + match[0].length,
+        matches[index + 1]?.index ?? markdown.length
+      )
+      .trim()
+  )
+  const bodyByHeading = new Map(
+    headings.map((heading, index) => [heading, bodies[index]])
+  )
+  const content = structuredClone(page.content)
+  for (const section of content.sections) {
+    const body = bodyByHeading.get(section.heading)
+    if (body === undefined) continue
+    const lines = body.split("\n")
+    const bullets = lines
+      .filter((line) => /^-\s+/.test(line))
+      .map((line) => line.replace(/^-\s+/, "").trim())
+    if (section.heading === "When required") {
+      const rules = content.rules.filter((rule) => rule.kind === "document")
+      if (bullets.length !== rules.length)
+        throw new Error(
+          "Use AI Update to add or remove requirements. Routine editing may reword them only."
+        )
+      rules.forEach(
+        (rule, ruleIndex) => (rule.instruction = bullets[ruleIndex])
+      )
+    } else if (section.heading === "Requirements") {
+      const rules = content.rules.filter((rule) => rule.kind !== "document")
+      if (bullets.length !== rules.length)
+        throw new Error(
+          "Use AI Update to add or remove requirements. Routine editing may reword them only."
+        )
+      rules.forEach(
+        (rule, ruleIndex) => (rule.instruction = bullets[ruleIndex])
+      )
+    } else if (section.heading === "Fields to extract") {
+      if (bullets.length !== content.fields.length)
+        throw new Error(
+          "Use Certificate Settings or AI Update to change fields. Routine editing may reword instructions only."
+        )
+      content.fields.forEach((field, fieldIndex) => {
+        const prefix = `${field.label}:`
+        if (!bullets[fieldIndex].startsWith(prefix))
+          throw new Error(`Keep the field label “${field.label}” unchanged.`)
+        field.instruction = bullets[fieldIndex].slice(prefix.length).trim()
+      })
+    }
+    section.text = lines
+      .filter((line) => !/^-\s+/.test(line))
+      .join("\n")
+      .trim()
+  }
+  return content
+}
+
+function KnowledgeMarkdownEditor({
+  page,
+  onChange,
+}: {
+  page: KnowledgePage
+  onChange: (content: KnowledgeContent) => void
+}) {
+  const [value, setValue] = React.useState(() => editableMarkdown(page))
+  const [error, setError] = React.useState("")
+  React.useEffect(() => setValue(editableMarkdown(page)), [page])
+  return (
+    <div className="grid gap-2">
+      <Textarea
+        aria-label="Page Markdown"
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        onBlur={() => {
+          try {
+            onChange(contentFromMarkdown(page, value))
+            setError("")
+          } catch (reason) {
+            setError(
+              reason instanceof Error ? reason.message : "Invalid Markdown"
+            )
+          }
+        }}
+        className="min-h-[60vh] resize-y font-mono text-sm leading-6"
+      />
+      <p
+        className={
+          error ? "text-sm text-destructive" : "text-xs text-muted-foreground"
+        }
+      >
+        {error ||
+          "Edit wording and Markdown text. Stable headings, fields, IDs, sources, and mappings are protected."}
+      </p>
+    </div>
+  )
+}
+
 export function OkfContent({
   page,
   pages,
@@ -145,11 +293,16 @@ export function OkfContent({
 }) {
   const content = page.content
   const editable = !!onChange
+  if (onChange)
+    return <KnowledgeMarkdownEditor page={page} onChange={onChange} />
   const allFields = pages.flatMap((p) => p.content.fields)
   const set = <K extends keyof KnowledgeContent>(
     key: K,
     value: KnowledgeContent[K]
-  ) => onChange?.({ ...content, [key]: value })
+  ) => {
+    void key
+    void value
+  }
   const references = (ids: string[]) =>
     ids.map((id) => {
       const target = pages.find(
@@ -183,153 +336,18 @@ export function OkfContent({
       {rules.map((rule) => (
         <li key={rule.id} id={rule.id}>
           <TextEdit
-            label="Requirement"
+            label="Knowledge text"
             value={rule.instruction}
             multiline
             onChange={
               editable ? (v) => editRule(rule, { instruction: v }) : undefined
             }
           />
-          {!editable && rule.condition ? <p>{rule.condition}</p> : null}
-          {editable ? (
-            <details className="mt-2 text-xs text-muted-foreground">
-              <summary className="cursor-pointer">Rule settings</summary>
-              <div className="mt-3 grid gap-3">
-                <Choice
-                  label="Required when"
-                  value={rule.requirement}
-                  values={[
-                    "always required",
-                    "conditionally required",
-                    "not required",
-                    "unconfirmed",
-                  ]}
-                  onChange={(v) =>
-                    editRule(rule, {
-                      requirement: v as KnowledgeRule["requirement"],
-                    })
-                  }
-                />
-                <TextEdit
-                  label="Condition (if applicable)"
-                  value={rule.condition}
-                  onChange={(v) => editRule(rule, { condition: v })}
-                />
-                <Choice
-                  label="Check at stage"
-                  value={rule.stage}
-                  values={stages}
-                  onChange={(v) =>
-                    editRule(rule, { stage: v as KnowledgeRule["stage"] })
-                  }
-                />
-                <TextEdit
-                  label="Action if incorrect (if known)"
-                  value={rule.consequence}
-                  onChange={(v) => editRule(rule, { consequence: v })}
-                />
-                <TextEdit
-                  label="Effective from (if known)"
-                  value={rule.effectiveFrom}
-                  onChange={(v) => editRule(rule, { effectiveFrom: v })}
-                />
-                <TextEdit
-                  label="Effective to (if known)"
-                  value={rule.effectiveTo}
-                  onChange={(v) => editRule(rule, { effectiveTo: v })}
-                />
-                <TextEdit
-                  label="Source IDs"
-                  value={rule.sourceIds.join(", ")}
-                  onChange={(v) =>
-                    editRule(rule, {
-                      sourceIds: v
-                        .split(",")
-                        .map((v) => v.trim())
-                        .filter(Boolean),
-                    })
-                  }
-                />
-                <Choice
-                  label="Check"
-                  value={rule.check.operator}
-                  values={[
-                    "interpret",
-                    "present",
-                    "equal",
-                    "number",
-                    "date",
-                    "option",
-                  ]}
-                  onChange={(v) =>
-                    editRule(rule, {
-                      check: {
-                        ...rule.check,
-                        operator: v as KnowledgeRule["check"]["operator"],
-                      },
-                    })
-                  }
-                />
-                <TextEdit
-                  label="Extraction field IDs"
-                  value={rule.check.fieldIds.join(", ")}
-                  onChange={(v) =>
-                    editRule(rule, {
-                      check: {
-                        ...rule.check,
-                        fieldIds: v
-                          .split(",")
-                          .map((v) => v.trim())
-                          .filter(Boolean),
-                      },
-                    })
-                  }
-                />
-                <TextEdit
-                  label="Expected value or dropdown key"
-                  value={rule.check.expected}
-                  onChange={(v) =>
-                    editRule(rule, { check: { ...rule.check, expected: v } })
-                  }
-                />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    set(
-                      "rules",
-                      content.rules.filter((r) => r.id !== rule.id)
-                    )
-                  }
-                >
-                  Remove requirement
-                </Button>
-              </div>
-            </details>
-          ) : null}
+          {rule.condition ? <p>{rule.condition}</p> : null}
         </li>
       ))}
     </ul>
   )
-  const addRule = (kind: KnowledgeRule["kind"]) =>
-    set("rules", [
-      ...content.rules,
-      {
-        id: `mg-rule-${crypto.randomUUID()}`,
-        country: page.country,
-        document: page.template === "document" ? page.title : "Cross-document",
-        instruction: "",
-        requirement: "unconfirmed",
-        condition: "",
-        stage: "intake",
-        consequence: "",
-        sourceIds: [],
-        effectiveFrom: "",
-        effectiveTo: "",
-        kind,
-        check: { operator: "interpret", fieldIds: [], expected: "" },
-      },
-    ])
   const renderFields = () => (
     <>
       <ul
@@ -342,122 +360,33 @@ export function OkfContent({
         {content.fields.map((f) => (
           <li key={f.id} id={f.id} className="break-inside-avoid">
             <TextEdit
-              label="Field"
-              value={f.label}
+              label={f.label}
+              value={f.instruction}
+              multiline
               onChange={
                 editable
                   ? (v) =>
                       set(
                         "fields",
                         content.fields.map((x) =>
-                          x.id === f.id ? { ...x, label: v } : x
+                          x.id === f.id ? { ...x, instruction: v } : x
                         )
                       )
                   : undefined
               }
             />
-            {editable ? (
-              <details className="mt-2 text-xs text-muted-foreground">
-                <summary className="cursor-pointer">
-                  Extraction settings
-                </summary>
-                <div className="mt-3 grid gap-3">
-                  {(["location", "requiredWhen", "instruction"] as const).map(
-                    (key) => (
-                      <TextEdit
-                        key={key}
-                        label={
-                          {
-                            location: "Where to find it (if needed)",
-                            requiredWhen: "Condition (if applicable)",
-                            instruction: "Extraction instructions (if needed)",
-                          }[key]
-                        }
-                        value={f[key]}
-                        multiline
-                        onChange={(v) =>
-                          set(
-                            "fields",
-                            content.fields.map((x) =>
-                              x.id === f.id ? { ...x, [key]: v } : x
-                            )
-                          )
-                        }
-                      />
-                    )
-                  )}
-                  <TextEdit
-                    label="Portal field IDs"
-                    value={f.portalFieldIds.join(", ")}
-                    onChange={(v) =>
-                      set(
-                        "fields",
-                        content.fields.map((x) =>
-                          x.id === f.id
-                            ? {
-                                ...x,
-                                portalFieldIds: v
-                                  .split(",")
-                                  .map((v) => v.trim())
-                                  .filter(Boolean),
-                              }
-                            : x
-                        )
-                      )
-                    }
-                  />
-                  <a href={okfHref("mg-field-map")} className="underline">
-                    Edit form mappings
-                  </a>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() =>
-                      set(
-                        "fields",
-                        content.fields.filter((x) => x.id !== f.id)
-                      )
-                    }
-                  >
-                    Remove field
-                  </Button>
-                </div>
-              </details>
-            ) : (
-              [f.location, f.requiredWhen, f.instruction]
-                .filter(Boolean)
-                .map((text, i) => (
-                  <p key={i} className="text-xs text-muted-foreground">
-                    {text}
-                  </p>
-                ))
-            )}
+            {!editable
+              ? [f.location, f.requiredWhen, f.instruction]
+                  .filter(Boolean)
+                  .map((text, i) => (
+                    <p key={i} className="text-xs text-muted-foreground">
+                      {text}
+                    </p>
+                  ))
+              : null}
           </li>
         ))}
       </ul>
-      {editable ? (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() =>
-            set("fields", [
-              ...content.fields,
-              {
-                id: "mg-source-" + crypto.randomUUID(),
-                label: "",
-                document: page.title,
-                location: "",
-                requiredWhen: "",
-                instruction: "",
-                portalFieldIds: [],
-                ruleIds: [],
-              },
-            ])
-          }
-        >
-          Add extraction field
-        </Button>
-      ) : null}
     </>
   )
   const renderMappings = () => (
@@ -473,13 +402,6 @@ export function OkfContent({
     >
       {content.mappings.map((m) => {
         const form = formPresentation.find((f) => f.id === m.systemFieldId)
-        const update = (patch: Partial<typeof m>) =>
-          set(
-            "mappings",
-            content.mappings.map((x) =>
-              x.id === m.id ? { ...x, ...patch } : x
-            )
-          )
         const values =
           options[m.systemFieldId] ??
           options[
@@ -519,17 +441,7 @@ export function OkfContent({
               <TextEdit
                 label="Source field IDs"
                 value={m.sourceFieldIds.join(", ")}
-                onChange={
-                  editable
-                    ? (v) =>
-                        update({
-                          sourceFieldIds: v
-                            .split(",")
-                            .map((v) => v.trim())
-                            .filter(Boolean),
-                        })
-                    : undefined
-                }
+                onChange={undefined}
               />
               <details className="mt-3">
                 <summary className="cursor-pointer text-xs">
@@ -539,41 +451,10 @@ export function OkfContent({
                   <TextEdit
                     label="Permitted fallback IDs"
                     value={m.fallbackSourceIds.join(", ")}
-                    onChange={
-                      editable
-                        ? (v) =>
-                            update({
-                              fallbackSourceIds: v
-                                .split(",")
-                                .map((v) => v.trim())
-                                .filter(Boolean),
-                            })
-                        : undefined
-                    }
+                    onChange={undefined}
                   />
-                  {editable ? (
-                    <Choice
-                      label="Transformation"
-                      value={m.transform}
-                      values={[
-                        "none",
-                        "trim",
-                        "uppercase",
-                        "decimal",
-                        "date-iso",
-                      ]}
-                      onChange={(v) =>
-                        update({ transform: v as typeof m.transform })
-                      }
-                    />
-                  ) : (
-                    <p>{m.transform}</p>
-                  )}
-                  <TextEdit
-                    label="Unit"
-                    value={m.unit}
-                    onChange={editable ? (v) => update({ unit: v }) : undefined}
-                  />
+                  <p>{m.transform}</p>
+                  <TextEdit label="Unit" value={m.unit} onChange={undefined} />
                   <p className="text-xs">
                     {m.repeated ? "Repeated rows" : "Single value"}
                   </p>
@@ -585,9 +466,7 @@ export function OkfContent({
                 label="Entry/format rule"
                 value={m.entryRule}
                 multiline
-                onChange={
-                  editable ? (v) => update({ entryRule: v }) : undefined
-                }
+                onChange={undefined}
               />
             </TableCell>
             <TableCell>
@@ -595,9 +474,7 @@ export function OkfContent({
                 label="If missing"
                 value={m.ifMissing}
                 multiline
-                onChange={
-                  editable ? (v) => update({ ifMissing: v }) : undefined
-                }
+                onChange={undefined}
               />
             </TableCell>
           </TableRow>
@@ -609,37 +486,10 @@ export function OkfContent({
     <div className="grid gap-3">
       {content.sources.map((s) => (
         <div key={s.id} id={s.id} className="grid gap-2 rounded-lg border p-3">
-          <TextEdit
-            label="Source title"
-            value={s.title}
-            onChange={
-              editable
-                ? (v) =>
-                    set(
-                      "sources",
-                      content.sources.map((x) =>
-                        x.id === s.id ? { ...x, title: v } : x
-                      )
-                    )
-                : undefined
-            }
-          />
-          {editable ? (
-            <TextEdit
-              label="Source URL"
-              value={s.url}
-              onChange={(v) =>
-                set(
-                  "sources",
-                  content.sources.map((x) =>
-                    x.id === s.id ? { ...x, url: v } : x
-                  )
-                )
-              }
-            />
-          ) : s.url &&
-            (/^https?:\/\//i.test(s.url) ||
-              s.url === "/madagascar-bsc/invoice_template_En.xlsx") ? (
+          <strong>{s.title}</strong>
+          {s.url &&
+          (/^https?:\/\//i.test(s.url) ||
+            s.url === "/madagascar-bsc/invoice_template_En.xlsx") ? (
             <a
               className="text-primary underline"
               href={s.url}
@@ -657,48 +507,9 @@ export function OkfContent({
               Download evidence
             </a>
           ) : null}
-          <TextEdit
-            label="Evidence and scope"
-            value={s.note}
-            onChange={
-              editable
-                ? (v) =>
-                    set(
-                      "sources",
-                      content.sources.map((x) =>
-                        x.id === s.id ? { ...x, note: v } : x
-                      )
-                    )
-                : undefined
-            }
-          />
-          {editable ? (
-            <span className="text-xs text-muted-foreground">
-              Source ID: {s.id}
-            </span>
-          ) : null}
+          {s.note ? <p>{s.note}</p> : null}
         </div>
       ))}
-      {editable ? (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() =>
-            set("sources", [
-              ...content.sources,
-              {
-                id: `source-${crypto.randomUUID()}`,
-                title: "New source",
-                url: "",
-                attachmentPath: "",
-                note: "Unconfirmed",
-              },
-            ])
-          }
-        >
-          Add linked source
-        </Button>
-      ) : null}
     </div>
   )
   const editSection = (index: number, label: string) => (
@@ -788,63 +599,27 @@ export function OkfContent({
   if (page.template === "document")
     return (
       <div className="grid gap-7 text-sm leading-relaxed">
-        {content.rules
-          .filter((r) => r.kind === "document")
-          .map((rule) => (
-            <div key={rule.id}>
-              {editable ? (
-                renderRules([rule])
-              ) : (
-                <p className="text-muted-foreground">
-                  {rule.instruction}
-                  {rule.condition ? " " + rule.condition : ""}
-                </p>
-              )}
-            </div>
-          ))}
-        {acceptanceRules.length || content.sections[1]?.text || editable ? (
-          <section className="grid gap-3" id="requirements">
-            <h2>Requirements</h2>
-            {content.sections[1]?.text
-              ? editSection(1, "Requirements notes")
+        {content.sections.map((section, index) => (
+          <section
+            key={section.heading}
+            className="grid gap-3"
+            id={section.heading.toLowerCase().replaceAll(" ", "-")}
+          >
+            <h2>{section.heading}</h2>
+            {index === 0
+              ? renderRules(
+                  content.rules.filter((rule) => rule.kind === "document")
+                )
               : null}
-            {renderRules(acceptanceRules)}
-            {editable ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => addRule("acceptance")}
-              >
-                Add requirement
-              </Button>
-            ) : null}
+            {index === 1 ? renderRules(acceptanceRules) : null}
+            {index === 2 ? renderFields() : null}
+            {section.text || editable
+              ? editSection(index, "Markdown text")
+              : null}
+            {references(section.references)}
+            {index === 6 && content.sources.length ? renderSources() : null}
           </section>
-        ) : null}
-        {content.fields.length || editable ? (
-          <section className="grid gap-3" id="fields">
-            <h2>Fields to extract</h2>
-            {renderFields()}
-          </section>
-        ) : null}
-        {content.sections
-          .filter(
-            (section, index) => ![1, 2].includes(index) && section.text.trim()
-          )
-          .map((section) => (
-            <section key={section.heading} className="grid gap-3">
-              <h2>{section.heading}</h2>
-              {editSection(content.sections.indexOf(section), section.heading)}
-              {references(section.references)}
-            </section>
-          ))}
-        {content.sources.length || editable ? (
-          <details>
-            <summary className="cursor-pointer text-xs text-muted-foreground">
-              Sources and attachments
-            </summary>
-            <div className="mt-3">{renderSources()}</div>
-          </details>
-        ) : null}
+        ))}
       </div>
     )
   return (

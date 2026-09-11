@@ -17,7 +17,7 @@ Production: https://actn-admin.vercel.app
 
 ## Validation
 
-- 61 unit tests pass, including report pagination, failed saves, stale browser data, overlapping writes, pricing upload failure and approval retry.
+- 61 unit tests in the deployed repairs pass, including report pagination, failed saves, stale browser data, overlapping writes, pricing upload failure and approval retry. A separate prepared recovery-copy test also passes; that optional feature is disabled and undeployed.
 - TypeScript checks pass. Production build passes. Existing Sass deprecation and unrelated ESLint warnings remain; no lint errors.
 - 23 distinct desktop/mobile browser checks pass for month-end routes, settings, notebook controls, ECTN streaming, certificate draft persistence and unauthenticated API rejection. One existing mobile keyboard-only drag test is skipped by design.
 - A synthetic bill of lading completed real AI classification/extraction locally and produced a database-backed certificate with reference `HEALTHCHECK20260911`. Its request ID is `mgbsc-1789140379753-s37dzeh`.
@@ -28,7 +28,13 @@ Production: https://actn-admin.vercel.app
 
 ## Deployment and ongoing checks
 
-The main repairs were deployed from `273dd88` to production and Vercel reported Ready. Both SQL files have been applied successfully. The final dropdown display correction was validated on desktop and mobile and is included in the follow-up production commit containing this report.
+The main repairs were deployed from `273dd88` and the dropdown display correction from `3006c5b`. Vercel reported both production deployments Ready. Both SQL files have been applied successfully. New certificate-reference and learning edits appeared concurrently in the working tree; those are separate from the audited deployment and were left untouched.
+
+## Optional recovery safeguard — disabled
+
+A one-time backup of explicitly listed legacy accounting, template, and notebook browser data was prepared and tested. Local testing saved recovery copies in `app_settings` under `browser-recovery:*`, without replacing active records. SQL comparison then confirmed that both existing local months match the shared database: zero missing months and zero differing checklists. The local reconciliation cache was empty.
+
+Automatic approval review rejected deploying this safeguard to other browsers because copying potentially sensitive notes/accounting data to Supabase requires explicit approval for the payload and destination. The root component has been disconnected, and the safeguard remains uncommitted and undeployed pending that approval. The main repairs operate independently of it. Original local copies remain intact.
 
 Run the read-only configuration/schema audit with:
 

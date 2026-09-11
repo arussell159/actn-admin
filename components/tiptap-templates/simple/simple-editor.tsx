@@ -184,13 +184,15 @@ export function SimpleEditor({
   value,
   onChange,
   onSelectionChange,
+  onLinkNavigate,
 }: {
   focusSignal?: number
   restoreSelectionSignal?: number
   restoredSelection?: { from: number; to: number }
   value?: string
-  onChange?: (value: string) => void
+  onChange?: (value: string, userInitiated: boolean) => void
   onSelectionChange?: (selection: { from: number; to: number }) => void
+  onLinkNavigate?: (href: string) => void
 }) {
   const isMobile = useIsBreakpoint()
   const [isSearchAndReplaceOpen, setIsSearchAndReplaceOpen] = useState(false)
@@ -198,6 +200,8 @@ export function SimpleEditor({
   const editorScrollRef = useRef<HTMLDivElement>(null)
   const caretScrollFrameRef = useRef<number | undefined>(undefined)
   const searchAndReplaceButtonRef = useRef<HTMLButtonElement>(null)
+  const onLinkNavigateRef = useRef(onLinkNavigate)
+  onLinkNavigateRef.current = onLinkNavigate
 
   const keepMobileCaretVisible = useCallback(
     (currentEditor: Editor) => {
@@ -278,6 +282,15 @@ export function SimpleEditor({
         "aria-label": "Main content area, start typing to enter text.",
         class: "simple-editor",
       },
+      handleClick: (_view, _position, event) => {
+        const target = event.target as Element | null
+        const link = target?.closest("a[href]")
+        const href = link?.getAttribute("href")
+        if (!href?.startsWith("/knowledge-base?node=")) return false
+        event.preventDefault()
+        onLinkNavigateRef.current?.(href)
+        return true
+      },
     },
     extensions: [
       StarterKit.configure({
@@ -322,7 +335,7 @@ export function SimpleEditor({
       keepMobileCaretVisible(editor)
     },
     onUpdate: ({ editor }) => {
-      onChange?.(JSON.stringify(editor.getJSON()))
+      onChange?.(JSON.stringify(editor.getJSON()), editor.isFocused)
       keepMobileCaretVisible(editor)
     },
     onSelectionUpdate: ({ editor }) => {

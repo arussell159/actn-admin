@@ -46,7 +46,10 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog"
 import { Choice, OkfContent, TextEdit, okfHref } from "@/components/okf-content"
-import { createInitialPages } from "@/lib/okf/seed"
+import {
+  createCountryDefinitionPages,
+  createInitialPages,
+} from "@/lib/okf/seed"
 import type {
   KnowledgeChange,
   KnowledgeContent,
@@ -74,6 +77,16 @@ type Data = {
   history: Publication[]
   intake: Intake[]
   options: Record<string, string[]>
+  layoutCountries: string[]
+  layoutDefinitions: {
+    country: string
+    fields: {
+      id: string
+      label: string
+      sourceDocument: string
+      instruction: string
+    }[]
+  }[]
   userId: string
   canEdit: boolean
   canPublish: boolean
@@ -136,6 +149,8 @@ export function OkfView() {
     history: [],
     intake: [],
     options: {},
+    layoutCountries: [],
+    layoutDefinitions: [],
     userId: "",
     canEdit: false,
     canPublish: false,
@@ -179,14 +194,35 @@ export function OkfView() {
   const signature = (d: KnowledgeDraft | null) =>
     d ? stableSignature([d.id, d.changes, d.reason, d.source]) : ""
   const dirty = !!draft && signature(draft) !== savedSignature
-  const page =
-    data.state.pages.find((p) => p.id === pageId) ?? data.state.pages[0]
+  const displayPages = React.useMemo(() => {
+    const known = new Set(data.state.pages.map((page) => page.country))
+    const countries = [
+      ...(data.layoutDefinitions ?? []).map(({ country }) => country),
+      ...(data.layoutCountries ?? []),
+    ]
+    const definitions = new Map(
+      (data.layoutDefinitions ?? []).map((definition) => [
+        definition.country,
+        definition.fields,
+      ])
+    )
+    return [
+      ...data.state.pages,
+      ...[...new Set(countries)]
+        .filter((country) => !known.has(country))
+        .flatMap((country) =>
+          createCountryDefinitionPages(country, definitions.get(country))
+        ),
+    ]
+  }, [data.layoutCountries, data.layoutDefinitions, data.state.pages])
+  const page = displayPages.find((p) => p.id === pageId) ?? displayPages[0]
+  const definitionOnly = !data.state.pages.some((item) => item.id === page.id)
   const currentChange = draft?.changes.find((c) => c.pageId === page.id)
   const editingPage = currentChange
     ? { ...page, content: currentChange.content }
     : page
   const updates = pageId === "updates"
-  const nodes = knowledgeNodes(data.state.pages)
+  const nodes = knowledgeNodes(displayPages, data.layoutCountries ?? [])
   const folder =
     pageId === knowledgeRoot || !!nodes.find((n) => n.id === pageId)?.folder
   const path = knowledgePath(nodes, pageId)
@@ -342,14 +378,6 @@ export function OkfView() {
       window.clearTimeout(timer)
     }
   }, [draft, dirty, pageId])
-  React.useEffect(() => {
-    const warn = (event: BeforeUnloadEvent) => {
-      if (dirty) event.preventDefault()
-    }
-    window.addEventListener("beforeunload", warn)
-    return () => window.removeEventListener("beforeunload", warn)
-  }, [dirty])
-
   function newDraft(changes: KnowledgeChange[], reason: string) {
     const next: KnowledgeDraft = {
       id: crypto.randomUUID(),
@@ -386,13 +414,13 @@ export function OkfView() {
         ...draft,
         changes: [
           ...draft.changes,
-          { pageId: page.id, content: page.content, level: "minor" },
+          { pageId: page.id, content: page.content, level: "patch" },
         ],
       })
       return
     }
     newDraft(
-      [{ pageId: page.id, content: page.content, level: "minor" }],
+      [{ pageId: page.id, content: page.content, level: "patch" }],
       `Direct edit: ${page.title}`
     )
   }
@@ -527,7 +555,7 @@ export function OkfView() {
         )
     )
   }
-  const visible = data.state.pages.filter(
+  const visible = displayPages.filter(
     (p) =>
       !search ||
       `${p.title} ${p.country} ${JSON.stringify(p.content)}`
@@ -606,7 +634,11 @@ export function OkfView() {
                   <DropdownMenuItem
                     className="min-h-11! gap-2.5! px-3! py-2! text-base! [&_svg:not([class*='size-'])]:size-5!"
                     disabled={
-                      !data.canEdit || busy || saving || !!currentChange
+                      definitionOnly ||
+                      !data.canEdit ||
+                      busy ||
+                      saving ||
+                      !!currentChange
                     }
                     onClick={editPage}
                   >
@@ -650,6 +682,7 @@ export function OkfView() {
                   disabled={
                     !!folder ||
                     updates ||
+                    definitionOnly ||
                     !data.canEdit ||
                     busy ||
                     saving ||
@@ -785,7 +818,11 @@ export function OkfView() {
                     variant="ghost"
                     size="sm"
                     disabled={
-                      !data.canEdit || busy || saving || !!currentChange
+                      definitionOnly ||
+                      !data.canEdit ||
+                      busy ||
+                      saving ||
+                      !!currentChange
                     }
                     onClick={editPage}
                   >
@@ -879,64 +916,70 @@ export function OkfView() {
                         </Button>
                       </div>
                     </div>
-                    <TextEdit
-                      label="Reason for the change set"
-                      value={draft.reason}
-                      onChange={(v) => setDraft({ ...draft, reason: v })}
-                    />
-                    <TextEdit
-                      label="Source or evidence summary"
-                      value={draft.source}
-                      onChange={(v) => setDraft({ ...draft, source: v })}
-                    />
-                    <details>
-                      <summary className="cursor-pointer text-sm">
-                        Included pages and version impact
-                      </summary>
-                      <div className="mt-3 grid gap-3">
-                        {draft.changes.map((c) => (
-                          <Choice
-                            key={c.pageId}
-                            label={
-                              data.state.pages.find((p) => p.id === c.pageId)
-                                ?.title ?? c.pageId
-                            }
-                            value={c.level}
-                            values={["minor", "patch"]}
-                            onChange={(v) =>
+                    {draft.source !== "Direct staff edit" ? (
+                      <>
+                        <TextEdit
+                          label="Reason for the change set"
+                          value={draft.reason}
+                          onChange={(v) => setDraft({ ...draft, reason: v })}
+                        />
+                        <TextEdit
+                          label="Source or evidence summary"
+                          value={draft.source}
+                          onChange={(v) => setDraft({ ...draft, source: v })}
+                        />
+                      </>
+                    ) : null}
+                    {draft.source !== "Direct staff edit" ? (
+                      <details>
+                        <summary className="cursor-pointer text-sm">
+                          Included pages and version impact
+                        </summary>
+                        <div className="mt-3 grid gap-3">
+                          {draft.changes.map((c) => (
+                            <Choice
+                              key={c.pageId}
+                              label={
+                                data.state.pages.find((p) => p.id === c.pageId)
+                                  ?.title ?? c.pageId
+                              }
+                              value={c.level}
+                              values={["minor", "patch"]}
+                              onChange={(v) =>
+                                setDraft({
+                                  ...draft,
+                                  changes: draft.changes.map((x) =>
+                                    x.pageId === c.pageId
+                                      ? { ...x, level: v as "minor" | "patch" }
+                                      : x
+                                  ),
+                                })
+                              }
+                            />
+                          ))}
+                          <p className="text-xs text-muted-foreground">
+                            Choosing patch confirms that operational meaning is
+                            unchanged. Rules, extraction and mapping changes
+                            require minor.
+                          </p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
                               setDraft({
                                 ...draft,
-                                changes: draft.changes.map((x) =>
-                                  x.pageId === c.pageId
-                                    ? { ...x, level: v as "minor" | "patch" }
-                                    : x
+                                changes: includePublicationDependencies(
+                                  data.state,
+                                  draft.changes
                                 ),
                               })
                             }
-                          />
-                        ))}
-                        <p className="text-xs text-muted-foreground">
-                          Choosing patch confirms that operational meaning is
-                          unchanged. Rules, extraction and mapping changes
-                          require minor.
-                        </p>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() =>
-                            setDraft({
-                              ...draft,
-                              changes: includePublicationDependencies(
-                                data.state,
-                                draft.changes
-                              ),
-                            })
-                          }
-                        >
-                          Include linked fields and sources
-                        </Button>
-                      </div>
-                    </details>
+                          >
+                            Include linked fields and sources
+                          </Button>
+                        </div>
+                      </details>
+                    ) : null}
                     {reviewing ? (
                       <p className="text-xs text-muted-foreground">
                         AI is reviewing the affected content and dependencies…
@@ -962,9 +1005,11 @@ export function OkfView() {
                         </h1>
                         <div className="mt-2 flex gap-2">
                           <span className="text-xs text-muted-foreground">
-                            {page.version
-                              ? `Published ${page.version}`
-                              : "Draft"}
+                            {definitionOnly
+                              ? "Certificate definition"
+                              : page.version
+                                ? `Published ${page.version}`
+                                : "Draft"}
                           </span>
                           {currentChange ? (
                             <span className="text-xs text-muted-foreground">
@@ -982,7 +1027,7 @@ export function OkfView() {
                     </div>
                     <OkfContent
                       page={editingPage}
-                      pages={data.state.pages.map((p) => ({
+                      pages={displayPages.map((p) => ({
                         ...p,
                         content:
                           draft?.changes.find((c) => c.pageId === p.id)
@@ -990,7 +1035,7 @@ export function OkfView() {
                       }))}
                       options={data.options}
                       onChange={
-                        currentChange
+                        currentChange && !definitionOnly
                           ? (content) =>
                               setDraft((d) =>
                                 d

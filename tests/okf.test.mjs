@@ -6,6 +6,7 @@ const require = createRequire(import.meta.url)
 require("../scripts/okf-typescript.cjs")
 const {
   createInitialPages,
+  createCountryDefinitionPages,
   documentHeadings,
   formPresentation,
   sharedExtractionInstructions,
@@ -14,6 +15,7 @@ const {
   certificateDocumentDownloadName,
   certificateDocumentTypeRank,
   documentTypeAbbreviation,
+  extractedBillOfLadingReference,
   madagascarFieldGroups,
 } = require("../lib/madagascar-bsc.ts")
 const {
@@ -25,12 +27,24 @@ const {
 } = require("../lib/okf/engine.ts")
 const {
   correctionLearningInstruction,
+  correctionLearningFormat,
   correctionLearningKey,
   correctionLearningReason,
   normalizeCorrectionLearning,
   normalizedCorrectionTarget,
   parseCorrectionLearning,
 } = require("../lib/okf/correction-learning.ts")
+const { okfWritingStandard } = require("../lib/okf/writing-standard.ts")
+const {
+  requiredDocumentsForCountry,
+} = require("../lib/okf/required-documents.ts")
+const {
+  buildOkfBundle,
+  buildOkfSearchIndex,
+  documentHeadingOrder,
+  relevantKnowledge,
+  validateOkfBundle,
+} = require("../lib/okf/bundle.ts")
 const seed = () => ({ generation: 0, pages: createInitialPages() })
 const evidence = [
   {
@@ -78,6 +92,74 @@ const publish = (state) => ({
     version: "1.0.0",
     publishedAt: "2026-09-10T00:00:00Z",
   })),
+})
+
+test("country requirements list the required shipment documents", () => {
+  assert.deepEqual(requiredDocumentsForCountry("Djibouti"), [
+    "Bill of Lading",
+    "Commercial Invoice",
+    "Freight Invoice",
+  ])
+  assert.deepEqual(requiredDocumentsForCountry("Angola"), [
+    "Bill of Lading",
+    "Commercial Invoice",
+    "Freight Invoice",
+    "DU (Documento Único)",
+    "ARCCLA Form",
+  ])
+  assert.deepEqual(requiredDocumentsForCountry("Madagascar"), [
+    "Bill of Lading",
+    "Commercial Invoice",
+    "Freight Invoice",
+    "Packing List",
+    "Export Declaration",
+  ])
+})
+test("certificate definitions add every country and source document without inventing requirements", () => {
+  const pages = createCountryDefinitionPages("Gabon", [
+    {
+      id: "customReference",
+      label: "Custom reference",
+      sourceDocument: "Customs Receipt",
+      instruction: "Read the stated reference.",
+    },
+  ])
+  assert.ok(pages.some((page) => page.id === "gabon-overview"))
+  const document = pages.find((page) => page.title === "Customs Receipt")
+  assert.ok(document)
+  assert.equal(document.content.rules.length, 0)
+  assert.equal(document.content.fields[0].portalFieldIds[0], "customReference")
+  assert.equal(
+    document.content.fields[0].instruction,
+    "Read the stated reference."
+  )
+})
+
+test("the canonical state renders as a valid linked OKF v0.2 bundle", () => {
+  const state = publish(seed())
+  const bundle = validateOkfBundle(buildOkfBundle(state))
+  const root = bundle.find((file) => file.path === "index.md").markdown
+  const invoice = bundle.find(
+    (file) =>
+      file.path === "countries/madagascar/documents/commercial-invoice.md"
+  ).markdown
+  assert.match(root, /okf_version: "0\.2"/)
+  assert.match(invoice, /^---\ntype:/)
+  assert.match(invoice, /status: stable/)
+  assert.deepEqual(
+    [...invoice.matchAll(/^## (.+)$/gm)].map((match) => match[1]),
+    [...documentHeadingOrder]
+  )
+  assert.ok(
+    buildOkfSearchIndex(state).some(
+      (entry) => entry.title === "Commercial Invoice"
+    )
+  )
+  assert.ok(
+    relevantKnowledge(state, "commercial invoice origin", "").some(
+      (page) => page.title === "Commercial Invoice"
+    )
+  )
 })
 
 test("certificate documents use classified download names", () => {
@@ -134,9 +216,56 @@ test("certificate documents follow the fixed optional document order", () => {
   )
 })
 
+test("the certificate list reference comes from the extracted Bill of Lading number", () => {
+  assert.equal(
+    extractedBillOfLadingReference({
+      fields: [
+        { key: "exporterName", value: "ACME" },
+        { key: "billOfLadingReference", value: "  MEDU1234567  " },
+      ],
+    }),
+    "MEDU1234567"
+  )
+  assert.equal(
+    extractedBillOfLadingReference({
+      fields: [{ key: "billOfLadingReference", value: "" }],
+      okf: {
+        mappedFields: [
+          {
+            key: "billOfLadingReference",
+            value: "MAEU7654321",
+            status: "unconfirmed",
+            row: null,
+          },
+        ],
+        observations: { fields: [] },
+      },
+    }),
+    "MAEU7654321"
+  )
+  assert.equal(
+    extractedBillOfLadingReference({
+      fields: [],
+      okf: {
+        mappedFields: [],
+        observations: {
+          fields: [
+            {
+              id: "legacy-source-bill_of_lading_number",
+              value: "",
+              observedText: "Bill of Lading No. CMDU2468101",
+            },
+          ],
+        },
+      },
+    }),
+    "CMDU2468101"
+  )
+})
+
 test("initial pages use fixed templates, no invented approval or effective dates, and preserve the complete form catalog", () => {
   const state = seed()
-  assert.equal(state.pages.length, 18)
+  assert.equal(state.pages.length, 46)
   assert.equal(publishedPages(state).length, 0)
   for (const p of state.pages) {
     assert.equal(p.version, null)
@@ -157,7 +286,11 @@ test("initial pages use fixed templates, no invented approval or effective dates
   )
   const billFields = state.pages.find((p) => p.title === "Bill of Lading")
     .content.fields
-  assert.ok(state.pages.some((p) => p.title === "DU (Documento Unico)"))
+  assert.ok(
+    state.pages.some(
+      (p) => p.country === "Angola" && p.title === "DU (Documento Único)"
+    )
+  )
   assert.ok(billFields.some((f) => f.portalFieldIds.includes("exporterName")))
   assert.ok(billFields.some((f) => f.portalFieldIds.includes("importerName")))
   assert.ok(
@@ -178,7 +311,7 @@ test("initial pages use fixed templates, no invented approval or effective dates
         level: "minor",
       }))
     ).length,
-    18
+    46
   )
 })
 test("commercial invoice guidance coordinates Incoterm, place and FOB value derivation", () => {
@@ -437,7 +570,10 @@ test("migration is additive, approval is atomic and corrections retain identity 
   assert.match(layoutsSql, /okf_certificate_layout_drafts/)
   assert.match(layoutsSql, /okf_save_certificate_layout_draft/)
   assert.match(layoutsSql, /Draft changed\. Reload before saving\./)
-  assert.match(layoutsSql, /supabase_realtime add table public\.okf_certificate_layouts/)
+  assert.match(
+    layoutsSql,
+    /supabase_realtime add table public\.okf_certificate_layouts/
+  )
   assert.match(
     layoutsSql,
     /greatest\(coalesce\(previous\.revision,0\),coalesce\(max\(h\.revision\),0\)\)\+1/
@@ -458,7 +594,10 @@ test("field corrections retain verified source evidence for bounded OKF learning
     confidence: 0.98,
   }
   const reason = correctionLearningReason("Madagascar", learning)
-  assert.deepEqual(parseCorrectionLearning(reason), normalizeCorrectionLearning(learning))
+  assert.deepEqual(
+    parseCorrectionLearning(reason),
+    normalizeCorrectionLearning(learning)
+  )
   assert.equal(learning.target, "invoiceValues")
   assert.match(reason, /Bill of Lading/)
 })
@@ -497,6 +636,40 @@ test("legacy learning data is upgraded to the human-readable decision structure"
   assert.match(upgraded.reasoning, /Notify Party: Example Ltd/)
   assert.match(upgraded.reproduction, /current shipment/)
   assert.equal(upgraded.assumption, false)
+})
+
+test("correction notes use the consistent human-readable knowledge format", () => {
+  const note = correctionLearningFormat({
+    version: 1,
+    target: "notifyParty",
+    label: "Notify Party",
+    verified: false,
+    documentType: "",
+    filename: "",
+    page: null,
+    supportingText: "",
+    matchedValue: "Example Ltd",
+    confidence: 0,
+    reasoning: "The documents were rescanned, but the reason was not verified.",
+  })
+  assert.deepEqual(Object.keys(note), [
+    "field",
+    "appliesWhen",
+    "instruction",
+    "source",
+    "status",
+  ])
+  assert.equal(note.status, "Unresolved")
+})
+
+test("OKF authoring standard requires minimal sourced concepts and repeated learning", () => {
+  assert.match(
+    okfWritingStandard,
+    /One page represents one operational concept/
+  )
+  assert.match(okfWritingStandard, /Never invent a citation/)
+  assert.match(okfWritingStandard, /at least two independent requests/)
+  assert.match(okfWritingStandard, /Do not create manual index pages/)
 })
 
 test("upload adapter persists exact published revisions and maps approved extraction only", async () => {

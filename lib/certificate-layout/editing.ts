@@ -196,3 +196,87 @@ export function moveLayoutField(
   )
   return true
 }
+
+export function placeLayoutFieldRight(
+  layout: CertificateLayout,
+  fieldId: string,
+  targetId: string,
+  overFieldId: string
+) {
+  const groups = layoutGroups(layout).map((item) => item.group)
+  const target = groups.find((group) => group.id === targetId)
+  if (
+    !target ||
+    target.kind === "invoice-items" ||
+    !acceptsField(target, fieldId) ||
+    fieldId === overFieldId
+  )
+    return false
+
+  const anchorIndex = target.fields.findIndex(
+    (placement) => placement.fieldId === overFieldId
+  )
+  if (anchorIndex < 0) return false
+
+  let row = 1
+  let column = 1
+  const positions = new Map<string, { row: number; column: number }>()
+  for (const placement of target.fields) {
+    const placementRow = placement.row ?? row
+    const placementColumn = placement.column ?? column
+    positions.set(placement.fieldId, {
+      row: placementRow,
+      column: placementColumn,
+    })
+    column = placementColumn + placement.span
+    row = placementRow
+    if (column > target.columns) {
+      row += 1
+      column = 1
+    }
+  }
+
+  const anchor = target.fields[anchorIndex]
+  const anchorPosition = positions.get(overFieldId)!
+  const fieldsInRow = target.fields.filter(
+    (placement) => positions.get(placement.fieldId)?.row === anchorPosition.row
+  )
+  const movingWasInRow = fieldsInRow.some(
+    (placement) => placement.fieldId === fieldId
+  )
+  const rowColumns = fieldsInRow.length + (movingWasInRow ? 0 : 1)
+  if (rowColumns > 4) return false
+
+  let moving: FieldPlacement = { fieldId, span: 1 }
+  for (const group of groups) {
+    const found = group.fields.find(
+      (placement) => placement.fieldId === fieldId
+    )
+    if (found) moving = withoutGridPosition(found)
+    group.fields = group.fields.filter(
+      (placement) => placement.fieldId !== fieldId
+    )
+  }
+
+  const currentAnchorIndex = target.fields.findIndex(
+    (placement) => placement.fieldId === overFieldId
+  )
+  target.fields.splice(currentAnchorIndex + 1, 0, {
+    ...moving,
+    span: 1,
+  })
+  const rowFieldIds = fieldsInRow
+    .map((placement) => placement.fieldId)
+    .filter((id) => id !== fieldId)
+  rowFieldIds.splice(rowFieldIds.indexOf(overFieldId) + 1, 0, fieldId)
+  rowFieldIds.forEach((id, index) => {
+    const placement = target.fields.find(
+      (candidate) => candidate.fieldId === id
+    )!
+    placement.span = 1
+    placement.row = anchorPosition.row
+    placement.column = index + 1
+    placement.rowColumns = rowColumns
+  })
+  return true
+}

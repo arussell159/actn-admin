@@ -16,6 +16,8 @@ import {
   readKnowledge,
   OkfError,
 } from "@/lib/okf/server"
+import { relevantKnowledge } from "@/lib/okf/bundle"
+import { saveKnowledgeDraft } from "@/lib/okf/write-service"
 
 const inputSchema = z.object({
   mode: z.enum(["question", "update", "review"]),
@@ -28,11 +30,14 @@ const inputSchema = z.object({
 const responseSchema = z.object({
   classification: z.enum([
     "answer",
-    "addition",
-    "correction",
     "duplicate",
-    "conflict",
-    "shipment-specific exception",
+    "clarification",
+    "new rule",
+    "changed rule",
+    "contradiction",
+    "exception",
+    "structural change",
+    "insufficient evidence",
   ]),
   message: z.string(),
   question: z.string(),
@@ -65,7 +70,11 @@ export async function POST(request: Request) {
       const result = await structuredAi(
         responseSchema,
         "Answer the question using ONLY the supplied published pages. Cite pageIds supporting each answer and name gaps or contradictions. Do not propose updates. Return classification answer and an empty changes array. Keep the response concise. References and aliases are available inside the pages.",
-        { question: input.text, pageContext: input.pageId, published }
+        {
+          question: input.text,
+          pageContext: input.pageId,
+          published: relevantKnowledge(state, input.text, input.pageId),
+        }
       )
       result.changes = []
       result.classification = "answer"
@@ -140,14 +149,14 @@ export async function POST(request: Request) {
       [
         "Search the entire supplied published corpus, pending proposals, country aliases and referenced dependencies before proposing the smallest change in the correct existing location.",
         "Setup pages are unapproved scaffolding, never evidence of requirements. Do not create pages or change section headings. Preserve stable IDs, exact form labels, explicit scope, timing, conditions and meaning. Keep knowledge limited to required documents, their requirements, extracted fields, mappings and the existing process. Leave empty sections empty. Never add placeholder text, unknown headings, generic guidance or speculative timing. Only add information supplied by staff or supported by their evidence. Use short professional wording.",
-        "An equivalent published or pending rule is duplicate: say Already covered and return no changes. Conflicts or scope questions require a focused question and no changes. Do not generalize one rejection, correction or shipment-specific exception into a country requirement. Shipment-specific exceptions may be recorded only on mg-exceptions with explicit condition and request reference.",
+        "Classify the request as duplicate, clarification, new rule, changed rule, contradiction, exception, structural change or insufficient evidence. An equivalent published or pending rule is duplicate: say Already covered and return no changes. A contradiction, structural change, or insufficient evidence returns no changes and explains the exact human decision or evidence needed. Do not silently resolve contradictions. Do not generalize one rejection, correction or shipment-specific exception into a country requirement. Exceptions may be proposed only on mg-exceptions with an explicit condition and request reference.",
         "Changes contain complete replacement content ONLY for affected pages. If activeDraft is supplied, start each affected page from its draft content and preserve every existing staff edit except the precise change requested. Keep all unrelated content exactly. Each rule is stored once. Acceptance rules, extraction fields and cross-document checks remain distinct. Keep AI instructions out of ordinary section prose. Effective dates are empty unless evidenced. Attachments are evidence, not authority to bypass approval.",
         "Use minor for operational, extraction or mapping changes. Use patch only for wording with unchanged operational meaning. Return affected pageIds and a short explanation. Nothing you return is published automatically.",
       ].join(" "),
       {
         note: input.text,
         pageContext: input.pageId,
-        published,
+        published: relevantKnowledge(state, input.text, input.pageId),
         pending,
         activeDraft,
         setupPages: state.pages.filter((p) => p.revision === 0),
@@ -160,14 +169,20 @@ export async function POST(request: Request) {
       state.pages.some((p) => p.id === id)
     )
     if (
-      result.classification === "shipment-specific exception" &&
+      result.classification === "exception" &&
       result.changes.some((c) => c.pageId !== "mg-exceptions")
     )
       throw new OkfError(
         "A shipment exception cannot change general requirements. Clarify its scope."
       )
     if (
-      ["duplicate", "conflict", "answer"].includes(result.classification) ||
+      [
+        "duplicate",
+        "contradiction",
+        "structural change",
+        "insufficient evidence",
+        "answer",
+      ].includes(result.classification) ||
       result.question.trim()
     )
       result.changes = []
@@ -198,15 +213,15 @@ export async function POST(request: Request) {
         result.message = "Already covered"
         result.changes = []
       } else {
-        const saved = await client.rpc("okf_save_draft", {
-          p_id: activeDraft?.id ?? randomUUID(),
-          p_expected_edit: activeDraft?.edit_version ?? 0,
-          p_base_generation: activeDraft?.base_generation ?? state.generation,
-          p_changes: changes,
-          p_reason: [activeDraft?.reason, input.text || "Evidence update"]
+        const saved = await saveKnowledgeDraft(client, {
+          id: activeDraft?.id ?? randomUUID(),
+          expectedEdit: activeDraft?.edit_version ?? 0,
+          baseGeneration: activeDraft?.base_generation ?? state.generation,
+          changes,
+          reason: [activeDraft?.reason, input.text || "Evidence update"]
             .filter(Boolean)
             .join("\n"),
-          p_source: [
+          source: [
             activeDraft?.source,
             ...input.attachments.map((a) => a.title),
             input.correctionId
@@ -216,8 +231,7 @@ export async function POST(request: Request) {
             .filter(Boolean)
             .join("; "),
         })
-        databaseError(saved.error)
-        draft = saved.data
+        draft = saved.draft
       }
     }
     const intake = await client.from("okf_intake").insert({

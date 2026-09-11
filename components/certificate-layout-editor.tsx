@@ -49,6 +49,7 @@ import {
   appendImportedPage,
   layoutGroups,
   moveLayoutField,
+  placeLayoutFieldRight,
 } from "@/lib/certificate-layout/editing"
 import {
   certificateLayoutSchema,
@@ -108,6 +109,7 @@ export function CertificateLayoutEditor({
   const [message, setMessage] = useState("")
   const [busy, setBusy] = useState(false)
   const [selection, setSelection] = useState<LayoutSelection | null>(null)
+  const [lastGroupId, setLastGroupId] = useState<string>()
   const [view, setView] = useState<"edit" | "preview">("edit")
   const [dragged, setDragged] = useState<string | null>(null)
   const [draftReady, setDraftReady] = useState(false)
@@ -258,6 +260,34 @@ export function CertificateLayoutEditor({
   }
   const editing = view === "edit" && canPublish && !busy
   const groups = layoutGroups(layout)
+  const supportsFields = (kind: CertificateGroup["kind"]) =>
+    ["fields", "invoice-values", "invoice-items"].includes(kind)
+  const quickFieldGroupId =
+    groups.find(
+      (item) => item.group.id === lastGroupId && supportsFields(item.group.kind)
+    )?.group.id ??
+    groups.find((item) => supportsFields(item.group.kind))?.group.id
+  useEffect(() => {
+    if (!editing || selection || !quickFieldGroupId) return
+    const quickAdd = (event: KeyboardEvent) => {
+      const target = event.target
+      if (
+        event.key.toLowerCase() !== "n" ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      )
+        return
+      event.preventDefault()
+      setSelection({ kind: "add", id: quickFieldGroupId })
+    }
+    window.addEventListener("keydown", quickAdd)
+    return () => window.removeEventListener("keydown", quickAdd)
+  }, [editing, selection, quickFieldGroupId])
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor)
@@ -267,7 +297,7 @@ export function CertificateLayoutEditor({
     const group = groups.find((item) => item.group.id === target)?.group
     if (!field || !group || !acceptsField(group, fieldId)) {
       setError(
-        "Invoice item columns belong in the Invoice Items table. Other fields belong in a form block."
+        "Goods columns belong in the Goods table. Other fields belong in a form block."
       )
       return
     }
@@ -280,12 +310,19 @@ export function CertificateLayoutEditor({
   function drop(event: DragEndEvent) {
     setDragged(null)
     const target = event.over?.data.current
-    if (target?.groupId)
-      addField(
-        String(event.active.data.current?.fieldId),
-        String(target.groupId),
-        target.fieldId
-      )
+    if (target?.groupId) {
+      const fieldId = String(event.active.data.current?.fieldId)
+      if (target.placement === "right" && target.fieldId) {
+        edit((draft) => {
+          placeLayoutFieldRight(
+            draft,
+            fieldId,
+            String(target.groupId),
+            String(target.fieldId)
+          )
+        })
+      } else addField(fieldId, String(target.groupId), target.fieldId)
+    }
   }
   function fieldView(field: CertificateField) {
     const group = groups.find((item) =>
@@ -295,7 +332,10 @@ export function CertificateLayoutEditor({
       <LayoutDragField
         field={field}
         groupId={group?.group.id}
-        onClick={() => setSelection({ kind: "field", id: field.id })}
+        onClick={() => {
+          setLastGroupId(group?.group.id)
+          setSelection({ kind: "field", id: field.id })
+        }}
       />
     ) : (
       <CertificateFieldControl field={field} value="" />
@@ -339,6 +379,22 @@ export function CertificateLayoutEditor({
                   setMessage(`Page ${pageNumber} added to the draft.`)
                 }}
               />
+            ) : null}
+            {editing ? (
+              <Button
+                variant="ghost"
+                disabled={!quickFieldGroupId}
+                onClick={() =>
+                  quickFieldGroupId &&
+                  setSelection({ kind: "add", id: quickFieldGroupId })
+                }
+              >
+                <PlusIcon />
+                New Field
+                <span className="rounded border px-1.5 py-0.5 text-xs text-muted-foreground">
+                  N
+                </span>
+              </Button>
             ) : null}
             {editing ? (
               <Button
@@ -405,7 +461,11 @@ export function CertificateLayoutEditor({
           sensors={sensors}
           collisionDetection={(args) => {
             const hits = pointerWithin(args)
-            return hits.length ? hits : rectIntersection(args)
+            const right = hits.find(
+              (hit) =>
+                hit.data?.droppableContainer.data.current?.placement === "right"
+            )
+            return right ? [right] : hits.length ? hits : rectIntersection(args)
           }}
           onDragStart={(event) =>
             setDragged(String(event.active.data.current?.fieldId))
@@ -465,16 +525,17 @@ export function CertificateLayoutEditor({
                             variant="ghost"
                             className="h-auto justify-start p-0 text-left text-[15px] font-semibold whitespace-normal hover:underline"
                             aria-label={`Edit block ${group.title || "untitled"}`}
-                            onClick={() =>
+                            onClick={() => (
+                              setLastGroupId(group.id),
                               setSelection({ kind: "group", id: group.id })
-                            }
+                            )}
                           >
                             {group.title || (
                               <span className="text-xs font-normal text-muted-foreground">
                                 {group.kind === "documents"
                                   ? "Documents"
                                   : group.kind === "invoice-items"
-                                    ? "Invoice items"
+                                    ? "Goods table"
                                     : "Corrections"}
                               </span>
                             )}
@@ -485,7 +546,10 @@ export function CertificateLayoutEditor({
                 groupAction={
                   editing
                     ? (group) => (
-                        <div className="flex flex-wrap items-center justify-end gap-1">
+                        <div
+                          className="ml-auto flex flex-wrap items-center justify-end gap-1"
+                          onPointerDown={() => setLastGroupId(group.id)}
+                        >
                           {[
                             "fields",
                             "invoice-values",
@@ -521,6 +585,7 @@ export function CertificateLayoutEditor({
                                         )
                                         delete placement.row
                                         delete placement.column
+                                        delete placement.rowColumns
                                       })
                                     })
                                   }
@@ -551,9 +616,10 @@ export function CertificateLayoutEditor({
                             variant="ghost"
                             size="icon-sm"
                             aria-label="More block settings"
-                            onClick={() =>
+                            onClick={() => (
+                              setLastGroupId(group.id),
                               setSelection({ kind: "group", id: group.id })
-                            }
+                            )}
                           >
                             <PencilIcon className="size-3.5" />
                           </Button>
@@ -576,9 +642,10 @@ export function CertificateLayoutEditor({
                           <Button
                             variant="ghost"
                             className="h-9 w-full border border-dashed text-muted-foreground hover:text-foreground"
-                            onClick={() =>
+                            onClick={() => (
+                              setLastGroupId(group.id),
                               setSelection({ kind: "add", id: group.id })
-                            }
+                            )}
                           >
                             <PlusIcon />
                             Create field here
@@ -590,9 +657,11 @@ export function CertificateLayoutEditor({
                 renderSpecial={(group, fields, centerSingleColumn) =>
                   group.kind === "invoice-items" ? (
                     editing ? (
-                      <div className="grid gap-2 sm:grid-cols-2">
+                      <div className="flex min-w-0 gap-2 overflow-x-auto pb-1">
                         {fields.map((field) => (
-                          <div key={field.id}>{fieldView(field)}</div>
+                          <div key={field.id} className="min-w-48 flex-1">
+                            {fieldView(field)}
+                          </div>
                         ))}
                       </div>
                     ) : (

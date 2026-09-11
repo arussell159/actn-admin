@@ -2,11 +2,8 @@ import {
   madagascarFieldGroups,
   madagascarOfficialRuleDefinitions,
 } from "../madagascar-bsc"
-import {
-  documentNames,
-  type KnowledgeContent,
-  type KnowledgePage,
-} from "./schema"
+import { type KnowledgeContent, type KnowledgePage } from "./schema"
+import { requiredDocumentsForCountry } from "./required-documents"
 
 export const documentHeadings = [
   "When required",
@@ -58,8 +55,29 @@ export const templates: Record<string, string[]> = {
   ],
   mappings: ["System Field Map"],
 }
-export const documentPageId = (name: string) =>
-  `mg-document-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
+const slug = (value: string) =>
+  value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+export const countryPagePrefix = (country: string) =>
+  country === "Madagascar" ? "mg" : slug(country)
+export const documentPageId = (name: string, country = "Madagascar") =>
+  `${countryPagePrefix(country)}-document-${slug(name)}`
+
+// These are the country configurations already present in production Certificate
+// Settings. Form layouts remain separately versioned and are never generated here.
+export const configuredCountries = [
+  "Angola",
+  "Djibouti",
+  "Kenya",
+  "Madagascar",
+  "Somalia",
+  "Sudan",
+  "Yemen",
+] as const
 // Legacy stable field IDs for document mappings. Displayed labels, order and controls
 // are configured separately through Certificate Settings.
 export const formPresentation = [
@@ -153,7 +171,10 @@ export const sharedExtractionInstructions: Record<string, string> = {
 }
 export const sharedMappingGuidance: Record<
   string,
-  { transform?: "none" | "trim" | "uppercase" | "decimal" | "date-iso"; unit?: string }
+  {
+    transform?: "none" | "trim" | "uppercase" | "decimal" | "date-iso"
+    unit?: string
+  }
 > = {
   incoterm: { transform: "uppercase" },
   currency: { transform: "uppercase" },
@@ -180,6 +201,86 @@ function content(template: string): KnowledgeContent {
     aliases: [],
   }
 }
+export function createCountryDefinitionPages(
+  country: string,
+  definedFields: {
+    id: string
+    label: string
+    sourceDocument: string
+    instruction: string
+  }[] = []
+): KnowledgePage[] {
+  const prefix = countryPagePrefix(country)
+  const sourceId = `${prefix}-staff-required-documents`
+  const page = (
+    id: string,
+    title: string,
+    template: string
+  ): KnowledgePage => ({
+    id,
+    title,
+    template,
+    country,
+    content: content(template),
+    revision: 0,
+    version: null,
+    publishedAt: null,
+    metadata: { certificate_definition: true },
+  })
+  const overview = page(`${prefix}-overview`, "Required documents", "overview")
+  const requiredDocuments = requiredDocumentsForCountry(country)
+  const documentNames = [
+    ...new Set([
+      ...requiredDocuments,
+      ...definedFields
+        .map(({ sourceDocument }) => sourceDocument.trim())
+        .filter(Boolean),
+    ]),
+  ]
+  const documents = documentNames.map((name) => {
+    const document = page(documentPageId(name, country), name, "document")
+    if (requiredDocuments.includes(name as (typeof requiredDocuments)[number]))
+      document.content.rules.push({
+        id: `${prefix}-required-${slug(name)}`,
+        country,
+        document: name,
+        instruction: "Required document.",
+        requirement: "always required",
+        condition: "",
+        stage: "intake",
+        consequence: "Flag the request for staff review.",
+        sourceIds: [sourceId],
+        effectiveFrom: "",
+        effectiveTo: "",
+        kind: "document",
+        check: { operator: "present", fieldIds: [], expected: "" },
+      })
+    document.content.fields = definedFields
+      .filter((field) => field.sourceDocument.trim() === name)
+      .map((field) => ({
+        id: `${prefix}-source-${field.id.replaceAll(".", "-")}`,
+        label: field.label,
+        document: name,
+        location: "",
+        requiredWhen: "",
+        instruction: field.instruction,
+        portalFieldIds: [field.id],
+        ruleIds: [],
+      }))
+    return document
+  })
+  overview.content.sections[0].text = `The documents below are required for every ${country} Cargo Tracking Note request.`
+  overview.content.sections[0].references = documents.map(({ id }) => id)
+  const references = page(`${prefix}-references`, "References", "references")
+  references.content.sources.push({
+    id: sourceId,
+    title: `Current ${country} staff instructions`,
+    url: "",
+    attachmentPath: "",
+    note: "Required-document list supplied by AfricaCTN staff.",
+  })
+  return [overview, ...documents, references]
+}
 export function createInitialPages(): KnowledgePage[] {
   const page = (
     id: string,
@@ -199,27 +300,29 @@ export function createInitialPages(): KnowledgePage[] {
   // Keep stable internal IDs for existing consumers; only populated working pages are shown.
   const standards = page("standards", "Standards", "standards", "Shared")
   standards.content.sections[2].text =
-    "Shared document extraction conventions\n\nApply these conventions to every country unless that country's published knowledge explicitly overrides one. Read original PDFs with document-aware AI and retain page evidence. Normalize dates to YYYY-MM-DD. Return references without preceding labels or decorative hyphens; preserve forward slashes. Return ISO currency codes rather than symbols. Infer Incoterms only from documented value composition. Derive shipment method, cargo type, container size/type, loading country and default container volume only when the relevant evidence supports the documented field instruction. Normalize measurements to the unit defined in the field mapping. Leave unsupported or ambiguous values blank."
+    "Write only operational knowledge. Use short Markdown sentences and bullets. Edit requirements, extraction instructions, process notes, and exceptions as text. Do not edit stable IDs, sources, mappings, form fields, headings, or metadata through routine text editing. Use AI Update with evidence for new rules, sources, links, or structural proposals. Keep one rule in one canonical document page and link to it elsewhere. Leave unsupported or ambiguous values unconfirmed."
+  standards.content.sections[3].text =
+    "Direct text edits create a draft and preserve all protected metadata. New rules, changed requirements, contradictions, exceptions, deletions, and structural changes require a reviewed proposal before publication. Duplicate updates make no change."
+  standards.content.sections[4].text =
+    "Use major versions for approved structural changes, minor versions for operational changes, and patch versions for wording that does not change meaning. Formatting-only and duplicate updates do not create versions."
   const shared = page("shared-process", "Shared Process", "process", "Shared")
   const index = page("country-index", "Country Index", "index", "Shared")
-  index.content.aliases = ["Madagascar", "MG", "MDG"]
+  index.content.aliases = [...configuredCountries, "MG", "MDG"]
   const overview = page("mg-overview", "Required documents", "overview")
   const process = page("mg-process", "Process", "process")
   process.content.sections[0].text =
     "Upload the shipment documents to create a certificate request.\nReview the extracted fields from top to bottom, using the available dropdown options.\nResolve missing or incorrect values before submission."
   const workingSource = "mg-current-working-instructions"
-  const docs = documentNames.map((name) => {
-    const p = page(documentPageId(name), name, "document")
+  const docs = requiredDocumentsForCountry("Madagascar").map((name) => {
+    const canonicalName =
+      name === "Export Declaration" ? "Export/Customs Declaration" : name
+    const p = page(documentPageId(canonicalName), canonicalName, "document")
     p.content.rules.push({
-      id: `mg-required-${documentPageId(name)}`,
+      id: `mg-required-${documentPageId(canonicalName)}`,
       country: "Madagascar",
-      document: name,
-      instruction:
-        name === "Freight Invoice"
-          ? "Optional supporting document."
-          : "Required document.",
-      requirement:
-        name === "Freight Invoice" ? "not required" : "always required",
+      document: canonicalName,
+      instruction: "Required document.",
+      requirement: "always required",
       condition: "",
       stage: "intake",
       consequence: "",
@@ -230,7 +333,7 @@ export function createInitialPages(): KnowledgePage[] {
       check: { operator: "present", fieldIds: [], expected: "" },
     })
     p.content.fields = formPresentation
-      .filter((f) => sourceDocument(f.id) === name)
+      .filter((f) => sourceDocument(f.id) === canonicalName)
       .map((f) => ({
         id: sourceFieldId(f.id),
         label: f.id.startsWith("exporter")
@@ -238,7 +341,7 @@ export function createInitialPages(): KnowledgePage[] {
           : f.id.startsWith("importer")
             ? "Importer " + f.label.toLowerCase()
             : f.label,
-        document: name,
+        document: canonicalName,
         location: "",
         requiredWhen: "",
         instruction: sharedExtractionInstructions[f.id] ?? "",
@@ -246,14 +349,14 @@ export function createInitialPages(): KnowledgePage[] {
         ruleIds: [],
       }))
     const legacy = madagascarOfficialRuleDefinitions.filter(
-      (r) => r.documentType === name
+      (r) => r.documentType === canonicalName
     )
     if (legacy.length) {
       legacy.forEach((r) =>
         p.content.rules.push({
           id: r.id,
           country: "Madagascar",
-          document: name,
+          document: canonicalName,
           instruction: r.instruction,
           requirement: "always required",
           condition: "",
@@ -267,8 +370,55 @@ export function createInitialPages(): KnowledgePage[] {
         })
       )
     }
+    if (canonicalName === "Bill of Lading")
+      p.content.rules.push({
+        id: "mg-bill-of-lading-final-dated-mbl",
+        country: "Madagascar",
+        document: canonicalName,
+        instruction: "A final, dated master Bill of Lading is required.",
+        requirement: "always required",
+        condition: "",
+        stage: "intake",
+        consequence: "Flag the request for staff review.",
+        sourceIds: [workingSource],
+        effectiveFrom: "",
+        effectiveTo: "",
+        kind: "acceptance",
+        check: {
+          operator: "interpret",
+          fieldIds: [sourceFieldId("billOfLadingDate")],
+          expected: "final master Bill of Lading with a stated date",
+        },
+      })
+    if (canonicalName === "Commercial Invoice")
+      p.content.rules.push({
+        id: "mg-commercial-invoice-country-of-origin",
+        country: "Madagascar",
+        document: canonicalName,
+        instruction: "Country of origin must be stated.",
+        requirement: "always required",
+        condition: "",
+        stage: "intake",
+        consequence: "Flag the request for staff review.",
+        sourceIds: [workingSource],
+        effectiveFrom: "",
+        effectiveTo: "",
+        kind: "acceptance",
+        check: {
+          operator: "present",
+          fieldIds: [sourceFieldId("invoiceItems.originCountry")],
+          expected: "",
+        },
+      })
     return p
   })
+  overview.content.sections[0].text =
+    "The documents below are required for every Madagascar Cargo Tracking Note request."
+  overview.content.sections[0].references = docs.map((document) => document.id)
+
+  const otherCountryPages = configuredCountries
+    .filter((country) => country !== "Madagascar")
+    .flatMap((country) => createCountryDefinitionPages(country))
   const fieldMap = page("mg-field-map", "Field Map", "mappings")
   fieldMap.content.mappings = formPresentation.map((f) => {
     const guidance = sharedMappingGuidance[f.id]
@@ -314,5 +464,6 @@ export function createInitialPages(): KnowledgePage[] {
     fieldMap,
     page("mg-exceptions", "Exceptions", "exceptions"),
     references,
+    ...otherCountryPages,
   ]
 }

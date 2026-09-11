@@ -313,6 +313,12 @@ const masterReportMappingFields = [
     aliases: ["amount", "netamount", "total"],
   },
   {
+    id: "customerName",
+    label: "Customer Name",
+    description: "Used for customer totals on the month-end dashboard.",
+    aliases: ["customer", "customername", "name", "entity"],
+  },
+  {
     id: "transactionDate",
     label: "Transaction Date",
     description: "Used for the transaction date checks on the country page.",

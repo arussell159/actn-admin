@@ -38,7 +38,7 @@ export async function GET(request: Request) {
   try {
     const { client } = await okfSession()
     const id = new URL(request.url).searchParams.get("id") ?? ""
-    const [reviews, corrections, state, intake] = await Promise.all([
+    const [reviews, corrections, state] = await Promise.all([
       client
         .from("okf_reviews")
         .select("review")
@@ -50,16 +50,9 @@ export async function GET(request: Request) {
         .eq("request_id", id)
         .order("created_at", { ascending: true }),
       readKnowledge(client),
-      client
-        .from("okf_intake")
-        .select("result")
-        .like("page_id", "correction-learning:%")
-        .order("created_at", { ascending: false })
-        .limit(500),
     ])
     databaseError(reviews.error)
     databaseError(corrections.error)
-    databaseError(intake.error)
     const latest = reviews.data?.[0]?.review as KnowledgeReview | undefined
     const recheckAvailable =
       !!latest &&
@@ -72,34 +65,11 @@ export async function GET(request: Request) {
             (r) => r.pageId === p.id && r.revision === p.revision
           )
       )
-    const answeredCorrectionIds = new Set(
-      (intake.data ?? []).flatMap((entry) => {
-        const correctionId = (entry.result as { correctionId?: unknown } | null)
-          ?.correctionId
-        return typeof correctionId === "string" ? [correctionId] : []
-      })
-    )
-    const sourceQuestions = (corrections.data ?? []).flatMap((correction) => {
-      const learning = parseCorrectionLearning(correction.reason)
-      return learning &&
-        !learning.verified &&
-        !answeredCorrectionIds.has(String(correction.id))
-        ? [
-            {
-              correctionId: String(correction.id),
-              target: String(correction.target),
-              label: learning.label,
-              question: `I could not determine with certainty why ${learning.label} was changed. Was it copied from a document, calculated, or intentionally made to match another field? Explain the exact rule so it can be repeated; if it was an assumption, say so.`,
-            },
-          ]
-        : []
-    })
     return Response.json(
       {
         ok: true,
         reviews: reviews.data?.map((r) => r.review),
         corrections: corrections.data,
-        sourceQuestions,
         recheckAvailable,
       },
       { headers: { "Cache-Control": "no-store" } }
@@ -113,6 +83,43 @@ export async function POST(request: Request) {
     ensureSameOrigin(request)
     const session = await okfSession("edit")
     const body = await request.json()
+    if (body.action === "save-goods-table") {
+      const parsed = z
+        .object({
+          requestId: z.string().min(1),
+          expectedUpdatedAt: z.string(),
+          items: z
+            .array(
+              z.record(
+                z.string().max(160),
+                z.union([z.string().max(40000), z.array(z.string().max(4000))])
+              )
+            )
+            .max(1000),
+        })
+        .parse(body)
+      const current = await session.client
+        .from("madagascar_bsc_requests")
+        .select("analysis")
+        .eq("id", parsed.requestId)
+        .eq("updated_at", parsed.expectedUpdatedAt)
+        .single()
+      databaseError(current.error)
+      const analysis = current.data!.analysis as MadagascarAnalysis
+      const result = await session.client
+        .from("madagascar_bsc_requests")
+        .update({
+          analysis: { ...analysis, invoiceItems: parsed.items },
+          status: "Needs review",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", parsed.requestId)
+        .eq("updated_at", parsed.expectedUpdatedAt)
+        .select("*")
+        .single()
+      databaseError(result.error)
+      return Response.json({ ok: true, request: requestPayload(result.data!) })
+    }
     if (body.action === "explain-source") {
       const parsed = z
         .object({
@@ -269,26 +276,46 @@ export async function POST(request: Request) {
       let latestRow = savedRequest
       const corrections: unknown[] = []
       const sourceLearnings: CorrectionSourceLearning[] = []
-      const sourceQuestions: Array<{
-        correctionId: string
-        target: string
-        label: string
-        question: string
-      }> = []
       for (const edit of parsed.edits) {
         const candidate = candidatesByTarget.get(edit.target)
+        const relatedField = !candidate
+          ? savedRequest.analysis.fields.find(
+              (field) =>
+                field.key !== edit.target &&
+                Boolean(edit.value.trim()) &&
+                field.value.trim().toLocaleLowerCase() ===
+                  edit.value.trim().toLocaleLowerCase()
+            )
+          : undefined
         const learning: CorrectionSourceLearning = {
           version: 1,
           target: normalizedCorrectionTarget(edit.target),
           label: edit.label,
-          verified: Boolean(candidate),
+          verified: Boolean(candidate?.missedReason),
           documentType: candidate?.documentType ?? "",
           filename: candidate?.filename ?? "",
           page: candidate?.page ?? null,
           supportingText: candidate?.supportingText ?? "",
           matchedValue: candidate?.matchedValue ?? edit.value,
           confidence: candidate?.confidence ?? 0,
-          basis: candidate ? "document evidence" : undefined,
+          basis: candidate
+            ? "document evidence"
+            : relatedField
+              ? "observed correction"
+              : undefined,
+          relatedTarget: relatedField?.key,
+          relatedLabel: relatedField?.label,
+          missedReason: candidate?.missedReason ?? undefined,
+          reasoning:
+            candidate?.missedReason ||
+            (relatedField
+              ? `The corrected value matches ${relatedField.label}. This is one observation, not a rule.`
+              : "The documents were rescanned, but the reason for the miss could not be verified."),
+          reproduction: candidate?.missedReason
+            ? `For ${edit.label}, also check ${candidate.documentType} for the cited label, section, or format.`
+            : relatedField
+              ? `Compare ${edit.label} with ${relatedField.label} only after this relationship repeats on another request.`
+              : "Do not create a rule from this correction unless comparable evidence is found again.",
         }
         const result = await session.client.rpc("okf_correct_request", {
           p_request_id: parsed.requestId,
@@ -302,20 +329,12 @@ export async function POST(request: Request) {
         latestRow = result.data.request
         expectedUpdatedAt = String(latestRow.updated_at)
         if (result.data.correction) corrections.push(result.data.correction)
-        if (!candidate && result.data.correction)
-          sourceQuestions.push({
-            correctionId: String(result.data.correction.id),
-            target: edit.target,
-            label: edit.label,
-            question: `I could not determine with certainty why ${edit.label} was changed. Was it copied from a document, calculated, or intentionally made to match another field? Explain the exact rule so it can be repeated; if it was an assumption, say so.`,
-          })
         sourceLearnings.push(learning)
       }
       return Response.json({
         ok: true,
         corrections,
         sourceLearnings,
-        sourceQuestions,
         request: requestPayload(latestRow),
       })
     }

@@ -882,7 +882,9 @@ test("country layouts and verified learning are visible in the OKF", async ({
       )
     )
     .toBe(true)
-  await expect(page.getByRole("heading", { name: "AI Learning" })).toBeVisible()
+  await expect(
+    page.getByRole("heading", { name: "Rules (Learned)" })
+  ).toBeVisible()
   await expect(page.getByText(/Evidence: Bill of Lading/)).toBeVisible()
 })
 

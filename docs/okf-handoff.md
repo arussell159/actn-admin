@@ -1,14 +1,14 @@
-# Organisational Knowledge Framework
+# AfricaCTN Open Knowledge Format bundle
 
 Open /knowledge-base. The OKF uses the same shared Notebook layout, pane dimensions, breadcrumb header, typography and mobile folder navigation. Metadata uses plain text; there are no OKF pill badges.
 
 ## Content and editing
 
-The visible Madagascar navigation contains Required documents, Process and five document pages. These show document requirements, known acceptance requirements and extraction fields. Certificate layouts live on the separate Certificate settings page, alongside Accounting settings under the Settings menu heading. Old KB layout links and accounting-page layout-tab links redirect there. Empty sections and administrative pages are hidden. Existing authored content is preserved. Internal stable page/field IDs and mappings remain available to the extraction and publication workflows. See [Certificate layouts](certificate-layouts.md) for the visual editor, duplication and publishing.
+The Knowledge Base is the readable view of the canonical OKF state. It renders an OKF v0.2 Markdown bundle with a root index, progressive directory indexes, concept files, and a newest-first log. Concept frontmatter records type, title, description, tags, status, generation, verification, sources, and AfricaCTN revision metadata. Document pages always use the required seven headings in their fixed order.
 
-The original form identifies Bill of Lading, Commercial Invoice, Packing List and Export/Customs Declaration as required; Freight Invoice is optional. Existing commercial-invoice and packing-list instructions supply the initial acceptance requirements. Other requirements, source dates and extraction locations are left blank. Initial knowledge remains unpublished until staff review and approval; this seed does not represent independently verified regulations.
+Angola, Djibouti, Kenya, Madagascar, Somalia, Sudan, and Yemen have linked Required Documents and Documents concepts. Bill of Lading, Commercial Invoice, and Freight Invoice are required for each configured country. Angola also requires DU (Documento Único) and ARCCLA Form. Madagascar also requires Packing List and Export Declaration. Madagascar's Bill of Lading must be a final, dated MBL, and its Commercial Invoice must state country of origin. These staff-supplied requirements remain unpublished until reviewed; they are not presented as independently verified regulations.
 
-Choose Edit page to autosave a draft. Advanced rule, extraction and mapping settings are collapsed. Sources and attachments are also collapsed. Update with AI accepts evidence or notices; its instructions restrict updates to known document requirements, fields, mappings and process. Ask published OKF uses approved entries only.
+Choose Edit page to edit concise knowledge text. The UI does not expose IDs, applicability, mappings, sources, field structure, or form layout as routine controls. The server rejects a routine edit that changes those protected properties. Use AI Update with evidence when a rule, source, mapping, exception, or structure needs to change. It classifies the request before writing, retrieves only relevant concepts, makes no draft for duplicates, contradictions, structural changes, or insufficient evidence, and never publishes automatically. Ask published OKF uses approved entries only.
 
 Preview changes shows the proposed content, affected pages, field mappings and version impact. Include linked fields and sources when first publishing dependent pages. Approve and publish releases the exact previewed change set atomically. Concurrent changes require a refreshed comparison; duplicates do not create versions. Country Updates holds proposals and publication history. Propose undo creates a new reviewed revision.
 
@@ -37,8 +37,8 @@ Legacy client-supplied knowledge/chat and rule-classification endpoints return a
 
 ## Verification
 
-- npm test: 52 passing tests, including draft/publication separation, evidence gaps, destination ambiguity, deterministic comparisons, mapping/dropdown validation, stable form identifiers, published-only extraction, durable reviews and DU (Documento Unico) support. Layout tests cover field movement, schema validation, seed fidelity, catalogue synchronization and another country's configured extraction.
-- npm run typecheck, npm run lint -- --quiet and npm run build pass. The build retains the existing Notebook Sass import deprecation warnings.
+- npm test: 68 passing tests, including OKF v0.2 bundle generation, linked indexes, retrieval, draft/publication separation, evidence gaps, destination ambiguity, deterministic comparisons, mapping validation, stable form identifiers, published-only extraction, durable reviews, and required-country documents.
+- npm run typecheck, focused ESLint, and npm run build pass. The build retains the existing Notebook Sass import deprecation warnings.
 - Playwright: 16 desktop/mobile OKF checks cover visual field placement, drag and drop, layout duplication, preview/publication, rendered certificate values, Settings navigation/history and draft reset, autosave, approval, sparse page headings, shared Notebook geometry, localhost access and audited corrections. Workflow fixtures are mocked; localhost access, ETag/304 responses and malformed-write checks use the actual API.
 - scripts/verify-okf-db.mjs executes the migration on temporary PGlite PostgreSQL with Supabase auth/storage stubs and checks atomic publication, stale/replayed approvals, roles, versions and correction audit preservation.
 - Historical AI smoke checks used synthetic documents only. The current classifier follows explicit Bill of Lading consignee evidence and the published country-layout catalogue; `scripts/verify-okf-ai.cjs` exercises those cases when run with configured AI credentials.

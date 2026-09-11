@@ -8,6 +8,7 @@ import type {
   CertificateField,
   CertificateGroup,
   CertificateLayout,
+  FieldPlacement,
 } from "@/lib/certificate-layout/schema"
 
 const grids = {
@@ -51,6 +52,29 @@ export const certificateSpanClass = (
   span: number,
   breakpoint: "sm" | "md" = "md"
 ) => spans[breakpoint][span]
+
+function placementRows(group: CertificateGroup) {
+  const rows = new Map<number, FieldPlacement[]>()
+  let row = 1
+  let column = 1
+  for (const placement of group.fields) {
+    const placementRow = placement.row ?? row
+    const placementColumn = placement.column ?? column
+    const positioned = {
+      ...placement,
+      row: placementRow,
+      column: placementColumn,
+    }
+    rows.set(placementRow, [...(rows.get(placementRow) ?? []), positioned])
+    row = placementRow
+    column = placementColumn + placement.span
+    if (column > group.columns) {
+      row += 1
+      column = 1
+    }
+  }
+  return [...rows.entries()].sort(([left], [right]) => left - right)
+}
 
 export function CertificateForm({
   layout,
@@ -114,53 +138,54 @@ export function CertificateForm({
         ) : null}
         {group.kind === "fields" ? (
           group.fields.length ? (
-            <div
-              className={certificateFieldGridClass(
-                group.columns,
-                group.breakpoint,
-                group.span === parentColumns
-              )}
-            >
-              {group.fields.map((placement) => {
-                const field = fieldMap.get(placement.fieldId)
-                if (!field) return null
-                const displayed = {
-                  ...field,
-                  label: placement.label || field.label,
-                }
-                return (
-                  <div
-                    key={field.id}
-                    data-layout-field={field.id}
-                    style={
-                      placement.row || placement.column
-                        ? ({
-                            "--certificate-row": placement.row,
-                            "--certificate-column": placement.column,
-                          } as CSSProperties)
-                        : undefined
+            <div className="grid gap-3">
+              {placementRows(group).map(([row, placements]) => (
+                <div
+                  key={row}
+                  className={cn(
+                    "grid min-w-0 grid-cols-1 gap-3",
+                    group.breakpoint === "sm"
+                      ? "sm:grid-cols-12"
+                      : "md:grid-cols-12"
+                  )}
+                >
+                  {placements.map((placement) => {
+                    const field = fieldMap.get(placement.fieldId)
+                    if (!field) return null
+                    const rowColumns = placement.rowColumns ?? group.columns
+                    const unit = 12 / rowColumns
+                    const displayed = {
+                      ...field,
+                      label: placement.label || field.label,
                     }
-                    className={cn(
-                      "min-w-0",
-                      spans[group.breakpoint][placement.span],
-                      placement.row &&
-                        (group.breakpoint === "sm"
-                          ? "sm:[grid-row-start:var(--certificate-row)]"
-                          : "md:[grid-row-start:var(--certificate-row)]"),
-                      placement.column &&
-                        (group.breakpoint === "sm"
-                          ? "sm:[grid-column-start:var(--certificate-column)]"
-                          : "md:[grid-column-start:var(--certificate-column)]")
-                    )}
-                  >
-                    {renderField ? (
-                      renderField(displayed)
-                    ) : (
-                      <CertificateFieldControl field={displayed} value="" />
-                    )}
-                  </div>
-                )
-              })}
+                    return (
+                      <div
+                        key={field.id}
+                        data-layout-field={field.id}
+                        style={
+                          {
+                            "--certificate-grid-start":
+                              (placement.column! - 1) * unit + 1,
+                            "--certificate-grid-span": placement.span * unit,
+                          } as CSSProperties
+                        }
+                        className={cn(
+                          "min-w-0",
+                          group.breakpoint === "sm"
+                            ? "sm:[grid-column-start:var(--certificate-grid-start)] sm:[grid-column-end:span_var(--certificate-grid-span)]"
+                            : "md:[grid-column-start:var(--certificate-grid-start)] md:[grid-column-end:span_var(--certificate-grid-span)]"
+                        )}
+                      >
+                        {renderField ? (
+                          renderField(displayed)
+                        ) : (
+                          <CertificateFieldControl field={displayed} value="" />
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              ))}
             </div>
           ) : null
         ) : (

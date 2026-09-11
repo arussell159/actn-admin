@@ -39,9 +39,6 @@ import { sharedExtractionInstructions } from "./seed"
 import {
   correctionLearningInstruction,
   correctionLearningKey,
-  correctionLearningSummary,
-  normalizeCorrectionLearning,
-  normalizedCorrectionTarget,
   parseCorrectionLearning,
   type CorrectionSourceLearning,
 } from "./correction-learning"
@@ -60,6 +57,10 @@ type CorrectionExample = {
   explanation?: string
   reasoning?: string
   reproduction?: string
+  relatedTarget?: string
+  relatedLabel?: string
+  occurrences?: number
+  missedReason?: string
 }
 export type UploadReviewProgress = {
   stage: "country" | "document"
@@ -231,100 +232,93 @@ function identificationFromClassifications(
   }
 }
 
-function correctionText(value: unknown) {
-  if (typeof value === "string") return value.trim()
-  if (value && typeof value === "object") {
-    const candidate = (value as { value?: unknown }).value
-    if (typeof candidate === "string") return candidate.trim()
-  }
-  return ""
-}
-
 async function readCorrectionMemory(
   client: Session["client"]
 ): Promise<CorrectionExample[]> {
   try {
-    const [corrections, requests, intake] = await Promise.all([
+    const [corrections, requests] = await Promise.all([
       client
         .from("okf_corrections")
         .select("request_id,target,before_value,after_value,reason,created_at")
         .order("created_at", { ascending: false })
         .limit(200),
       client.from("madagascar_bsc_requests").select("id,country").limit(500),
-      client
-        .from("okf_intake")
-        .select("page_id,note,result,created_at")
-        .like("page_id", "correction-learning:%")
-        .order("created_at", { ascending: false })
-        .limit(200),
     ])
-    if (corrections.error || requests.error || intake.error) return []
+    if (corrections.error || requests.error) return []
     const countries = new Map(
       (requests.data ?? []).map((request) => [
         String(request.id),
         String(request.country),
       ])
     )
-    const explained = (intake.data ?? []).flatMap((entry) => {
-      const result = entry.result as
-        | {
-            country?: unknown
-            learning?: CorrectionSourceLearning
-          }
-        | undefined
-      const learning = result?.learning
-        ? normalizeCorrectionLearning(result.learning)
-        : undefined
-      const country = typeof result?.country === "string" ? result.country : ""
-      if (learning?.version !== 1 || !learning.verified || !country) return []
+    const observedGroups = new Map<
+      string,
+      {
+        country: string
+        requestIds: Set<string>
+        learning: CorrectionSourceLearning
+      }
+    >()
+    for (const correction of corrections.data ?? []) {
+      const learning = parseCorrectionLearning(correction.reason)
+      const country = countries.get(String(correction.request_id)) ?? ""
+      if (!country || !learning) continue
+      const repeatableEvidence =
+        learning.basis === "observed correction" && learning.relatedTarget
+            ? `relation:${learning.relatedTarget}`
+          : learning.basis === "document evidence" &&
+              learning.verified &&
+              learning.documentType &&
+              learning.missedReason
+            ? `document:${learning.documentType}`
+            : ""
+      if (!repeatableEvidence)
+        continue
+      const key = `${country.toLocaleLowerCase()}:${learning.target.toLocaleLowerCase()}:${repeatableEvidence.toLocaleLowerCase()}`
+      const current = observedGroups.get(key)
+      if (current) current.requestIds.add(String(correction.request_id))
+      else
+        observedGroups.set(key, {
+          country,
+          requestIds: new Set([String(correction.request_id)]),
+          learning,
+        })
+    }
+    const promoted = [...observedGroups.values()].flatMap((group) => {
+      const occurrences = group.requestIds.size
+      if (occurrences < 2) return []
+      const learning = group.learning
+      const relation = Boolean(learning.relatedTarget)
       return [
         {
-          country,
+          country: group.country,
           target: learning.target,
           label: learning.label,
           before: "",
           after: learning.matchedValue.slice(0, 500),
-          reason: correctionLearningSummary(learning).slice(0, 500),
+          reason: relation
+            ? `${learning.label} matched ${learning.relatedLabel || learning.relatedTarget} on ${occurrences} independent requests.`
+            : `${learning.label} was missed for the same documented reason on ${occurrences} independent requests.`,
           verified: true,
-          documentType: learning.documentType,
-          basis: learning.basis,
-          explanation: learning.explanation,
-          reasoning: learning.reasoning,
-          reproduction: learning.reproduction,
-        },
-      ]
-    })
-    const corrected = (corrections.data ?? []).flatMap((correction) => {
-      const country = countries.get(String(correction.request_id)) ?? ""
-      const before = correctionText(correction.before_value)
-      const after = correctionText(correction.after_value)
-      const learning = parseCorrectionLearning(correction.reason)
-      if (learning && !learning.verified) return []
-      const target =
-        learning?.target ??
-        normalizedCorrectionTarget(String(correction.target ?? ""))
-      if (!country || !target || !after || before === after) return []
-      return [
-        {
-          country,
-          target,
-          label: learning?.label ?? target,
-          before: before.slice(0, 500),
-          after: after.slice(0, 500),
-          reason: learning
-            ? correctionLearningSummary(learning).slice(0, 500)
-            : String(correction.reason ?? "").slice(0, 500),
-          verified: Boolean(learning?.verified),
-          documentType: learning?.documentType ?? "",
-          basis: learning?.basis,
-          explanation: learning?.explanation,
-          reasoning: learning?.reasoning,
-          reproduction: learning?.reproduction,
+          documentType: "Workflow reasoning",
+          basis: "reasoned inference" as const,
+          reasoning: relation
+            ? `${learning.label} matched ${learning.relatedLabel || learning.relatedTarget} on ${occurrences} independent requests.`
+            : `${learning.missedReason} This was verified on ${occurrences} independent requests.`,
+          reproduction: relation
+            ? `Use the current request's ${learning.relatedLabel || learning.relatedTarget} value for ${learning.label} only when that relationship is supported. Never copy a prior value.`
+            : `For ${learning.label}, check ${learning.documentType} for the same label, section, or format before marking it missing.`,
+          relatedTarget: learning.relatedTarget,
+          relatedLabel: learning.relatedLabel,
+          occurrences,
+          missedReason: learning.missedReason,
         },
       ]
     })
     const unique = new Map<string, CorrectionExample>()
-    for (const learning of [...explained, ...corrected]) {
+    // Only repeated, independently supported patterns affect extraction.
+    // Older staff explanations remain in the audit trail but are not rules.
+    for (const learning of promoted) {
       const key = `${learning.country.toLocaleLowerCase()}:${learning.target.toLocaleLowerCase()}`
       if (!unique.has(key)) unique.set(key, learning)
     }

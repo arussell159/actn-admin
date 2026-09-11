@@ -33,7 +33,6 @@ import {
   NotebookTreeCaret,
   type NotebookBreadcrumbItem,
 } from "@/components/notebook-layout"
-import { KnowledgeBaseAiManager } from "@/components/knowledge-base-ai-manager"
 import { NotebookSkeleton } from "@/components/page-skeletons"
 import {
   SiteHeaderBackButton,
@@ -91,6 +90,8 @@ type DesktopNotebookState = {
   activeId?: string
   collapsedFolderIds: string[]
   selectionByNoteId: Record<string, EditorSelection>
+  sortOrder?: InformationSortOrder
+  search?: string
 }
 
 type MobileNotebookLocation =
@@ -193,7 +194,7 @@ function saveDesktopNotebookState(
   state: DesktopNotebookState,
   storageKey = desktopNotebookStateStorageKey
 ) {
-  if (typeof window === "undefined" || !isDesktopViewport()) {
+  if (typeof window === "undefined") {
     return
   }
 
@@ -460,17 +461,7 @@ function parseEditorJson(value?: string): EditorJsonNode {
   }
 }
 
-type KnowledgePageDefiners = {
-  country: string
-  pageType: string
-  status: string
-}
-
-function editorContentWithTitle(
-  title: string,
-  content?: string,
-  definers?: KnowledgePageDefiners
-) {
+function editorContentWithTitle(title: string, content?: string) {
   const body = parseEditorJson(content)
 
   return JSON.stringify({
@@ -481,14 +472,6 @@ function editorContentWithTitle(
         attrs: { textAlign: null, level: 1 },
         content: title ? [{ type: "text", text: title }] : undefined,
       },
-      ...(definers
-        ? [
-            {
-              type: "knowledgeDefiners",
-              attrs: definers,
-            },
-          ]
-        : []),
       ...(body.content ?? []),
     ],
   })
@@ -511,21 +494,6 @@ function splitEditorTitleAndContent(value: string, fallbackTitle: string) {
         : [{ type: "paragraph", attrs: { textAlign: null } }],
     }),
   }
-}
-
-function knowledgePageType(title: string) {
-  const value = title.trim().toLocaleLowerCase()
-  if (["overview", "country index", "index"].includes(value)) return "Overview"
-  if (["requirements", "required documents"].includes(value))
-    return "Requirements"
-  if (["procedure", "process", "shared process"].includes(value))
-    return "Procedure"
-  if (["sources", "references"].includes(value)) return "Sources"
-  if (value.includes("field map")) return "Field mapping"
-  if (value.includes("instruction") || value === "standards")
-    return "Instructions"
-  if (value.includes("update") || value.includes("log")) return "Change log"
-  return "Knowledge"
 }
 
 function MobileFolderTitlePrompt({
@@ -1485,7 +1453,6 @@ export function InformationView({
   const activeIdRef = React.useRef<string | undefined>(undefined)
   const activeNoteSaveTimeoutRef = React.useRef<number | undefined>(undefined)
   const saveActiveNoteRef = React.useRef<() => void>(() => undefined)
-  const desktopSearchInputRef = React.useRef<HTMLInputElement | null>(null)
   const desktopNodeRefs = React.useRef<Record<string, HTMLDivElement | null>>(
     {}
   )
@@ -1528,7 +1495,6 @@ export function InformationView({
         nodesRef.current = cachedNodes
         setNodes(cachedNodes)
         setTrashedNodes(cachedTrash)
-        setIsNotebookLoading(false)
       }
 
       // Layout countries and correction learning are lightweight and should not
@@ -1570,7 +1536,7 @@ export function InformationView({
           ? requestedView
           : undefined
       const desktopState =
-        !requestedNode && !requestedView && isDesktopViewport()
+        !requestedNode && !requestedView
           ? loadDesktopNotebookState(desktopStateKey)
           : null
       const isMobile =
@@ -1650,6 +1616,10 @@ export function InformationView({
         if (desktopState) {
           selectionByNoteIdRef.current = desktopState.selectionByNoteId
           setSelectionByNoteId(desktopState.selectionByNoteId)
+          if (desktopState.sortOrder)
+            setInformationSortOrder(desktopState.sortOrder)
+          if (typeof desktopState.search === "string")
+            setNoteSearch(desktopState.search)
         }
         setActiveNodeId(
           initialView === "trash"
@@ -1710,24 +1680,6 @@ export function InformationView({
       }
     }
   }, [])
-
-  React.useEffect(() => {
-    if (!isKnowledgeBase) return
-    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
-      const current = nodesRef.current.find(
-        (node) => node.id === activeIdRef.current && node.type === "note"
-      )
-      if (
-        !current ||
-        (titleDraftRef.current.trim() === current.title &&
-          contentDraftRef.current === (current.content ?? ""))
-      )
-        return
-      event.preventDefault()
-    }
-    window.addEventListener("beforeunload", warnBeforeLeaving)
-    return () => window.removeEventListener("beforeunload", warnBeforeLeaving)
-  }, [isKnowledgeBase])
 
   const activeNode = nodes.find((node) => node.id === activeId)
 
@@ -1826,10 +1778,18 @@ export function InformationView({
         activeId,
         collapsedFolderIds: [...collapsedFolderIds],
         selectionByNoteId: selectionByNoteIdRef.current,
+        sortOrder: informationSortOrder,
+        search: noteSearch,
       },
       desktopStateKey
     )
-  }, [activeId, collapsedFolderIds, desktopStateKey])
+  }, [
+    activeId,
+    collapsedFolderIds,
+    desktopStateKey,
+    informationSortOrder,
+    noteSearch,
+  ])
 
   React.useEffect(() => {
     if (!hasLoadedNotes.current || !isMobileViewport()) {
@@ -1896,30 +1856,6 @@ export function InformationView({
       ),
     [collapsedFolderIds, informationSortOrder, visibleNodes]
   )
-
-  React.useEffect(() => {
-    const requestedNode = searchParams.get("node")
-    const requestedView = searchParams.get("view")
-
-    if (requestedNode || requestedView) {
-      return
-    }
-
-    if (!window.matchMedia("(min-width: 1024px)").matches) {
-      return
-    }
-
-    if (activeNode?.type === "note") {
-      setEditorRestoreSelectionSignal((signal) => signal + 1)
-      return
-    }
-
-    const animationFrameId = window.requestAnimationFrame(() => {
-      desktopSearchInputRef.current?.focus()
-    })
-
-    return () => window.cancelAnimationFrame(animationFrameId)
-  }, [activeNode?.type, searchParams])
 
   React.useEffect(() => {
     if (!pendingDesktopNodeFocusId) {
@@ -1993,25 +1929,6 @@ export function InformationView({
     void saveInformationNotes(nextNodes, scope).catch(() => {})
   }
 
-  async function applyKnowledgeBaseUpdates(
-    nextNodes: InformationNode[],
-    firstUpdatedId?: string
-  ) {
-    await saveInformationNotes(nextNodes, scope)
-    notesRevisionRef.current += 1
-    nodesRef.current = nextNodes
-    setNodes(nextNodes)
-    if (!firstUpdatedId) return
-    const updated = nextNodes.find((node) => node.id === firstUpdatedId)
-    if (!updated) return
-    setActiveNodeId(updated.id)
-    setActiveDrafts(updated.title, updated.content ?? "")
-    updateInformationRoute(
-      `${basePath}?node=${encodeURIComponent(updated.id)}`,
-      "replace"
-    )
-  }
-
   function persistTrash(nextTrashedNodes: TrashedInformationNode[]) {
     setTrashedNodes(nextTrashedNodes)
     void saveTrashedInformationNotes(nextTrashedNodes, scope).catch(() => {})
@@ -2042,14 +1959,6 @@ export function InformationView({
   }
 
   function selectNode(nodeId: string, mode: "push" | "replace" = "push") {
-    if (
-      isKnowledgeBase &&
-      nodeId !== activeIdRef.current &&
-      hasUnreviewedKnowledgeEdit() &&
-      !window.confirm("Discard this unreviewed knowledge draft?")
-    ) {
-      return
-    }
     saveActiveNote()
 
     if (!nodeId) {
@@ -2093,12 +2002,6 @@ export function InformationView({
   }
 
   function selectRootNotes(mode: "push" | "replace" = "push") {
-    if (
-      isKnowledgeBase &&
-      hasUnreviewedKnowledgeEdit() &&
-      !window.confirm("Discard this unreviewed knowledge draft?")
-    )
-      return
     saveActiveNote()
     saveMobileNotebookLocation(
       { type: "view", view: "notes" },
@@ -2112,12 +2015,6 @@ export function InformationView({
   }
 
   function selectTrash(mode: "push" | "replace" = "push") {
-    if (
-      isKnowledgeBase &&
-      hasUnreviewedKnowledgeEdit() &&
-      !window.confirm("Discard this unreviewed knowledge draft?")
-    )
-      return
     saveActiveNote()
     saveMobileNotebookLocation(
       { type: "view", view: "trash" },
@@ -2315,8 +2212,6 @@ export function InformationView({
       activeNoteSaveTimeoutRef.current = undefined
     }
 
-    if (isKnowledgeBase) return
-
     const cleanTitle = titleDraftRef.current.trim() || currentActiveNode.title
     const timestamp = new Date().toISOString()
     const nextNodes = nodesRef.current.map((node) =>
@@ -2338,7 +2233,6 @@ export function InformationView({
   saveActiveNoteRef.current = saveActiveNote
 
   function scheduleActiveNoteSave() {
-    if (isKnowledgeBase) return
     if (activeNoteSaveTimeoutRef.current) {
       window.clearTimeout(activeNoteSaveTimeoutRef.current)
     }
@@ -2361,18 +2255,6 @@ export function InformationView({
     }
 
     scheduleActiveNoteSave()
-  }
-
-  function hasUnreviewedKnowledgeEdit() {
-    if (!isKnowledgeBase) return false
-    const current = nodesRef.current.find(
-      (node) => node.id === activeIdRef.current && node.type === "note"
-    )
-    return Boolean(
-      current &&
-      (titleDraftRef.current.trim() !== current.title ||
-        contentDraftRef.current !== (current.content ?? ""))
-    )
   }
 
   function closeMobileNote() {
@@ -2532,15 +2414,18 @@ export function InformationView({
     const restoredNodeIds = new Set(restoredNodes.map((node) => node.id))
     const nextRestoredNodes = restoredNodes
       .filter((node) => !activeNodeIds.has(node.id))
-      .map(({ deletedAt, originalParentId, ...node }) => ({
-        ...node,
-        parentId:
-          originalParentId &&
-          (activeNodeIds.has(originalParentId) ||
-            restoredNodeIds.has(originalParentId))
-            ? originalParentId
-            : undefined,
-      }))
+      .map(({ deletedAt, originalParentId, ...node }) => {
+        void deletedAt
+        return {
+          ...node,
+          parentId:
+            originalParentId &&
+            (activeNodeIds.has(originalParentId) ||
+              restoredNodeIds.has(originalParentId))
+              ? originalParentId
+              : undefined,
+        }
+      })
 
     if (!nextRestoredNodes.length) {
       persistTrash(remainingTrash)
@@ -2698,31 +2583,6 @@ export function InformationView({
     }
   }
 
-  const isKnowledgeDraftDirty = Boolean(
-    isKnowledgeBase &&
-    activeNode?.type === "note" &&
-    (titleDraft.trim() !== activeNode.title ||
-      contentDraft !== (activeNode.content ?? ""))
-  )
-  const knowledgeDefiners: KnowledgePageDefiners | undefined =
-    isKnowledgeBase && activeNode?.type === "note"
-      ? {
-          country:
-            activeNodePath.find((node) => node.type === "folder")?.title ??
-            "Shared",
-          pageType: knowledgePageType(titleDraft || activeNode.title),
-          status: "AI managed",
-        }
-      : undefined
-  const knowledgeDraftPage =
-    isKnowledgeDraftDirty && knowledgeDefiners
-      ? {
-          path: `${knowledgeDefiners.country} / ${titleDraft}`,
-          title: titleDraft,
-          body: notePreview(contentDraft),
-        }
-      : undefined
-
   const notebookBreadcrumbItems: NotebookBreadcrumbItem[] = [
     {
       id: scope,
@@ -2768,13 +2628,6 @@ export function InformationView({
       activeDocument={activeNode?.type === "note"}
       header={{
         titleContent: <NotebookBreadcrumbs items={notebookBreadcrumbItems} />,
-        actions: isKnowledgeBase ? (
-          <KnowledgeBaseAiManager
-            nodes={nodes}
-            draftPage={knowledgeDraftPage}
-            onApply={applyKnowledgeBaseUpdates}
-          />
-        ) : undefined,
         mobileLeadingContent: mobileHeaderBackAction ? (
           <SiteHeaderBackButton
             label="Back to notes"
@@ -2906,7 +2759,6 @@ export function InformationView({
           </div>
           <div className="grid min-h-0 flex-1 content-start gap-4 overflow-auto pb-4">
             <Input
-              ref={desktopSearchInputRef}
               value={noteSearch}
               onChange={(event) => setNoteSearch(event.target.value)}
               onKeyDown={handleDesktopSearchKeyDown}
@@ -2956,15 +2808,6 @@ export function InformationView({
         </>
       }
     >
-      {isKnowledgeBase ? (
-        <div className="fixed right-4 bottom-20 z-40 md:hidden">
-          <KnowledgeBaseAiManager
-            nodes={nodes}
-            draftPage={knowledgeDraftPage}
-            onApply={applyKnowledgeBaseUpdates}
-          />
-        </div>
-      ) : null}
       <div className="hidden">
         <div className="flex items-center gap-2">
           <details ref={mobileNoteSelectorRef} className="group min-w-0 flex-1">
@@ -3035,23 +2878,16 @@ export function InformationView({
       ) : activeNode?.type === "note" ? (
         <div className="min-h-0 flex-1 overflow-hidden bg-background pt-2 sm:-m-5 sm:pt-0">
           <SimpleEditor
-            key={
-              isKnowledgeBase
-                ? `${activeNode.id}-${activeNode.updatedAt}`
-                : activeNode.id
-            }
+            key={activeNode.id}
             focusSignal={editorFocusSignal}
             restoreSelectionSignal={editorRestoreSelectionSignal}
             restoredSelection={
               selectionByNoteIdRef.current[activeNode.id] ??
               selectionByNoteId[activeNode.id]
             }
-            value={editorContentWithTitle(
-              titleDraft,
-              contentDraft,
-              knowledgeDefiners
-            )}
+            value={editorContentWithTitle(titleDraft, contentDraft)}
             onChange={updateActiveNoteContent}
+            onLinkNavigate={(href) => router.push(href)}
             onSelectionChange={(selection) => {
               if (!isDesktopViewport()) {
                 return

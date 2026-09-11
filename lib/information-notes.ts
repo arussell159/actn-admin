@@ -17,7 +17,14 @@ import {
 import { createInitialPages } from "@/lib/okf/seed"
 import type { KnowledgePage } from "@/lib/okf/schema"
 import type { VisibleCorrectionLearning } from "@/lib/okf/correction-learning"
-import { correctionLearningKey } from "@/lib/okf/correction-learning"
+import {
+  correctionLearningFormat,
+  correctionLearningKey,
+} from "@/lib/okf/correction-learning"
+import {
+  canonicalDocumentTitle,
+  requiredDocumentsForCountry,
+} from "@/lib/okf/required-documents"
 
 export type InformationNodeType = "folder" | "note"
 
@@ -54,7 +61,7 @@ const scopeConfig = {
   },
 } as const
 
-const knowledgeBaseExampleVersionKey = "africa-ctn-knowledge-base-examples-v3"
+const knowledgeBaseExampleVersionKey = "africa-ctn-knowledge-base-layout-v10"
 
 export const informationUpdatedEvent = "information-notes:updated"
 export const knowledgeBaseUpdatedEvent = "knowledge-base-notes:updated"
@@ -125,7 +132,7 @@ function editorDocument(
     heading?: string
     headingLevel?: 2 | 3
     text?: string
-    bullets?: string[]
+    bullets?: Array<string | { text: string; href: string }>
   }[]
 ) {
   return JSON.stringify({
@@ -151,13 +158,34 @@ function editorDocument(
         ? [
             {
               type: "bulletList",
-              content: block.bullets.map((text) => ({
+              content: block.bullets.map((bullet) => ({
                 type: "listItem",
                 content: [
                   {
                     type: "paragraph",
                     attrs: { textAlign: null },
-                    content: [{ type: "text", text }],
+                    content: [
+                      {
+                        type: "text",
+                        text:
+                          typeof bullet === "string" ? bullet : bullet.text,
+                        ...(typeof bullet === "string"
+                          ? {}
+                          : {
+                              marks: [
+                                {
+                                  type: "link",
+                                  attrs: {
+                                    href: bullet.href,
+                                    target: null,
+                                    rel: "noopener noreferrer nofollow",
+                                    class: null,
+                                  },
+                                },
+                              ],
+                            }),
+                      },
+                    ],
                   },
                 ],
               })),
@@ -166,6 +194,252 @@ function editorDocument(
         : []),
     ]),
   })
+}
+
+export function mergeRequiredDocumentNotes(
+  nodes: InformationNode[],
+  replaceExisting = false
+) {
+  const next = [...nodes]
+  const timestamp = now()
+  for (const country of next.filter(
+    (node) =>
+      node.type === "folder" &&
+      !node.parentId &&
+      node.title.toLocaleLowerCase() !== "shared"
+  )) {
+    const existingIndex = next.findIndex(
+      (node) =>
+        node.type === "note" &&
+        node.parentId === country.id &&
+        ["requirements", "required documents"].includes(
+          node.title.toLocaleLowerCase()
+        )
+    )
+    if (existingIndex >= 0 && !replaceExisting) continue
+    const existing = existingIndex >= 0 ? next[existingIndex] : undefined
+    const note: InformationNode = {
+      id: existing?.id ?? `${country.id}-requirements`,
+      parentId: country.id,
+      type: "note",
+      title: "Required Documents",
+      content: editorDocument([
+        { bullets: requiredDocumentsForCountry(country.title) },
+      ]),
+      createdAt: existing?.createdAt ?? timestamp,
+      updatedAt: timestamp,
+    }
+    if (existingIndex >= 0) next[existingIndex] = note
+    else next.push(note)
+  }
+  return next
+}
+
+export function linkRequiredDocumentNotes(nodes: InformationNode[]) {
+  return nodes.map((node) => {
+    if (
+      node.type !== "note" ||
+      !["requirements", "required documents"].includes(
+        node.title.toLocaleLowerCase()
+      ) ||
+      !node.parentId ||
+      !node.content
+    )
+      return node
+    const documentsFolder = nodes.find(
+      (candidate) =>
+        candidate.type === "folder" &&
+        candidate.parentId === node.parentId &&
+        candidate.title.toLocaleLowerCase() === "documents"
+    )
+    if (!documentsFolder)
+      return node.title === "Required Documents"
+        ? node
+        : { ...node, title: "Required Documents" }
+    const documentPages = new Map(
+      nodes
+        .filter(
+          (candidate) =>
+            candidate.type === "note" &&
+            candidate.parentId === documentsFolder.id
+        )
+        .map((candidate) => [candidate.title.toLocaleLowerCase(), candidate])
+    )
+    try {
+      const document = JSON.parse(node.content) as {
+        content?: Array<{
+          type?: string
+          content?: Array<{
+            content?: Array<{
+              content?: Array<{
+                type?: string
+                text?: string
+                marks?: unknown[]
+              }>
+            }>
+          }>
+        }>
+      }
+      for (const block of document.content ?? []) {
+        if (block.type !== "bulletList") continue
+        for (const item of block.content ?? []) {
+          for (const paragraph of item.content ?? []) {
+            for (const text of paragraph.content ?? []) {
+              if (text.type !== "text" || !text.text) continue
+              const target = documentPages.get(text.text.toLocaleLowerCase())
+              if (!target) continue
+              text.marks = [
+                {
+                  type: "link",
+                  attrs: {
+                    href: `/knowledge-base?node=${encodeURIComponent(target.id)}`,
+                    target: null,
+                    rel: "noopener noreferrer nofollow",
+                    class: null,
+                  },
+                },
+              ]
+            }
+          }
+        }
+      }
+      return {
+        ...node,
+        title: "Required Documents",
+        content: JSON.stringify(document),
+      }
+    } catch {
+      return { ...node, title: "Required Documents" }
+    }
+  })
+}
+
+export function organizeDocumentKnowledgePages(nodes: InformationNode[]) {
+  const next = [...nodes]
+  const timestamp = now()
+  for (const country of next.filter(
+    (node) =>
+      node.type === "folder" &&
+      !node.parentId &&
+      node.title.toLocaleLowerCase() !== "shared"
+  )) {
+    const misplacedPages = next.filter(
+      (node) =>
+        node.type === "note" &&
+        node.parentId === country.id &&
+        !!canonicalDocumentTitle(node.title)
+    )
+    if (!misplacedPages.length) continue
+    let documents = next.find(
+      (node) =>
+        node.type === "folder" &&
+        node.parentId === country.id &&
+        node.title.toLocaleLowerCase() === "documents"
+    )
+    if (!documents) {
+      documents = {
+        id: `${country.id}-documents`,
+        parentId: country.id,
+        type: "folder",
+        title: "Documents",
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }
+      next.push(documents)
+    }
+    for (const page of misplacedPages) {
+      const index = next.findIndex((node) => node.id === page.id)
+      next[index] = {
+        ...page,
+        parentId: documents.id,
+        title: canonicalDocumentTitle(page.title) ?? page.title,
+        updatedAt: timestamp,
+      }
+    }
+  }
+  return next
+}
+
+function mergeKnownDocumentRequirementNotes(
+  nodes: InformationNode[],
+  replaceExisting = false
+) {
+  const next = [...nodes]
+  const timestamp = now()
+  const madagascar = next.find(
+    (node) =>
+      node.type === "folder" &&
+      !node.parentId &&
+      node.title.toLocaleLowerCase() === "madagascar"
+  )
+  if (!madagascar) return next
+
+  let documents = next.find(
+    (node) =>
+      node.type === "folder" &&
+      node.parentId === madagascar.id &&
+      node.title.toLocaleLowerCase() === "documents"
+  )
+  if (!documents) {
+    documents = {
+      id: `${madagascar.id}-documents`,
+      parentId: madagascar.id,
+      type: "folder",
+      title: "Documents",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+    next.push(documents)
+  }
+
+  const knownPages = [
+    {
+      slug: "bill-of-lading",
+      title: "Bill of Lading",
+      requirements: ["Must be the final, dated master Bill of Lading (MBL)."],
+    },
+    {
+      slug: "commercial-invoice",
+      title: "Commercial Invoice",
+      requirements: ["The country of origin must be stated."],
+    },
+  ]
+  for (const knownPage of knownPages) {
+    const existingIndex = next.findIndex(
+      (node) =>
+        node.type === "note" &&
+        node.parentId === documents.id &&
+        node.title.toLocaleLowerCase() ===
+          knownPage.title.toLocaleLowerCase()
+    )
+    if (existingIndex >= 0 && !replaceExisting) continue
+    const existing = existingIndex >= 0 ? next[existingIndex] : undefined
+    const note: InformationNode = {
+      id: existing?.id ?? `${documents.id}-${knownPage.slug}`,
+      parentId: documents.id,
+      type: "note",
+      title: knownPage.title,
+      content: editorDocument([
+        {
+          heading: "Requirements",
+          bullets: knownPage.requirements,
+        },
+      ]),
+      createdAt: existing?.createdAt ?? timestamp,
+      updatedAt: timestamp,
+    }
+    if (existingIndex >= 0) next[existingIndex] = note
+    else next.push(note)
+  }
+  return next
+}
+
+function removeSupersededDocumentUpdatePages(nodes: InformationNode[]) {
+  return nodes.filter(
+    (node) =>
+      node.title.trim().toLocaleLowerCase() !==
+      "require country of origin on madagascar commercial invoice"
+  )
 }
 
 function countryExampleNodes(timestamp: string): InformationNode[] {
@@ -340,6 +614,85 @@ function mergeCountryExamples(nodes: InformationNode[]) {
   return next
 }
 
+function simplifyKnowledgeBaseNotes(nodes: InformationNode[]) {
+  const generatedRootIds = new Set([
+    "knowledge-base-index",
+    "knowledge-base-guide",
+    "country-updates",
+    "knowledge-country-shared-upload-ai-instructions",
+  ])
+  const generatedCountryPage =
+    /^knowledge-country-[a-z0-9-]+-(?:overview|requirements|procedure|sources|ai-learning)$/
+  const titles = new Map([
+    ["knowledge-page-mg-overview", "Requirements"],
+    ["knowledge-page-mg-process", "Procedure"],
+    ["knowledge-page-standards", "Extraction Rules"],
+    ["knowledge-page-shared-process", "Procedure"],
+    ["knowledge-page-country-index", "Country Identification"],
+  ])
+
+  return nodes
+    .filter(
+      (node) =>
+        !generatedRootIds.has(node.id) && !generatedCountryPage.test(node.id)
+    )
+    .map((node) => {
+      const title = titles.get(node.id)
+      let content = node.content
+      if (content) {
+        try {
+          const document = JSON.parse(content) as {
+            type?: string
+            content?: Array<{
+              type?: string
+              content?: Array<{ text?: string; content?: unknown[] }>
+            }>
+          }
+          if (document.type === "doc" && Array.isArray(document.content)) {
+            const nodeText = (value: unknown): string => {
+              if (!value || typeof value !== "object") return ""
+              const item = value as { text?: unknown; content?: unknown[] }
+              return [
+                typeof item.text === "string" ? item.text : "",
+                ...(item.content ?? []).map(nodeText),
+              ].join("")
+            }
+            const filler = [
+              /^this page (?:records|shows|is the map)/i,
+              /^use this page as/i,
+              /^the published requirements page remains/i,
+              /^working country knowledge for/i,
+              /^ai (?:keeps|maintains|records) /i,
+              /^no verified .+ (?:added|learned|recorded) yet/i,
+              /^start typing to add knowledge/i,
+              /^shared document extraction conventions$/i,
+            ]
+            const seen = new Set<string>()
+            document.content = document.content.filter((item) => {
+              const text = nodeText(item).trim()
+              if (
+                ["heading", "paragraph"].includes(item.type ?? "") &&
+                !text
+              )
+                return false
+              if (filler.some((pattern) => pattern.test(text))) return false
+              const key = `${item.type}:${text.toLocaleLowerCase()}`
+              if (text && seen.has(key)) return false
+              if (text) seen.add(key)
+              return true
+            })
+            content = JSON.stringify(document)
+          }
+        } catch {}
+      }
+      return {
+        ...node,
+        ...(title ? { title } : {}),
+        ...(content !== node.content ? { content } : {}),
+      }
+    })
+}
+
 export function mergeCorrectionLearningNotes(
   nodes: InformationNode[],
   learnings: VisibleCorrectionLearning[]
@@ -371,25 +724,18 @@ export function mergeCorrectionLearningNotes(
     const existingIndex = next.findIndex(
       (node) =>
         node.id === id ||
-        (node.parentId === parent.id && node.title === "AI Learning")
+        (node.parentId === parent.id &&
+          ["AI Learning", "Learned Rules", "Rules (Learned)"].includes(
+            node.title
+          ))
     )
     const timestamp = now()
     const note: InformationNode = {
       id: existingIndex >= 0 ? next[existingIndex].id : id,
       parentId: parent.id,
       type: "note",
-      title: "AI Learning",
+      title: "Rules (Learned)",
       content: editorDocument([
-        {
-          text: "This page records the current reusable decisions learned from completed certificate reviews. Each field appears once. The correction audit retains the full history.",
-        },
-        {
-          heading: "How to use this page",
-          text: "Use the rule and reasoning to reach the value again on a new shipment. Document evidence is quoted when available. A confirmed inference may instead describe a calculation or relationship between fields. If the same evidence or relationship is not clear, ask a person rather than guessing.",
-        },
-        {
-          heading: "Learned decisions",
-        },
         ...countryLearnings
           .sort((left, right) =>
             left.label.localeCompare(right.label, undefined, {
@@ -400,21 +746,18 @@ export function mergeCorrectionLearningNotes(
             {
               heading: learning.label,
               headingLevel: 3 as const,
-              text:
-                learning.reproduction ||
-                (learning.basis === "reasoned inference"
-                  ? learning.reasoning || learning.explanation
-                  : `Read ${learning.label} from ${learning.documentType}.`),
             },
             {
-              bullets: [
-                `Why: ${learning.reasoning || learning.explanation || learning.supportingText || "Staff verified the source during correction."}`,
-                learning.basis === "reasoned inference"
-                  ? `Basis: ${learning.assumption ? "Confirmed operational assumption" : "Confirmed field relationship or calculation"}`
-                  : `Evidence: ${learning.documentType}${learning.filename ? ` (${learning.filename})` : ""}${learning.page ? `, page ${learning.page}` : ""}${learning.supportingText ? ` — ${learning.supportingText}` : ""}`,
-                "Guardrail: Apply only when the same evidence or relationship is present. Ask for confirmation when it is not clear.",
-                `Confirmed: ${learning.createdAt.slice(0, 10)}`,
-              ],
+              bullets: (() => {
+                const formatted = correctionLearningFormat(learning)
+                return [
+                  `Field: ${formatted.field}`,
+                  `Applies When: ${formatted.appliesWhen}`,
+                  `Instruction: ${formatted.instruction}`,
+                  `Source: ${formatted.source}`,
+                  `Status: ${formatted.status}`,
+                ]
+              })(),
             },
           ]),
       ]),
@@ -452,69 +795,15 @@ export function mergeLayoutCountryNotes(
         createdAt: timestamp,
         updatedAt: timestamp,
       }
-      next.push(
-        countryNode,
-        {
-          id: `${countryId}-overview`,
-          parentId: countryId,
-          type: "note",
-          title: "Overview",
-          content: editorDocument([
-            {
-              text: `${country} certificate knowledge linked to its current Certificate Settings layout. AI will expand these pages as staff-approved requirements, procedures, sources and field corrections are collected.`,
-            },
-            {
-              heading: "Maintenance status",
-              text: "AI maintained · Human reviewed before changes are applied",
-            },
-          ]),
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        },
-        ...["Requirements", "Procedure", "Sources"].map((title) => ({
-          id: `${countryId}-${title.toLowerCase()}`,
-          parentId: countryId,
-          type: "note" as const,
-          title,
-          content: editorDocument([
-            {
-              text:
-                title === "Sources"
-                  ? "Verified evidence and source references for this country will be maintained here."
-                  : `No verified ${title.toLowerCase()} have been added yet.`,
-            },
-          ]),
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        }))
-      )
+      next.push(countryNode)
     }
-    if (
-      !next.some(
-        (node) =>
-          node.parentId === countryNode.id && node.title === "AI Learning"
-      )
-    )
-      next.push({
-        id: `${countryNode.id}-ai-learning`,
-        parentId: countryNode.id,
-        type: "note",
-        title: "AI Learning",
-        content: editorDocument([
-          {
-            text: "No verified field-source corrections have been learned yet. When a corrected value is found in an uploaded document—or you answer a source question—the verified guidance will appear here.",
-          },
-        ]),
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      })
   }
   return next
 }
 
 function knowledgePageBlocks(page: KnowledgePage) {
   const blocks = page.content.sections
-    .filter((section) => section.heading || section.text)
+    .filter((section) => section.text.trim())
     .map((section) => ({
       heading: section.heading,
       text: section.text,
@@ -567,17 +856,20 @@ function knowledgePageBlocks(page: KnowledgePage) {
     })
   }
 
-  return blocks.length
-    ? blocks
-    : [{ text: "Start typing to add knowledge to this page." }]
+  if (page.content.aliases.length) {
+    blocks.push({
+      heading: "Aliases",
+      text: page.content.aliases.join("\n"),
+    })
+  }
+
+  return blocks
 }
 
 export function knowledgeBaseNotesFromPages(
   pages: KnowledgePage[] = createInitialPages()
 ): InformationNode[] {
   const timestamp = now()
-  const guideId = "knowledge-base-guide"
-  const indexId = "knowledge-base-index"
   const countries = [...new Set(pages.map((page) => page.country))]
   const countryFolders = countries.map((country) => ({
     id: `knowledge-country-${country.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
@@ -604,82 +896,35 @@ export function knowledgeBaseNotesFromPages(
         ]
       : []
   )
-  const migratedPages: InformationNode[] = pages.map((page) => ({
-    id: `knowledge-page-${page.id}`,
-    parentId:
-      page.template === "document"
-        ? `${countryFolderId(page.country)}-documents`
-        : countryFolderId(page.country),
-    type: "note",
-    title: page.title,
-    content: editorDocument(knowledgePageBlocks(page)),
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  }))
+  const migratedPages: InformationNode[] = pages.flatMap((page) => {
+    const blocks = knowledgePageBlocks(page)
+    if (!blocks.length) return []
+    return [{
+      id: `knowledge-page-${page.id}`,
+      parentId:
+        page.template === "document"
+          ? `${countryFolderId(page.country)}-documents`
+          : countryFolderId(page.country),
+      type: "note" as const,
+      title:
+        page.id === "mg-overview"
+          ? "Requirements"
+          : page.id === "mg-process"
+            ? "Procedure"
+            : page.id === "standards"
+              ? "Extraction Rules"
+              : page.id === "shared-process"
+                ? "Procedure"
+                : page.id === "country-index"
+                  ? "Country Identification"
+                  : page.title,
+      content: editorDocument(blocks),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }]
+  })
 
-  return mergeCountryExamples([
-    {
-      id: indexId,
-      type: "note",
-      title: "Index",
-      pinned: true,
-      content: editorDocument([
-        {
-          text: "Use this page as the map of the knowledge base. Link to important country, document, process, and comparison pages as the wiki grows.",
-        },
-        {
-          heading: "Start here",
-          text: "Create folders for broad areas and typed pages for knowledge. Keep each fact in the clearest existing page, then link related pages instead of copying the same fact into several places.",
-        },
-      ]),
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    },
-    {
-      id: guideId,
-      type: "note",
-      title: "Knowledge Base Guide",
-      pinned: true,
-      content: editorDocument([
-        {
-          text: "The knowledge base is a flexible, interlinked wiki. Pages are free-form and should stay useful to people first; structure is a convention, not a form that every page must satisfy.",
-        },
-        {
-          heading: "Three layers",
-          text: "Raw sources are immutable evidence. Wiki pages synthesize what those sources mean. This guide defines the conventions used to maintain the wiki.",
-        },
-        {
-          heading: "Page conventions",
-          text: "Use a clear title. State scope and conditions next to the claim they qualify. Link related pages. Cite the source or evidence for operational claims. Record contradictions instead of silently choosing one version. Avoid copying changing values into multiple pages.",
-        },
-        {
-          heading: "Maintenance",
-          text: "Update the Index when important pages are added. Keep a chronological Country Updates page for meaningful changes. Periodically check for stale claims, contradictions, missing links, duplicate guidance, and pages with no useful connections.",
-        },
-        {
-          heading: "Operational OKF",
-          text: "Certificate rules and field mappings may be compiled from this wiki when automation needs them. Those derived structures should not dictate how every knowledge page is written.",
-        },
-      ]),
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    },
-    {
-      id: "country-updates",
-      type: "note",
-      title: "Country Updates",
-      content: editorDocument([
-        {
-          text: "Keep an append-only timeline of meaningful country knowledge changes. Start entries with a date, action, and short title so the history stays easy to scan and search.",
-        },
-      ]),
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    },
-    ...countryFolders,
-    ...documentFolders,
-    ...migratedPages,
-  ])
+  return [...countryFolders, ...documentFolders, ...migratedPages]
 }
 
 export function defaultKnowledgeBaseNotes(): InformationNode[] {
@@ -731,7 +976,17 @@ async function mergeDynamicOkfNotes(
   dynamicIndex: Awaited<ReturnType<typeof loadDynamicOkfIndex>>
 ) {
   return mergeCorrectionLearningNotes(
-    mergeLayoutCountryNotes(nodes, dynamicIndex.layoutCountries),
+    linkRequiredDocumentNotes(
+      removeSupersededDocumentUpdatePages(
+        mergeRequiredDocumentNotes(
+          mergeKnownDocumentRequirementNotes(
+            organizeDocumentKnowledgePages(
+              mergeLayoutCountryNotes(nodes, dynamicIndex.layoutCountries)
+            )
+          )
+        )
+      )
+    ),
     dynamicIndex.sourceLearnings
   )
 }
@@ -975,11 +1230,23 @@ async function getInformationNotesFromDatabase(
   }
   if (
     scope === "knowledge-base" &&
-    readBrowserStorage("localStorage", knowledgeBaseExampleVersionKey) !== "3"
+    readBrowserStorage("localStorage", knowledgeBaseExampleVersionKey) !== "10"
   ) {
-    notes = mergeCountryExamples(notes)
+    notes = linkRequiredDocumentNotes(
+      removeSupersededDocumentUpdatePages(
+        mergeRequiredDocumentNotes(
+          mergeKnownDocumentRequirementNotes(
+            organizeDocumentKnowledgePages(
+              simplifyKnowledgeBaseNotes(mergeCountryExamples(notes))
+            ),
+            true
+          ),
+          true
+        )
+      )
+    )
     await saveInformationNotes(notes, scope)
-    writeBrowserStorage("localStorage", knowledgeBaseExampleVersionKey, "3")
+    writeBrowserStorage("localStorage", knowledgeBaseExampleVersionKey, "10")
   }
   const visibleNotes = await mergeLiveNotes(notes, scope)
   cacheInformationNotes(visibleNotes, scope)

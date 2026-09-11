@@ -12,11 +12,7 @@ import {
   type KnowledgeDraft,
   type KnowledgeState,
 } from "@/lib/okf/schema"
-import {
-  nextVersion,
-  validateChanges,
-  validatePublicationDependencies,
-} from "@/lib/okf/engine"
+import { nextVersion, validateChanges } from "@/lib/okf/engine"
 import { getMadagascarDropdownOptions } from "@/lib/madagascar-bsc-server"
 import {
   correctionLearningKey,
@@ -24,6 +20,11 @@ import {
   parseCorrectionLearning,
   type VisibleCorrectionLearning,
 } from "@/lib/okf/correction-learning"
+import { buildOkfBundle, buildOkfSearchIndex } from "@/lib/okf/bundle"
+import {
+  publishKnowledgeDraft,
+  saveKnowledgeDraft,
+} from "@/lib/okf/write-service"
 
 export async function GET() {
   try {
@@ -98,22 +99,83 @@ export async function GET() {
         ? normalizeCorrectionLearning(result.learning)
         : undefined
       const country = typeof result?.country === "string" ? result.country : ""
-      if (learning?.version !== 1 || !learning.verified || !country) continue
-      const key = correctionLearningKey(country, learning)
+      if (learning?.version !== 1 || !country) continue
+      const visibleLearning =
+        learning.basis === "reasoned inference" &&
+        (learning.occurrences ?? 0) < 2
+          ? normalizeCorrectionLearning({ ...learning, verified: false })
+          : learning
+      const key = correctionLearningKey(country, visibleLearning)
       if (learnedKeys.has(key)) continue
       learnedKeys.add(key)
       sourceLearnings.push({
-        ...learning,
+        ...visibleLearning,
         country,
         createdAt: String(entry.created_at),
       })
     }
+    const patternRequests = new Map<string, Set<string>>()
     for (const correction of corrections.data ?? []) {
       const learning = parseCorrectionLearning(correction.reason)
       const country = countries.get(String(correction.request_id)) ?? ""
-      if (!learning?.verified || !country) continue
+      const signature = learning?.relatedTarget
+        ? `relation:${learning.relatedTarget}`
+        : learning?.verified && learning.missedReason && learning.documentType
+          ? `document:${learning.documentType}`
+          : ""
+      if (!learning || !country || !signature) continue
+      const key = `${country.toLocaleLowerCase()}:${learning.target.toLocaleLowerCase()}:${signature.toLocaleLowerCase()}`
+      const requestIds = patternRequests.get(key) ?? new Set<string>()
+      requestIds.add(String(correction.request_id))
+      patternRequests.set(key, requestIds)
+    }
+    for (const correction of corrections.data ?? []) {
+      const parsedLearning = parseCorrectionLearning(correction.reason)
+      const country = countries.get(String(correction.request_id)) ?? ""
+      if (!parsedLearning || !country) continue
+      const signature = parsedLearning.relatedTarget
+        ? `relation:${parsedLearning.relatedTarget}`
+        : parsedLearning.verified &&
+            parsedLearning.missedReason &&
+            parsedLearning.documentType
+          ? `document:${parsedLearning.documentType}`
+          : ""
+      const patternKey = `${country.toLocaleLowerCase()}:${parsedLearning.target.toLocaleLowerCase()}:${signature.toLocaleLowerCase()}`
+      const occurrences = signature
+        ? (patternRequests.get(patternKey)?.size ?? 0)
+        : 0
+      const learning =
+        occurrences >= 2
+          ? normalizeCorrectionLearning({
+              ...parsedLearning,
+              verified: true,
+              basis: "reasoned inference",
+              occurrences,
+              reasoning: parsedLearning.relatedTarget
+                ? `${parsedLearning.label} matched ${parsedLearning.relatedLabel || parsedLearning.relatedTarget} on ${occurrences} independent requests.`
+                : `${parsedLearning.missedReason} This was verified on ${occurrences} independent requests.`,
+              reproduction: parsedLearning.relatedTarget
+                ? `Use the current request's ${parsedLearning.relatedLabel || parsedLearning.relatedTarget} value only when the same relationship is supported.`
+                : `Check ${parsedLearning.documentType} for the same label, section, or format before marking ${parsedLearning.label} missing.`,
+            })
+          : parsedLearning
       const key = correctionLearningKey(country, learning)
-      if (learnedKeys.has(key)) continue
+      if (learnedKeys.has(key)) {
+        const existingIndex = sourceLearnings.findIndex(
+          (item) => correctionLearningKey(item.country, item) === key
+        )
+        const existing = sourceLearnings[existingIndex]
+        const rank = (item: VisibleCorrectionLearning) =>
+          (item.occurrences ?? 0) >= 2 ? 3 : item.verified ? 2 : 1
+        const candidate = {
+          ...learning,
+          country,
+          createdAt: String(correction.created_at),
+        }
+        if (existing && rank(candidate) > rank(existing))
+          sourceLearnings[existingIndex] = candidate
+        continue
+      }
       learnedKeys.add(key)
       sourceLearnings.push({
         ...learning,
@@ -125,6 +187,8 @@ export async function GET() {
       {
         ok: true,
         state,
+        bundle: buildOkfBundle(state),
+        searchIndex: buildOkfSearchIndex(state),
         drafts: drafts.data,
         history: history.data,
         intake: intake.data,
@@ -134,6 +198,38 @@ export async function GET() {
           return typeof country === "string" && country.trim()
             ? [country.trim()]
             : []
+        }),
+        layoutDefinitions: (layouts.data ?? []).flatMap((row) => {
+          const layout = row.layout as {
+            country?: unknown
+            fields?: { sourceDocument?: unknown }[]
+          } | null
+          if (typeof layout?.country !== "string" || !layout.country.trim())
+            return []
+          return [
+            {
+              country: layout.country.trim(),
+              fields: (layout.fields ?? []).flatMap((field) => {
+                const value = field as Record<string, unknown>
+                return typeof value.id === "string" &&
+                  typeof value.label === "string" &&
+                  typeof value.sourceDocument === "string" &&
+                  value.sourceDocument.trim()
+                  ? [
+                      {
+                        id: value.id,
+                        label: value.label,
+                        sourceDocument: value.sourceDocument.trim(),
+                        instruction:
+                          typeof value.instruction === "string"
+                            ? value.instruction
+                            : "",
+                      },
+                    ]
+                  : []
+              }),
+            },
+          ]
         }),
         options,
         userId: session.user.id,
@@ -186,14 +282,8 @@ export async function POST(request: Request) {
     }
     if (body.action === "save") {
       const input = draftInputSchema.parse(body.draft)
-      const state = await readKnowledge(client)
-      if (state.generation !== input.baseGeneration)
-        throw new OkfError(
-          "Published content changed. Refresh the comparison before saving.",
-          409
-        )
-      const changes = validateChanges(state, input.changes)
-      if (!changes.length) {
+      const saved = await saveKnowledgeDraft(client, input)
+      if (saved.duplicate) {
         if (input.expectedEdit > 0) {
           const discarded = await client.rpc("okf_draft_action", {
             p_id: input.id,
@@ -208,16 +298,7 @@ export async function POST(request: Request) {
           message: "Already covered",
         })
       }
-      const { data, error } = await client.rpc("okf_save_draft", {
-        p_id: input.id,
-        p_expected_edit: input.expectedEdit,
-        p_base_generation: input.baseGeneration,
-        p_changes: changes,
-        p_reason: input.reason,
-        p_source: input.source,
-      })
-      databaseError(error)
-      return Response.json({ ok: true, draft: data })
+      return Response.json({ ok: true, draft: saved.draft })
     }
     if (body.action === "preview" || body.action === "publish") {
       const id = z.string().uuid().parse(body.id)
@@ -249,18 +330,11 @@ export async function POST(request: Request) {
             }
           }),
         })
-      if (
-        body.token !== preview.token ||
-        preview.state.generation !== preview.draft.base_generation
-      )
-        throw new OkfError("Comparison is stale. Refresh before approval.", 409)
-      validatePublicationDependencies(preview.state, changes)
-      const result = await client.rpc("okf_publish", {
-        p_id: id,
-        p_token: z.string().min(1).parse(body.token),
+      const publication = await publishKnowledgeDraft(client, {
+        id,
+        token: z.string().min(1).parse(body.token),
       })
-      databaseError(result.error)
-      return Response.json({ ok: true, publication: result.data })
+      return Response.json({ ok: true, publication })
     }
     if (body.action === "discard") {
       const result = await client.rpc("okf_draft_action", {

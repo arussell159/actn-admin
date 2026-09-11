@@ -2,18 +2,17 @@
 
 import { useState } from "react"
 import { Switch } from "@base-ui/react/switch"
-import { ArrowDownIcon, ArrowUpIcon, Trash2Icon } from "lucide-react"
+import { ArrowDownIcon, ArrowUpIcon, PlusIcon, Trash2Icon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Field, FieldLabel } from "@/components/ui/field"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+  Combobox,
+  ComboboxContent,
+  ComboboxItem,
+  ComboboxTrigger,
+} from "@/components/ui/combobox"
 import {
   Sheet,
   SheetContent,
@@ -52,31 +51,177 @@ function Choice({
   options: { value: string; label: string }[]
   onChange: (value: string) => void
 }) {
+  const selectedLabel =
+    options.find((option) => option.value === value)?.label ?? value
   return (
     <Field className="gap-1.5">
       <FieldLabel>{label}</FieldLabel>
-      <Select
+      <Combobox
+        items={options}
         value={value}
         onValueChange={(value) => {
           if (value !== null) onChange(value)
         }}
       >
-        <SelectTrigger aria-label={label} className="w-full">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
+        <ComboboxTrigger aria-label={label}>{selectedLabel}</ComboboxTrigger>
+        <ComboboxContent>
           {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
+            <ComboboxItem key={option.value} value={option.value}>
               {option.label}
-            </SelectItem>
+            </ComboboxItem>
           ))}
-        </SelectContent>
-      </Select>
+        </ComboboxContent>
+      </Combobox>
     </Field>
   )
 }
 const named = (values: readonly string[]) =>
-  values.map((value) => ({ value, label: value }))
+  values.map((value) => ({
+    value,
+    label: value === "Not set" ? "Not Set" : value,
+  }))
+
+type GoodsColumnDraft = {
+  key: string
+  label: string
+  control: CertificateField["control"]
+  options: string
+}
+
+const goodsControlOptions = [
+  { value: "text", label: "Text" },
+  { value: "number", label: "Number" },
+  { value: "date", label: "Date" },
+  { value: "select", label: "Dropdown" },
+  { value: "textarea", label: "Long Text" },
+]
+
+function GoodsColumnsEditor({
+  columns,
+  onChange,
+}: {
+  columns: GoodsColumnDraft[]
+  onChange: (columns: GoodsColumnDraft[]) => void
+}) {
+  function updateColumn(
+    index: number,
+    change: Partial<Omit<GoodsColumnDraft, "key">>
+  ) {
+    onChange(
+      columns.map((column, columnIndex) =>
+        columnIndex === index ? { ...column, ...change } : column
+      )
+    )
+  }
+
+  function moveColumn(index: number, direction: -1 | 1) {
+    const target = index + direction
+    if (target < 0 || target >= columns.length) return
+    const next = [...columns]
+    ;[next[index], next[target]] = [next[target], next[index]]
+    onChange(next)
+  }
+
+  return (
+    <div className="grid gap-3">
+      {columns.map((column, index) => (
+        <div key={column.key} className="grid gap-3 rounded-lg border p-3">
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem_auto]">
+            <Field className="gap-1.5">
+              <FieldLabel>Column Name</FieldLabel>
+              <Input
+                aria-label={`Column ${index + 1} name`}
+                placeholder="Description"
+                value={column.label}
+                onChange={(event) =>
+                  updateColumn(index, { label: event.target.value })
+                }
+              />
+            </Field>
+            <Choice
+              label="Field Type"
+              value={column.control}
+              options={goodsControlOptions}
+              onChange={(value) =>
+                updateColumn(index, {
+                  control: value as CertificateField["control"],
+                  options: value === "select" ? column.options : "",
+                })
+              }
+            />
+            <div className="flex items-end gap-1">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Move ${column.label || `column ${index + 1}`} up`}
+                disabled={index === 0}
+                onClick={() => moveColumn(index, -1)}
+              >
+                <ArrowUpIcon />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Move ${column.label || `column ${index + 1}`} down`}
+                disabled={index === columns.length - 1}
+                onClick={() => moveColumn(index, 1)}
+              >
+                <ArrowDownIcon />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Remove ${column.label || `column ${index + 1}`}`}
+                className="text-destructive"
+                onClick={() =>
+                  onChange(
+                    columns.filter((_, columnIndex) => columnIndex !== index)
+                  )
+                }
+              >
+                <Trash2Icon />
+              </Button>
+            </div>
+          </div>
+          {column.control === "select" ? (
+            <Field className="gap-1.5">
+              <FieldLabel>Dropdown Options</FieldLabel>
+              <Textarea
+                aria-label={`${column.label || `Column ${index + 1}`} dropdown options`}
+                placeholder={"Option one\nOption two\nOption three"}
+                value={column.options}
+                onChange={(event) =>
+                  updateColumn(index, { options: event.target.value })
+                }
+              />
+              <p className="text-sm text-muted-foreground">
+                Enter one option per line.
+              </p>
+            </Field>
+          ) : null}
+        </div>
+      ))}
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() =>
+          onChange([
+            ...columns,
+            {
+              key: `goods-column-${Date.now()}`,
+              label: "",
+              control: "text",
+              options: "",
+            },
+          ])
+        }
+      >
+        <PlusIcon />
+        Add Column
+      </Button>
+    </div>
+  )
+}
 
 function DividerSwitch({
   checked,
@@ -149,6 +294,33 @@ export function CertificateLayoutDialog({
   const [newOptions, setNewOptions] = useState("")
   const [newGroupName, setNewGroupName] = useState("")
   const [newGroupColumns, setNewGroupColumns] = useState(1)
+  const [newGroupKind, setNewGroupKind] = useState<"fields" | "invoice-items">(
+    "fields"
+  )
+  const [goodsColumns, setGoodsColumns] = useState<GoodsColumnDraft[]>([
+    {
+      key: "goods-column-1",
+      label: "",
+      control: "text",
+      options: "",
+    },
+  ])
+  const [editGoodsColumns, setEditGoodsColumns] = useState<GoodsColumnDraft[]>(
+    () =>
+      group?.kind === "invoice-items"
+        ? group.fields.map((placement) => {
+            const goodsField = available.find(
+              (field) => field.id === placement.fieldId
+            )
+            return {
+              key: placement.fieldId,
+              label: placement.label || goodsField?.label || "",
+              control: goodsField?.control ?? "text",
+              options: goodsField?.options.join("\n") ?? "",
+            }
+          })
+        : []
+  )
   const [newGroupSeparator, setNewGroupSeparator] = useState(false)
   const [country, setCountry] = useState("")
   const [target, setTarget] = useState(
@@ -206,6 +378,7 @@ export function CertificateLayoutDialog({
         fields.forEach((placement) => {
           delete placement.row
           delete placement.column
+          delete placement.rowColumns
         })
       }
     })
@@ -245,6 +418,70 @@ export function CertificateLayoutDialog({
     })
     onClose()
   }
+  function saveGoodsTable() {
+    if (!group || group.kind !== "invoice-items") return
+    const columns = editGoodsColumns.filter(
+      (column) =>
+        column.label.trim() &&
+        (column.control !== "select" ||
+          column.options.split("\n").some((option) => option.trim()))
+    )
+    if (!columns.length || columns.length !== editGoodsColumns.length) return
+    edit((draft) => {
+      const editedGroup = layoutGroups(draft).find(
+        (item) => item.group.id === group.id
+      )?.group
+      if (!editedGroup) return
+      const previousIds = editedGroup.fields.map(
+        (placement) => placement.fieldId
+      )
+      editedGroup.fields = columns.map((column) => {
+        const existingId = previousIds.includes(column.key)
+          ? column.key
+          : undefined
+        if (existingId) {
+          const existingField = draft.fields.find(
+            (field) => field.id === existingId
+          )
+          if (existingField) {
+            existingField.label = column.label.trim()
+            existingField.control = column.control
+            existingField.options =
+              column.control === "select"
+                ? column.options
+                    .split("\n")
+                    .map((option) => option.trim())
+                    .filter(Boolean)
+                : []
+          }
+          return { fieldId: existingId, span: 1 }
+        }
+        const fieldId = "invoiceItems.custom-" + crypto.randomUUID()
+        draft.fields.push({
+          id: fieldId,
+          label: column.label.trim(),
+          control: column.control,
+          options:
+            column.control === "select"
+              ? column.options
+                  .split("\n")
+                  .map((option) => option.trim())
+                  .filter(Boolean)
+              : [],
+          sourceDocument: "",
+          instruction: "",
+        })
+        return { fieldId, span: 1 }
+      })
+      const retainedIds = new Set(
+        editedGroup.fields.map((placement) => placement.fieldId)
+      )
+      draft.fields = draft.fields.filter(
+        (field) => !previousIds.includes(field.id) || retainedIds.has(field.id)
+      )
+    })
+    onClose()
+  }
   return (
     <Sheet
       open
@@ -256,13 +493,21 @@ export function CertificateLayoutDialog({
         className="overflow-y-auto p-4 sm:max-w-md"
         onKeyDown={(event) => {
           if (
-            placement &&
             event.key === "Enter" &&
             !event.shiftKey &&
             event.target instanceof HTMLInputElement
           ) {
+            if (selection.kind === "add") return
             event.preventDefault()
-            onClose()
+            if (
+              selection.kind === "new-group" ||
+              selection.kind === "duplicate" ||
+              (selection.kind === "group" && group?.kind === "invoice-items")
+            )
+              event.currentTarget
+                .querySelector<HTMLButtonElement>("[data-primary-action]")
+                ?.click()
+            else onClose()
           }
         }}
       >
@@ -321,10 +566,63 @@ export function CertificateLayoutDialog({
                 }
               />
             </Field>
+            {group.kind === "invoice-items" ? (
+              <>
+                <Choice
+                  label="Block Type"
+                  value="invoice-items"
+                  options={[{ value: "invoice-items", label: "Goods Table" }]}
+                  onChange={() => undefined}
+                />
+                <Field>
+                  <FieldLabel>What Does Each Goods Line Require?</FieldLabel>
+                  <GoodsColumnsEditor
+                    columns={editGoodsColumns}
+                    onChange={setEditGoodsColumns}
+                  />
+                </Field>
+                <DividerSwitch
+                  checked={group.separator}
+                  onCheckedChange={(checked) =>
+                    updateGroup((group) => {
+                      group.separator = checked
+                    })
+                  }
+                />
+                <Button
+                  data-primary-action
+                  disabled={
+                    !editGoodsColumns.length ||
+                    editGoodsColumns.some(
+                      (column) =>
+                        !column.label.trim() ||
+                        (column.control === "select" &&
+                          !column.options
+                            .split("\n")
+                            .some((option) => option.trim()))
+                    )
+                  }
+                  onClick={saveGoodsTable}
+                >
+                  Save Goods Table
+                </Button>
+              </>
+            ) : null}
           </>
         ) : null}
         {selection.kind === "new-group" ? (
           <>
+            <Choice
+              label="Block type"
+              value={newGroupKind}
+              options={[
+                { value: "fields", label: "Form Fields" },
+                { value: "invoice-items", label: "Goods Table" },
+              ]}
+              onChange={(value) =>
+                setNewGroupKind(value as "fields" | "invoice-items")
+              }
+            />
             <Field>
               <FieldLabel>Name</FieldLabel>
               <Input
@@ -335,11 +633,24 @@ export function CertificateLayoutDialog({
                 autoFocus
               />
             </Field>
-            <CertificateColumnControl
-              label="Block columns"
-              value={newGroupColumns}
-              onChange={setNewGroupColumns}
-            />
+            {newGroupKind === "invoice-items" ? (
+              <Field>
+                <FieldLabel>What does each goods line require?</FieldLabel>
+                <GoodsColumnsEditor
+                  columns={goodsColumns}
+                  onChange={setGoodsColumns}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Define the name and field type for every table column.
+                </p>
+              </Field>
+            ) : (
+              <CertificateColumnControl
+                label="Block columns"
+                value={newGroupColumns}
+                onChange={setNewGroupColumns}
+              />
+            )}
             <DividerSwitch
               checked={newGroupSeparator}
               onCheckedChange={setNewGroupSeparator}
@@ -349,18 +660,57 @@ export function CertificateLayoutDialog({
                 Cancel
               </Button>
               <Button
+                data-primary-action
+                disabled={
+                  newGroupKind === "invoice-items" &&
+                  (!goodsColumns.length ||
+                    goodsColumns.some(
+                      (column) =>
+                        !column.label.trim() ||
+                        (column.control === "select" &&
+                          !column.options
+                            .split("\n")
+                            .some((option) => option.trim()))
+                    ))
+                }
                 onClick={() => {
                   edit((draft) => {
                     const section = draft.sections.find(
                       (section) => section.id === selection.id
                     )
                     if (!section) return
-                    section.groups.push({
+                    const createdGroup = {
                       ...newLayoutGroup(section.columns),
-                      title: newGroupName.trim(),
-                      columns: newGroupColumns,
+                      title:
+                        newGroupName.trim() ||
+                        (newGroupKind === "invoice-items" ? "Goods" : ""),
+                      kind: newGroupKind,
+                      columns:
+                        newGroupKind === "invoice-items" ? 1 : newGroupColumns,
                       separator: newGroupSeparator,
-                    })
+                    }
+                    if (newGroupKind === "invoice-items") {
+                      for (const column of goodsColumns) {
+                        const fieldId =
+                          "invoiceItems.custom-" + crypto.randomUUID()
+                        draft.fields.push({
+                          id: fieldId,
+                          label: column.label.trim(),
+                          control: column.control,
+                          options:
+                            column.control === "select"
+                              ? column.options
+                                  .split("\n")
+                                  .map((option) => option.trim())
+                                  .filter(Boolean)
+                              : [],
+                          sourceDocument: "",
+                          instruction: "",
+                        })
+                        createdGroup.fields.push({ fieldId, span: 1 })
+                      }
+                    }
+                    section.groups.push(createdGroup)
                   })
                   onClose()
                 }}
@@ -395,10 +745,10 @@ export function CertificateLayoutDialog({
                   value={field.control}
                   options={[
                     { value: "text", label: "Text" },
-                    { value: "textarea", label: "Text area" },
+                    { value: "textarea", label: "Text Area" },
                     { value: "number", label: "Number" },
                     { value: "date", label: "Date" },
-                    { value: "select", label: "Drop-down" },
+                    { value: "select", label: "Drop-Down" },
                   ]}
                   onChange={(value) =>
                     updateField((field) => {
@@ -489,10 +839,10 @@ export function CertificateLayoutDialog({
               value={newControl}
               options={[
                 { value: "text", label: "Text" },
-                { value: "textarea", label: "Text area" },
+                { value: "textarea", label: "Text Area" },
                 { value: "number", label: "Number" },
                 { value: "date", label: "Date" },
-                { value: "select", label: "Drop-down" },
+                { value: "select", label: "Drop-Down" },
               ]}
               onChange={(value) =>
                 setNewControl(value as CertificateField["control"])
@@ -563,6 +913,7 @@ export function CertificateLayoutDialog({
               onChange={(event) => setCountry(event.target.value)}
             />
             <Button
+              data-primary-action
               disabled={
                 !country.trim() ||
                 country.trim().toLowerCase() === layout.country.toLowerCase()
@@ -610,7 +961,13 @@ export function CertificateLayoutDialog({
                 <Trash2Icon />
               </Button>
             </div>
-            <Button onClick={onClose}>Done</Button>
+            <Button
+              onClick={
+                group?.kind === "invoice-items" ? saveGoodsTable : onClose
+              }
+            >
+              Done
+            </Button>
           </div>
         ) : null}
       </SheetContent>
