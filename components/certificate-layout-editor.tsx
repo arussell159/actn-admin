@@ -1,5 +1,5 @@
 "use client"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   DndContext,
   DragOverlay,
@@ -37,6 +37,11 @@ import {
   type LayoutSelection,
 } from "@/components/certificate-layout-dialog"
 import { cachePublishedLayout } from "@/lib/certificate-layout/client"
+import {
+  deleteCertificateLayoutDraft,
+  loadCertificateLayoutDraft,
+  saveCertificateLayoutDraft,
+} from "@/lib/certificate-layout/draft-client"
 import {
   acceptsField,
   appendImportedPage,
@@ -104,7 +109,11 @@ export function CertificateLayoutEditor({
   const [view, setView] = useState<"edit" | "preview">("edit")
   const [dragged, setDragged] = useState<string | null>(null)
   const [draftReady, setDraftReady] = useState(false)
-  const draftKey = "actn-layout-draft-" + (record?.country_key ?? "new")
+  const draftKey = record?.country_key ?? "new"
+  const draftEdit = useRef(0)
+  const lastSavedDraft = useRef("")
+  const draftSaveChain = useRef<Promise<void>>(Promise.resolve())
+  const publishing = useRef(false)
   const dirty =
     !base || stableSignature(layout) !== stableSignature(base.layout)
   const stale = !!record && !!base && record.revision !== base.revision
@@ -112,34 +121,67 @@ export function CertificateLayoutEditor({
     onCountryNameChange?.(layout.country)
   }, [layout.country, onCountryNameChange])
   useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(draftKey) || "null")
-      const parsed = certificateLayoutSchema.safeParse(saved?.layout)
-      if (parsed.success && saved.revision === (record?.revision ?? 0))
-        setLayout(editableCertificateLayout(parsed.data))
-    } catch {
-      /* Draft caching is optional. */
+    let active = true
+    void loadCertificateLayoutDraft(draftKey)
+      .then((saved) => {
+        if (!active || !saved) return
+        if (saved.base_revision !== (record?.revision ?? 0)) {
+          setError("The shared draft is based on an older layout revision.")
+          return
+        }
+        draftEdit.current = saved.edit
+        lastSavedDraft.current = stableSignature(saved.layout)
+        setLayout(editableCertificateLayout(saved.layout))
+      })
+      .catch((error) => {
+        if (active)
+          setError(
+            error instanceof Error
+              ? error.message
+              : "Could not load the shared layout draft."
+          )
+      })
+      .finally(() => {
+        if (active) setDraftReady(true)
+      })
+    return () => {
+      active = false
     }
-    setDraftReady(true)
     // The parent keys this editor by country; remote revisions must not overwrite edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   useEffect(() => {
     if (!dirty || !draftReady) return
-    const persist = () => {
-      try {
-        localStorage.setItem(
-          draftKey,
-          JSON.stringify({ layout, revision: base?.revision ?? 0 })
-        )
-      } catch {
-        /* Preserve the in-memory draft. */
-      }
-    }
-    persist()
+    const parsed = certificateLayoutSchema.safeParse(layout)
+    const signature = stableSignature(layout)
+    if (signature === lastSavedDraft.current) return
+    const timer = window.setTimeout(() => {
+      if (!parsed.success || publishing.current) return
+      draftSaveChain.current = draftSaveChain.current
+        .catch(() => undefined)
+        .then(async () => {
+          if (publishing.current) return
+          const saved = await saveCertificateLayoutDraft({
+            draftKey,
+            layout: parsed.data,
+            baseRevision: base?.revision ?? 0,
+            expectedEdit: draftEdit.current,
+          })
+          draftEdit.current = saved.edit
+          lastSavedDraft.current = signature
+        })
+        .catch((error) => {
+          setError(
+            error instanceof Error
+              ? error.message
+              : "Could not save the shared layout draft."
+          )
+        })
+    }, 750)
     const warn = (event: BeforeUnloadEvent) => event.preventDefault()
     window.addEventListener("beforeunload", warn)
     return () => {
+      clearTimeout(timer)
       window.removeEventListener("beforeunload", warn)
     }
   }, [layout, dirty, draftKey, base, draftReady])
@@ -166,9 +208,22 @@ export function CertificateLayoutEditor({
       setError(parsed.error.issues.map((issue) => issue.message).join(" "))
       return
     }
+    publishing.current = true
     setBusy(true)
     setError("")
     try {
+      await draftSaveChain.current
+      const signature = stableSignature(parsed.data)
+      if (signature !== lastSavedDraft.current) {
+        const savedDraft = await saveCertificateLayoutDraft({
+          draftKey,
+          layout: parsed.data,
+          baseRevision: base?.revision ?? 0,
+          expectedEdit: draftEdit.current,
+        })
+        draftEdit.current = savedDraft.edit
+        lastSavedDraft.current = signature
+      }
       const response = await fetch("/api/okf/layouts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -183,11 +238,8 @@ export function CertificateLayoutEditor({
       const row = layoutRecordSchema.parse(result.row)
       setBase(row)
       setLayout(row.layout)
-      try {
-        localStorage.removeItem(draftKey)
-      } catch {
-        /* Nothing to clear. */
-      }
+      draftEdit.current = 0
+      lastSavedDraft.current = ""
       cachePublishedLayout(row)
       onPublished(row)
       setMessage(
@@ -198,6 +250,7 @@ export function CertificateLayoutEditor({
         error instanceof Error ? error.message : "Could not publish layout."
       )
     } finally {
+      publishing.current = false
       setBusy(false)
     }
   }
@@ -619,9 +672,19 @@ export function CertificateLayoutEditor({
                   setLayout(record?.layout ?? base.layout)
                   setBase(record ?? base)
                   setSelection(null)
-                  try {
-                    localStorage.removeItem(draftKey)
-                  } catch {}
+                  const expectedEdit = draftEdit.current || undefined
+                  draftEdit.current = 0
+                  lastSavedDraft.current = ""
+                  void deleteCertificateLayoutDraft(
+                    draftKey,
+                    expectedEdit
+                  ).catch((error) =>
+                    setError(
+                      error instanceof Error
+                        ? error.message
+                        : "Could not discard the shared layout draft."
+                    )
+                  )
                 }
               : undefined
           }

@@ -156,6 +156,17 @@ export const layoutRecordSchema = z.object({
   updated_by: z.string().nullable(),
 })
 export type CertificateLayoutRecord = z.infer<typeof layoutRecordSchema>
+export const layoutDraftRecordSchema = z.object({
+  draft_key: identifier,
+  layout: certificateLayoutSchema.transform(editableCertificateLayout),
+  base_revision: z.number().int().nonnegative(),
+  edit: z.number().int().positive(),
+  updated_at: z.string(),
+  updated_by: z.string().nullable(),
+})
+export type CertificateLayoutDraftRecord = z.infer<
+  typeof layoutDraftRecordSchema
+>
 export const layoutCatalogSchema = z.object({
   rows: z.array(layoutRecordSchema).max(300),
 })

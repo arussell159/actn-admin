@@ -46,6 +46,10 @@ import {
   cacheDeletedLayout,
   useCertificateLayouts,
 } from "@/lib/certificate-layout/client"
+import {
+  loadCertificateLayoutDraft,
+  saveCertificateLayoutDraft,
+} from "@/lib/certificate-layout/draft-client"
 import { certificateLayoutsHref } from "@/lib/certificate-layout/routes"
 import {
   countryKey,
@@ -72,6 +76,7 @@ export function CertificateLayoutSettings() {
   const catalog = useCertificateLayouts()
   const [draftCountryName, setDraftCountryName] = useState("")
   const [newCountryReady, setNewCountryReady] = useState(false)
+  const [newCountryLoading, setNewCountryLoading] = useState(false)
   const [copying, setCopying] = useState<CertificateLayoutRecord>()
   const [copyCountry, setCopyCountry] = useState("")
   const [confirmDeleteKey, setConfirmDeleteKey] = useState("")
@@ -98,10 +103,27 @@ export function CertificateLayoutSettings() {
 
   useEffect(() => {
     if (params.get("country") !== "new") return
-    try {
-      setNewCountryReady(Boolean(localStorage.getItem("actn-layout-draft-new")))
-    } catch {
-      setNewCountryReady(false)
+    let active = true
+    setNewCountryLoading(true)
+    void loadCertificateLayoutDraft("new")
+      .then((draft) => {
+        if (!active) return
+        setNewCountryReady(Boolean(draft))
+        setDraftCountryName(draft?.layout.country ?? "")
+      })
+      .catch((error) => {
+        if (active)
+          setError(
+            error instanceof Error
+              ? error.message
+              : "Could not load the shared country draft."
+          )
+      })
+      .finally(() => {
+        if (active) setNewCountryLoading(false)
+      })
+    return () => {
+      active = false
     }
   }, [params])
 
@@ -117,15 +139,29 @@ export function CertificateLayoutSettings() {
   }
 
   function startNewCountry() {
-    try {
-      localStorage.removeItem("actn-layout-draft-new")
-    } catch {}
     setDraftCountryName("")
     setNewCountryReady(false)
     navigate("new")
   }
 
-  function createCountryCopy() {
+  async function createSharedNewDraft(layout: CertificateLayoutRecord["layout"]) {
+    setError("")
+    const existing = await loadCertificateLayoutDraft("new")
+    if (existing)
+      throw new Error(
+        "A shared new-country draft already exists. Open it before starting another."
+      )
+    await saveCertificateLayoutDraft({
+      draftKey: "new",
+      layout,
+      baseRevision: 0,
+      expectedEdit: 0,
+    })
+    setDraftCountryName(layout.country)
+    setNewCountryReady(true)
+  }
+
+  async function createCountryCopy() {
     const name = copyCountry.trim()
     if (!copying || !name) return
     const layout = {
@@ -134,18 +170,17 @@ export function CertificateLayoutSettings() {
       aliases: [],
     }
     try {
-      localStorage.setItem(
-        "actn-layout-draft-new",
-        JSON.stringify({ layout, revision: 0 })
+      await createSharedNewDraft(layout)
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Could not save the shared country draft."
       )
-    } catch {
-      setError("This browser could not save the new country draft.")
       return
     }
     setCopying(undefined)
     setCopyCountry("")
-    setDraftCountryName(name)
-    setNewCountryReady(true)
     navigate("new")
   }
 
@@ -336,7 +371,7 @@ export function CertificateLayoutSettings() {
                 className="contents"
                 onSubmit={(event) => {
                   event.preventDefault()
-                  createCountryCopy()
+                  void createCountryCopy()
                 }}
               >
                 <DialogHeader>
@@ -382,6 +417,16 @@ export function CertificateLayoutSettings() {
     )
   }
 
+  if (key === "new" && newCountryLoading) {
+    return (
+      <PageFrame header={<SiteHeader title="New country" />}>
+        <p className="px-4 py-5 text-sm text-muted-foreground lg:px-6">
+          Loading shared draft…
+        </p>
+      </PageFrame>
+    )
+  }
+
   if (key === "new" && !newCountryReady) {
     return (
       <PageFrame
@@ -411,12 +456,13 @@ export function CertificateLayoutSettings() {
           <CertificateCountrySetup
             onCountryNameChange={setDraftCountryName}
             onGenerated={(layout) => {
-              localStorage.setItem(
-                "actn-layout-draft-new",
-                JSON.stringify({ layout, revision: 0 })
+              void createSharedNewDraft(layout).catch((error) =>
+                setError(
+                  error instanceof Error
+                    ? error.message
+                    : "Could not save the shared country draft."
+                )
               )
-              setDraftCountryName(layout.country)
-              setNewCountryReady(true)
             }}
           />
         </div>
@@ -503,13 +549,15 @@ export function CertificateLayoutSettings() {
           }
           onPublished={(row) => navigate(row.country_key, true)}
           onDuplicate={(layout) => {
-            localStorage.setItem(
-              "actn-layout-draft-new",
-              JSON.stringify({ layout, revision: 0 })
-            )
-            setDraftCountryName(layout.country)
-            setNewCountryReady(true)
-            navigate("new")
+            void createSharedNewDraft(layout)
+              .then(() => navigate("new"))
+              .catch((error) =>
+                setError(
+                  error instanceof Error
+                    ? error.message
+                    : "Could not save the shared country draft."
+                )
+              )
           }}
         />
       </div>

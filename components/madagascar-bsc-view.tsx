@@ -1440,6 +1440,7 @@ function Requests({
   const selectedId = searchParams.get("id") ?? ""
   const [requests, setRequests] = React.useState<MadagascarRequest[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
+  const [loadError, setLoadError] = React.useState("")
   const [searchQuery, setSearchQuery] = React.useState("")
   const [selectedFilter, setSelectedFilter] = React.useState("all")
   const [confirmDeleteId, setConfirmDeleteId] = React.useState("")
@@ -1457,7 +1458,17 @@ function Requests({
       refreshing = true
       try {
         const next = await listMadagascarRequests()
-        if (mounted) setRequests(next)
+        if (mounted) {
+          setRequests(next)
+          setLoadError("")
+        }
+      } catch (error) {
+        if (mounted)
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : "Could not load certificate requests from the database."
+          )
       } finally {
         refreshing = false
         if (mounted) setIsLoading(false)
@@ -1600,6 +1611,12 @@ function Requests({
         onSearchQueryChange={setSearchQuery}
         onSelectedFilterChange={setSelectedFilter}
       />
+
+      {loadError ? (
+        <p role="alert" className="text-sm text-destructive">
+          {loadError}
+        </p>
+      ) : null}
 
       {isLoading ? (
         <div className="grid gap-3 rounded-lg border bg-background p-4">

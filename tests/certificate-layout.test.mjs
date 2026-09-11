@@ -305,6 +305,8 @@ test("layout cache checks the full catalogue, reuses it and cannot roll back a j
   adapter.require = (id) =>
     id === "./schema"
       ? require("../lib/certificate-layout/schema.ts")
+      : id === "@/lib/client"
+        ? { createClient: () => ({}) }
       : original(id)
   adapter._compile(
     ts.transpileModule(fs.readFileSync(filename, "utf8"), {
@@ -317,17 +319,11 @@ test("layout cache checks the full catalogue, reuses it and cannot roll back a j
   )
   const old = {
     window: globalThis.window,
-    localStorage: globalThis.localStorage,
     fetch: globalThis.fetch,
   }
-  const stored = new Map()
   let calls = 0
   let pending
   globalThis.window = new EventTarget()
-  globalThis.localStorage = {
-    getItem: (key) => stored.get(key) ?? null,
-    setItem: (key, value) => stored.set(key, value),
-  }
   globalThis.fetch = async () => {
     calls++
     return pending
@@ -351,10 +347,6 @@ test("layout cache checks the full catalogue, reuses it and cannot roll back a j
     cachePublishedLayout({ ...createMadagascarLayout(), revision: 2 })
     resolve(new Response(null, { status: 304 }))
     assert.equal((await reload)[0].revision, 2)
-    assert.equal(
-      JSON.parse(stored.get("actn-certificate-layouts-v1")).rows[0].revision,
-      2
-    )
     pending = new Promise((done) => {
       resolve = done
     })
@@ -364,10 +356,6 @@ test("layout cache checks the full catalogue, reuses it and cannot roll back a j
       Response.json({ rows: [{ ...createMadagascarLayout(), revision: 2 }] })
     )
     assert.deepEqual(await staleReload, [])
-    assert.deepEqual(
-      JSON.parse(stored.get("actn-certificate-layouts-v1")).rows,
-      []
-    )
   } finally {
     for (const [key, value] of Object.entries(old)) {
       if (value === undefined) delete globalThis[key]

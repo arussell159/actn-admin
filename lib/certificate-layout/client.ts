@@ -1,9 +1,9 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { createClient } from "@/lib/client"
 import { layoutCatalogSchema, type CertificateLayoutRecord } from "./schema"
 
-const storageKey = "actn-certificate-layouts-v1"
 const changedEvent = "actn-certificate-layouts-changed"
 let memory:
   | { rows: CertificateLayoutRecord[]; etag: string; checkedAt: number }
@@ -11,20 +11,6 @@ let memory:
 let inFlight: Promise<CertificateLayoutRecord[]> | undefined
 const deletedRevisions = new Map<string, number>()
 function cached() {
-  if (memory) return memory
-  if (typeof window === "undefined") return undefined
-  try {
-    const value = JSON.parse(localStorage.getItem(storageKey) || "null")
-    const result = layoutCatalogSchema.safeParse(value)
-    if (result.success)
-      memory = {
-        rows: result.data.rows,
-        etag: typeof value.etag === "string" ? value.etag : "",
-        checkedAt: 0,
-      }
-  } catch {
-    /* Storage can be unavailable in private browsing. */
-  }
   return memory
 }
 function remember(rows: CertificateLayoutRecord[], etag: string) {
@@ -50,11 +36,6 @@ function remember(rows: CertificateLayoutRecord[], etag: string) {
     etag = ""
   }
   memory = { rows, etag, checkedAt: Date.now() }
-  try {
-    localStorage.setItem(storageKey, JSON.stringify({ rows, etag }))
-  } catch {
-    /* Memory caching still works. */
-  }
   window.dispatchEvent(new Event(changedEvent))
   return rows
 }
@@ -108,7 +89,7 @@ export function useCertificateLayouts() {
       if (active) setRows(cached()?.rows ?? [])
     }
     const refresh = () => {
-      void loadCertificateLayouts()
+      void loadCertificateLayouts(true)
         .then((result) => {
           if (active) {
             setRows(result)
@@ -122,15 +103,20 @@ export function useCertificateLayouts() {
           if (active) setLoading(false)
         })
     }
-    const storage = (event: StorageEvent) => {
-      if (event.key === storageKey) {
-        memory = undefined
-        sync()
-        refresh()
-      }
-    }
+    const client = createClient()
+    const channel = client
+      .channel("shared-certificate-layouts")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "okf_certificate_layouts",
+        },
+        refresh
+      )
+      .subscribe()
     window.addEventListener(changedEvent, sync)
-    window.addEventListener("storage", storage)
     window.addEventListener("focus", refresh)
     refresh()
     const interval = window.setInterval(() => {
@@ -139,8 +125,8 @@ export function useCertificateLayouts() {
     return () => {
       active = false
       clearInterval(interval)
+      void client.removeChannel(channel)
       window.removeEventListener(changedEvent, sync)
-      window.removeEventListener("storage", storage)
       window.removeEventListener("focus", refresh)
     }
   }, [])

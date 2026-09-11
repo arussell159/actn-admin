@@ -427,6 +427,14 @@ test("migration is additive, approval is atomic and corrections retain identity 
   assert.match(sql, /for update/)
   assert.match(sql, /before_pages,after_pages,proposer,approver/)
   assert.match(sql, /before_value,after_value,reason,actor/)
+  const layoutsSql = fs.readFileSync(
+    new URL("../supabase-certificate-layouts.sql", import.meta.url),
+    "utf8"
+  )
+  assert.match(layoutsSql, /okf_certificate_layout_drafts/)
+  assert.match(layoutsSql, /okf_save_certificate_layout_draft/)
+  assert.match(layoutsSql, /Draft changed\. Reload before saving\./)
+  assert.match(layoutsSql, /supabase_realtime add table public\.okf_certificate_layouts/)
 })
 
 test("field corrections retain verified source evidence for bounded OKF learning", () => {
@@ -784,26 +792,6 @@ test("upload adapter persists exact published revisions and maps approved extrac
   )
 })
 
-test("development access is restricted to development localhost hosts", () => {
-  const { isOkfDevelopment } = require("../lib/okf/development-access.ts")
-  for (const host of [
-    "localhost:3000",
-    "127.0.0.1:3000",
-    "[::1]:3000",
-    "app.localhost:3000",
-  ]) {
-    assert.equal(isOkfDevelopment(host, "development"), true)
-    assert.equal(isOkfDevelopment(host, "production"), false)
-  }
-  for (const host of [
-    "example.com",
-    "localhost.example.com",
-    "",
-    "192.168.1.10",
-  ])
-    assert.equal(isOkfDevelopment(host, "development"), false)
-})
-
 test("local Bill of Lading text resolves the consignee country without AI", async () => {
   const Module = require("node:module")
   const path = require("node:path")
@@ -1137,108 +1125,5 @@ test("OpenAI sends PDFs as high-detail input files and maps strict extraction re
   } finally {
     if (previousKey === undefined) delete process.env.OPENAI_API_KEY
     else process.env.OPENAI_API_KEY = previousKey
-  }
-})
-
-test("local development persists drafts, exact approval and evidence without a staff session", async () => {
-  const os = require("node:os"),
-    path = require("node:path"),
-    fsp = require("node:fs/promises")
-  const {
-    createOkfDevelopmentClient,
-  } = require("../lib/okf/development-store.ts")
-  const { includePublicationDependencies } = require("../lib/okf/engine.ts")
-  const directory = await fsp.mkdtemp(
-    path.join(os.tmpdir(), "okf-development-test-")
-  )
-  try {
-    const client = createOkfDevelopmentClient(directory)
-    const getState = async (c) => {
-      const result = await c
-        .from("okf_state")
-        .select("*")
-        .eq("id", true)
-        .single()
-      assert.equal(result.error, null)
-      return result.data
-    }
-    let state = await getState(client)
-    const page = state.pages.find((p) => p.title === "Commercial Invoice")
-    const changes = includePublicationDependencies(state, [
-      { pageId: page.id, content: page.content, level: "minor" },
-    ])
-    assert.ok(
-      changes.every(
-        (c) =>
-          ![
-            "standards",
-            "shared-process",
-            "mg-system",
-            "mg-exceptions",
-          ].includes(c.pageId)
-      )
-    )
-    const id = crypto.randomUUID()
-    const args = {
-      p_id: id,
-      p_expected_edit: 0,
-      p_base_generation: 0,
-      p_changes: changes,
-      p_reason: "Synthetic local workflow verification",
-      p_source: "Existing app",
-    }
-    const saved = await client.rpc("okf_save_draft", args)
-    assert.equal(saved.error, null)
-    const reloaded = createOkfDevelopmentClient(directory)
-    assert.equal(
-      (await reloaded.from("okf_drafts").select("*").eq("id", id).single()).data
-        .id,
-      id
-    )
-    assert.equal((await getState(reloaded)).generation, 0)
-    const preview = (await client.rpc("okf_preview", { p_id: id })).data
-    assert.ok(preview.token)
-    assert.ok(
-      (await client.rpc("okf_publish", { p_id: id, p_token: "wrong" })).error
-    )
-    assert.equal(
-      (await client.rpc("okf_publish", { p_id: id, p_token: preview.token }))
-        .error,
-      null
-    )
-    state = await getState(reloaded)
-    assert.equal(state.generation, 1)
-    assert.equal(state.pages.find((p) => p.id === page.id).version, "1.0.0")
-    assert.ok(
-      (await client.rpc("okf_publish", { p_id: id, p_token: preview.token }))
-        .error
-    )
-    assert.equal(
-      (await client.from("okf_publications").select("*")).data.length,
-      1
-    )
-    const document = new File(["Local synthetic evidence"], "evidence.txt", {
-      type: "text/plain",
-    })
-    assert.equal(
-      (
-        await client.storage
-          .from("okf-evidence")
-          .upload("evidence/test/example.txt", document)
-      ).error,
-      null
-    )
-    const downloaded = await reloaded.storage
-      .from("okf-evidence")
-      .download("evidence/test/example.txt")
-    assert.equal(downloaded.error, null)
-    assert.equal(await downloaded.data.text(), "Local synthetic evidence")
-  } finally {
-    assert.equal(
-      path.dirname(path.resolve(directory)),
-      path.resolve(os.tmpdir())
-    )
-    assert.ok(path.basename(directory).startsWith("okf-development-test-"))
-    await fsp.rm(directory, { recursive: true, force: true })
   }
 })

@@ -1,11 +1,5 @@
 import "server-only"
 import { createClient } from "@/lib/server"
-import { headers } from "next/headers"
-import { isOkfDevelopment } from "./development-access"
-import {
-  createOkfDevelopmentClient,
-  developmentActor,
-} from "./development-store"
 import { pageSchema, type KnowledgeState } from "./schema"
 
 export class OkfError extends Error {
@@ -19,15 +13,6 @@ export class OkfError extends Error {
 export async function okfSession(
   permission: "read" | "edit" | "publish" = "read"
 ) {
-  if (isOkfDevelopment((await headers()).get("host") ?? "")) {
-    return {
-      client: createOkfDevelopmentClient(),
-      user: { id: developmentActor },
-      canEdit: true,
-      canPublish: true,
-      development: true,
-    }
-  }
   const client = await createClient()
   const {
     data: { user },

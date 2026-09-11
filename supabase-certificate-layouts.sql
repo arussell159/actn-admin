@@ -16,16 +16,36 @@ create table if not exists public.okf_certificate_layout_history (
   updated_by uuid,
   unique(country_key, revision)
 );
+create table if not exists public.okf_certificate_layout_drafts (
+  draft_key text primary key check (draft_key ~ '^[a-z][a-z0-9-]{0,79}$'),
+  layout jsonb not null,
+  base_revision integer not null check (base_revision >= 0),
+  edit integer not null check (edit > 0),
+  updated_at timestamptz not null default now(),
+  updated_by uuid
+);
 alter table public.okf_certificate_layouts enable row level security;
 alter table public.okf_certificate_layout_history enable row level security;
+alter table public.okf_certificate_layout_drafts enable row level security;
+drop policy if exists layout_read on public.okf_certificate_layouts;
+drop policy if exists layout_history_read on public.okf_certificate_layout_history;
+drop policy if exists layout_draft_read on public.okf_certificate_layout_drafts;
+create policy layout_read on public.okf_certificate_layouts for select to authenticated using(true);
+create policy layout_history_read on public.okf_certificate_layout_history for select to authenticated using(true);
+create policy layout_draft_read on public.okf_certificate_layout_drafts for select to authenticated using(true);
+revoke all on public.okf_certificate_layouts, public.okf_certificate_layout_history, public.okf_certificate_layout_drafts from public, anon, authenticated;
+grant select on public.okf_certificate_layouts, public.okf_certificate_layout_history, public.okf_certificate_layout_drafts to authenticated;
+
 do $$ begin
-  if not exists(select 1 from pg_policies where schemaname='public' and tablename='okf_certificate_layouts' and policyname='layout_read') then
-    create policy layout_read on public.okf_certificate_layouts for select to authenticated using(true);
-    create policy layout_history_read on public.okf_certificate_layout_history for select to authenticated using(true);
+  if exists(select 1 from pg_publication where pubname='supabase_realtime') then
+    if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='okf_certificate_layouts') then
+      alter publication supabase_realtime add table public.okf_certificate_layouts;
+    end if;
+    if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='okf_certificate_layout_drafts') then
+      alter publication supabase_realtime add table public.okf_certificate_layout_drafts;
+    end if;
   end if;
 end $$;
-revoke all on public.okf_certificate_layouts, public.okf_certificate_layout_history from public, anon, authenticated;
-grant select on public.okf_certificate_layouts, public.okf_certificate_layout_history to authenticated;
 
 create or replace function public.okf_country_key(value text) returns text
 language sql immutable set search_path='' as $$
@@ -98,6 +118,36 @@ begin
   end loop;
 end; $$;
 
+create or replace function public.okf_save_certificate_layout_draft(p_draft_key text,p_layout jsonb,p_base_revision integer,p_expected_edit integer) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare previous public.okf_certificate_layout_drafts; saved public.okf_certificate_layout_drafts;
+begin
+  if not public.okf_can_edit() then raise exception 'Editing permission required'; end if;
+  if p_draft_key is null or p_draft_key !~ '^[a-z][a-z0-9-]{0,79}$' or p_base_revision is null or p_base_revision<0
+    or p_expected_edit is null or p_expected_edit<0 or octet_length(p_layout::text)>400000 then raise exception 'Invalid layout draft'; end if;
+  perform public.okf_validate_certificate_layout(p_layout);
+  perform pg_advisory_xact_lock(702668012);
+  select * into previous from public.okf_certificate_layout_drafts where draft_key=p_draft_key for update;
+  if coalesce(previous.edit,0)<>p_expected_edit then raise exception 'Draft changed. Reload before saving.'; end if;
+  insert into public.okf_certificate_layout_drafts(draft_key,layout,base_revision,edit,updated_by)
+    values(p_draft_key,p_layout,p_base_revision,p_expected_edit+1,auth.uid())
+    on conflict(draft_key) do update set layout=excluded.layout,base_revision=excluded.base_revision,edit=excluded.edit,updated_at=now(),updated_by=excluded.updated_by
+    returning * into saved;
+  return to_jsonb(saved);
+end; $$;
+
+create or replace function public.okf_delete_certificate_layout_draft(p_draft_key text,p_expected_edit integer default null) returns boolean
+language plpgsql security definer set search_path='' as $$
+begin
+  if not public.okf_can_edit() then raise exception 'Editing permission required'; end if;
+  if p_draft_key is null or p_draft_key !~ '^[a-z][a-z0-9-]{0,79}$' then raise exception 'Invalid layout draft'; end if;
+  if p_expected_edit is not null and exists(select 1 from public.okf_certificate_layout_drafts where draft_key=p_draft_key and edit<>p_expected_edit) then
+    raise exception 'Draft changed. Reload before deleting.';
+  end if;
+  delete from public.okf_certificate_layout_drafts where draft_key=p_draft_key;
+  return found;
+end; $$;
+
 create or replace function public.okf_publish_certificate_layout(p_country_key text,p_layout jsonb,p_expected_revision integer) returns jsonb
 language plpgsql security definer set search_path='' as $$
 declare previous public.okf_certificate_layouts; saved public.okf_certificate_layouts; names text[];
@@ -116,6 +166,7 @@ begin
   insert into public.okf_certificate_layouts(country_key,layout,revision,updated_by) values(p_country_key,p_layout,p_expected_revision+1,auth.uid())
     on conflict(country_key) do update set layout=excluded.layout,revision=excluded.revision,updated_at=now(),updated_by=excluded.updated_by returning * into saved;
   insert into public.okf_certificate_layout_history(country_key,layout,revision,updated_at,updated_by) values(saved.country_key,saved.layout,saved.revision,saved.updated_at,saved.updated_by);
+  delete from public.okf_certificate_layout_drafts where draft_key=p_country_key or (p_expected_revision=0 and draft_key='new');
   return to_jsonb(saved);
 end; $$;
 create or replace function public.okf_delete_certificate_layout(p_country_key text,p_expected_revision integer) returns boolean
@@ -125,11 +176,13 @@ begin
   if p_expected_revision is null or p_expected_revision<1 or p_country_key is null or p_country_key !~ '^[a-z][a-z0-9-]{0,79}$' then raise exception 'Invalid layout country or revision'; end if;
   perform pg_advisory_xact_lock(702668011);
   delete from public.okf_certificate_layouts where country_key=p_country_key and revision=p_expected_revision;
-  if found then return true; end if;
+  if found then delete from public.okf_certificate_layout_drafts where draft_key=p_country_key; return true; end if;
   if exists(select 1 from public.okf_certificate_layouts where country_key=p_country_key) then raise exception 'Layout changed. Reload before deleting.'; end if;
   raise exception 'Layout not found.';
 end; $$;
-revoke all on function public.okf_country_key(text),public.okf_validate_certificate_layout(jsonb),public.okf_publish_certificate_layout(text,jsonb,integer),public.okf_delete_certificate_layout(text,integer) from public,anon;
+revoke all on function public.okf_country_key(text),public.okf_validate_certificate_layout(jsonb),public.okf_save_certificate_layout_draft(text,jsonb,integer,integer),public.okf_delete_certificate_layout_draft(text,integer),public.okf_publish_certificate_layout(text,jsonb,integer),public.okf_delete_certificate_layout(text,integer) from public,anon;
+grant execute on function public.okf_save_certificate_layout_draft(text,jsonb,integer,integer) to authenticated;
+grant execute on function public.okf_delete_certificate_layout_draft(text,integer) to authenticated;
 grant execute on function public.okf_publish_certificate_layout(text,jsonb,integer) to authenticated;
 grant execute on function public.okf_delete_certificate_layout(text,integer) to authenticated;
 
