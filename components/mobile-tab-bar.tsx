@@ -2,11 +2,12 @@
 
 import * as React from "react"
 import { createPortal } from "react-dom"
-import dynamic from "next/dynamic"
 import { usePathname } from "next/navigation"
+import { CloseButton } from "@heroui/react"
 import {
   BookOpenTextIcon,
   CalculatorIcon,
+  ChevronRightIcon,
   LayoutDashboardIcon,
   LibraryBigIcon,
   ListChecksIcon,
@@ -25,7 +26,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet"
-import { Separator } from "@/components/ui/separator"
 import {
   getMobileNavDockHrefs,
   saveMobileNavDockHrefs,
@@ -43,14 +43,6 @@ import { cn } from "@/lib/utils"
 import { bscCountryModules } from "@/lib/bsc-country-modules"
 import { settingsPages } from "@/lib/app-routes"
 
-const MobileNavCustomizer = dynamic(
-  () =>
-    import("@/components/mobile-nav-customizer").then(
-      (module) => module.MobileNavCustomizer
-    ),
-  { ssr: false }
-)
-
 const maxDockItems = 4
 
 const allModuleItems = [
@@ -59,49 +51,57 @@ const allModuleItems = [
     href: "/dashboard",
     icon: LayoutDashboardIcon,
     match: ["/", "/dashboard"],
+    section: "Main",
   },
   {
     label: "Month End",
     href: "/month-end",
     icon: HistoryIcon,
     match: ["/previous-month-ends", "/month-end", "/month-end/country"],
+    section: "Accounting",
   },
   {
     label: "Quote Tool",
     href: "/quote-tool",
     icon: CalculatorIcon,
     match: ["/quote-tool"],
+    section: "Utilities",
   },
   {
     label: "Notebook",
     href: "/information",
     icon: BookOpenTextIcon,
     match: ["/information"],
+    section: "Utilities",
   },
   {
     label: "New Month End",
     href: "/month-end/new",
     icon: PlusIcon,
     match: ["/month-end/new"],
+    section: "Accounting",
   },
   {
     label: "Knowledge Base",
     href: "/knowledge-base",
     icon: LibraryBigIcon,
     match: ["/knowledge-base"],
+    section: "Utilities",
   },
   ...bscCountryModules.flatMap((module) => [
     {
-      label: `${module.country} New Request`,
+      label: module.newRequestLabel,
       href: `${module.basePath}/new`,
       icon: ScanTextIcon,
       match: [`${module.basePath}/new`],
+      section: module.label,
     },
     {
-      label: `${module.country} Requests`,
+      label: module.requestsLabel,
       href: `${module.basePath}/requests`,
       icon: ListChecksIcon,
       match: [`${module.basePath}/requests`],
+      section: module.label,
     },
   ]),
   ...settingsPages.map((item) => ({
@@ -109,6 +109,7 @@ const allModuleItems = [
     href: item.href,
     icon: item.icon,
     match: [item.href],
+    section: item.section,
   })),
 ]
 
@@ -151,7 +152,6 @@ export function MobileTabBar() {
   const viewportBaselineHeightRef = React.useRef(0)
   const [isMoreOpen, setIsMoreOpen] = React.useState(false)
   const [dockHrefs, setDockHrefs] = React.useState(defaultDockHrefs)
-  const [isCustomizing, setIsCustomizing] = React.useState(false)
   const [isActiveIndicatorPressed, setIsActiveIndicatorPressed] =
     React.useState(false)
   const dockItems = dockHrefs
@@ -160,6 +160,14 @@ export function MobileTabBar() {
   const moreItems = allModuleItems.filter(
     (item) => !dockHrefs.includes(item.href)
   )
+  const moreItemGroups = Array.from(
+    moreItems.reduce((groups, item) => {
+      const sectionItems = groups.get(item.section) ?? []
+      sectionItems.push(item)
+      groups.set(item.section, sectionItems)
+      return groups
+    }, new Map<string, typeof moreItems>())
+  ).map(([label, items]) => ({ label, items }))
   const isMoreActive = moreItems.some((item) =>
     isActivePath(pathname, item.match)
   )
@@ -296,19 +304,6 @@ export function MobileTabBar() {
 
   function handleMoreOpenChange(open: boolean) {
     setIsMoreOpen(open)
-
-    if (open) {
-      setIsCustomizing(false)
-    }
-  }
-
-  function updateDock(nextDockHrefs: string[]) {
-    const cleanDockHrefs = nextDockHrefs
-      .filter((href) => allModuleItems.some((item) => item.href === href))
-      .slice(0, maxDockItems)
-
-    setDockHrefs(cleanDockHrefs)
-    void saveMobileNavDockHrefs(cleanDockHrefs).catch(() => {})
   }
 
   function prepareActiveIndicatorTransition() {
@@ -411,81 +406,60 @@ export function MobileTabBar() {
             <SheetContent
               side="bottom"
               showCloseButton={false}
-              className={cn(
-                "overflow-hidden px-0 pb-[calc(env(safe-area-inset-bottom)+1rem)]",
-                isCustomizing
-                  ? "max-h-[95svh] rounded-t-2xl"
-                  : "max-h-[82svh] rounded-t-2xl"
-              )}
+              className="h-[calc(100svh-0.75rem)] max-h-[calc(100svh-0.75rem)] overflow-hidden rounded-t-2xl px-0 pb-[calc(env(safe-area-inset-bottom)+1rem)]"
             >
-              <SheetHeader className="grid grid-cols-[1fr_auto_1fr] items-center px-5 pt-5 pb-2">
-                <SheetClose className="justify-self-start text-sm font-medium">
-                  Close
-                </SheetClose>
-                <SheetTitle className="text-center">
-                  {isCustomizing ? "Customize" : "More Settings"}
-                </SheetTitle>
-                <button
-                  type="button"
-                  className="justify-self-end text-sm font-medium text-primary disabled:text-muted-foreground"
-                  onClick={() => setIsCustomizing((current) => !current)}
-                >
-                  {isCustomizing ? "Done" : "Customize"}
-                </button>
-              </SheetHeader>
-              {isCustomizing ? (
-                <MobileNavCustomizer
-                  dockItems={dockItems}
-                  moreItems={moreItems}
-                  dockHrefs={dockHrefs}
-                  maxDockItems={maxDockItems}
-                  onDockHrefsChange={updateDock}
+              <SheetHeader className="flex flex-row items-center justify-between border-b px-5 py-4">
+                <SheetTitle>Menu</SheetTitle>
+                <CloseButton
+                  aria-label="Close menu"
+                  className="grid size-9 shrink-0 place-items-center rounded-full bg-muted p-0 leading-none text-foreground hover:bg-muted/80 [&_[data-slot=close-button-icon]]:size-4"
+                  onPress={() => setIsMoreOpen(false)}
                 />
-              ) : (
-                <div className="max-h-[62svh] overflow-auto px-3">
-                  {moreItems.map((item, index) => {
-                    const Icon = item.icon
-                    const isActive = isActivePath(pathname, item.match)
+              </SheetHeader>
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-6">
+                <div className="grid gap-5">
+                  {moreItemGroups.map((group) => (
+                    <section key={group.label} className="grid gap-2">
+                      <p className="px-1 text-xs font-medium text-muted-foreground">
+                        {group.label}
+                      </p>
+                      <div className="overflow-hidden rounded-2xl border bg-card">
+                        {group.items.map((item) => {
+                          const Icon = item.icon
+                          const isActive = isActivePath(pathname, item.match)
 
-                    return (
-                      <React.Fragment key={item.href}>
-                        {index > 0 ? <Separator /> : null}
-                        {settingsPages.some(
-                          (entry) => entry.href === item.href
-                        ) &&
-                        !settingsPages.some(
-                          (entry) => entry.href === moreItems[index - 1]?.href
-                        ) ? (
-                          <p className="px-3 pt-4 pb-1 text-xs font-medium text-muted-foreground">
-                            Settings
-                          </p>
-                        ) : null}
-                        <SheetClose
-                          render={
-                            <AppLink
-                              href={item.href}
-                              aria-current={isActive ? "page" : undefined}
-                              onClick={prepareActiveIndicatorTransition}
-                            />
-                          }
-                        >
-                          <span
-                            className={cn(
-                              "flex min-h-14 items-center gap-3 rounded-xl px-3 text-left transition-colors active:bg-muted",
-                              isActive && "bg-muted"
-                            )}
-                          >
-                            <Icon className="size-5 shrink-0 text-muted-foreground" />
-                            <span className="min-w-0 font-medium">
-                              {item.label}
-                            </span>
-                          </span>
-                        </SheetClose>
-                      </React.Fragment>
-                    )
-                  })}
+                          return (
+                            <SheetClose
+                              key={item.href}
+                              className="block w-full border-b last:border-b-0"
+                              render={
+                                <AppLink
+                                  href={item.href}
+                                  aria-current={isActive ? "page" : undefined}
+                                  onClick={prepareActiveIndicatorTransition}
+                                />
+                              }
+                            >
+                              <span
+                                className={cn(
+                                  "flex min-h-14 items-center gap-3 px-4 text-left transition-colors active:bg-muted",
+                                  isActive && "bg-muted"
+                                )}
+                              >
+                                <Icon className="size-5 shrink-0 text-muted-foreground" />
+                                <span className="min-w-0 flex-1 truncate font-medium">
+                                  {item.label}
+                                </span>
+                                <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground/60" />
+                              </span>
+                            </SheetClose>
+                          )
+                        })}
+                      </div>
+                    </section>
+                  ))}
                 </div>
-              )}
+              </div>
             </SheetContent>
           </Sheet>
         </div>

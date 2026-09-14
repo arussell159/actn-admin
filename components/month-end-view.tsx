@@ -9,6 +9,7 @@ import {
   CheckIcon,
   CheckCircle2Icon,
   ClipboardCheckIcon,
+  DollarSignIcon,
   DownloadIcon,
   FileCheck2Icon,
   FileTextIcon,
@@ -471,6 +472,7 @@ function MonthEndMetricCard({
   title,
   value,
   icon: Icon,
+  className,
   progress,
   caption,
   stats,
@@ -484,6 +486,7 @@ function MonthEndMetricCard({
   title: string
   value: string
   icon: React.ElementType
+  className?: string
   progress?: number
   caption?: string
   stats?: Array<{ label: string; value: string }>
@@ -497,10 +500,11 @@ function MonthEndMetricCard({
   return (
     <Card
       className={cn(
-        "relative gap-0 py-0 shadow-sm transition-colors",
+        "relative min-w-0 gap-0 py-0 shadow-sm transition-colors",
         onActivate && "hover:bg-muted/40",
         isActive && "bg-muted/20 ring-primary/40",
-        isActive && expandedContent && "sm:col-span-2 md:col-span-1"
+        isActive && expandedContent && "col-span-2 md:col-span-1",
+        className
       )}
     >
       {onIconActivate && iconActionLabel ? (
@@ -508,12 +512,12 @@ function MonthEndMetricCard({
           type="button"
           variant="outline"
           size="sm"
-          className="absolute top-3 right-3 z-10 bg-background"
+          className="absolute top-3 right-3 z-10 size-8 bg-background px-0 sm:w-auto sm:px-3"
           disabled={iconActionDisabled}
           onClick={onIconActivate}
         >
           <Icon />
-          {iconActionLabel}
+          <span className="hidden sm:inline">{iconActionLabel}</span>
         </Button>
       ) : null}
       <div
@@ -546,29 +550,29 @@ function MonthEndMetricCard({
       >
         <CardHeader
           className={cn(
-            "flex flex-row items-center justify-between px-4",
-            onIconActivate && iconActionLabel && "pr-24"
+            "flex flex-row items-center justify-between px-3 sm:px-4",
+            onIconActivate && iconActionLabel && "pr-14 sm:pr-24"
           )}
         >
-          <CardDescription className="font-medium text-foreground">
+          <CardDescription className="truncate font-medium whitespace-nowrap text-foreground">
             {title}
           </CardDescription>
           {!onIconActivate ? (
             <Icon className="size-4 text-muted-foreground" />
           ) : null}
         </CardHeader>
-        <CardContent className="grid gap-3 px-4">
+        <CardContent className="grid gap-3 px-3 sm:px-4">
           {stats?.length ? (
-            <div className="grid grid-cols-2 divide-x">
+            <div className="grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0">
               {stats.map((stat) => (
                 <div
                   key={stat.label}
-                  className="grid gap-0.5 px-3 first:pl-0 last:pr-0"
+                  className="flex min-w-0 items-center justify-between gap-2 py-1.5 first:pt-0 last:pb-0 sm:grid sm:gap-0.5 sm:px-3 sm:py-0 sm:first:pl-0 sm:last:pr-0"
                 >
-                  <span className="text-2xl font-semibold tabular-nums">
+                  <span className="order-2 text-lg font-semibold tabular-nums sm:order-1 sm:text-2xl">
                     {stat.value}
                   </span>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="order-1 min-w-0 truncate text-xs whitespace-nowrap text-muted-foreground sm:order-2">
                     {stat.label}
                   </span>
                 </div>
@@ -576,7 +580,9 @@ function MonthEndMetricCard({
             </div>
           ) : (
             <>
-              <div className="text-2xl font-semibold tabular-nums">{value}</div>
+              <div className="text-xl font-semibold tabular-nums sm:text-2xl">
+                {value}
+              </div>
               {caption ? (
                 <div className="text-xs text-muted-foreground">{caption}</div>
               ) : null}
@@ -605,6 +611,222 @@ function MonthEndMetricCard({
         </div>
       ) : null}
     </Card>
+  )
+}
+
+function RevenueSparkline({
+  previousRevenue,
+  currentRevenue,
+}: {
+  previousRevenue: number
+  currentRevenue: number
+}) {
+  const maximumRevenue = Math.max(previousRevenue, currentRevenue, 1)
+  const previousY = 42 - (previousRevenue / maximumRevenue) * 34
+  const currentY = 42 - (currentRevenue / maximumRevenue) * 34
+
+  return (
+    <svg
+      viewBox="0 0 120 48"
+      className="h-14 w-24 shrink-0 overflow-visible sm:h-20 sm:w-44"
+      role="img"
+      aria-label="Revenue month over month"
+    >
+      <defs>
+        <linearGradient id="revenue-sparkline-fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.2" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path
+        d={`M 6 ${previousY} L 114 ${currentY} L 114 46 L 6 46 Z`}
+        fill="url(#revenue-sparkline-fill)"
+        className="text-primary"
+      />
+      <path
+        d={`M 6 ${previousY} L 114 ${currentY}`}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        className="text-primary"
+      />
+      <circle
+        cx="6"
+        cy={previousY}
+        r="3"
+        fill="currentColor"
+        className="text-primary"
+      />
+      <circle
+        cx="114"
+        cy={currentY}
+        r="3"
+        fill="currentColor"
+        className="text-primary"
+      />
+    </svg>
+  )
+}
+
+const countryRevenueNameByMapCode: Record<string, string> = {
+  CD: "DR Congo",
+  CG: "Republic of Congo",
+  CI: "Ivory Coast",
+  GN: "Republic of Guinea",
+  GW: "Guinea Bissau",
+}
+
+function CountryRevenueHeatMap({ countries }: { countries: InvoiceSummary[] }) {
+  const [hoveredCountry, setHoveredCountry] = React.useState<{
+    name: string
+    invoiceCount: number
+    amount: number
+    x: number
+    y: number
+  } | null>(null)
+  const summariesByName = new Map(
+    countries.map((country) => [country.name, country])
+  )
+  const maximumAmount = Math.max(
+    ...countries.map((country) => country.amount),
+    1
+  )
+
+  return (
+    <div className="relative min-h-0 flex-1 overflow-hidden">
+      <svg
+        viewBox="845 245 500 490"
+        role="img"
+        aria-label="Invoice value by African country"
+        className="h-full min-h-72 w-full touch-manipulation p-3"
+        onPointerLeave={(event) => {
+          if (event.pointerType === "mouse") setHoveredCountry(null)
+        }}
+      >
+        {simpleMapAfricaPaths.map((mapCountry) => {
+          const countryName =
+            countryRevenueNameByMapCode[mapCountry.code] ?? mapCountry.name
+          const summary = summariesByName.get(countryName)
+          const intensity = summary
+            ? 22 + Math.sqrt(summary.amount / maximumAmount) * 78
+            : 0
+
+          return (
+            <path
+              key={mapCountry.code}
+              d={mapCountry.path}
+              className={cn(
+                "stroke-background transition-[fill,filter]",
+                summary ? "cursor-default hover:brightness-90" : "fill-muted"
+              )}
+              style={
+                summary
+                  ? {
+                      fill: `color-mix(in oklch, var(--primary) ${intensity}%, var(--muted))`,
+                    }
+                  : undefined
+              }
+              strokeWidth="1.5"
+              tabIndex={summary ? 0 : undefined}
+              aria-label={
+                summary
+                  ? `${summary.name}: ${formatDashboardCurrency(summary.amount)}, ${summary.invoiceCount} invoices`
+                  : undefined
+              }
+              onPointerMove={(event) => {
+                if (!summary) {
+                  setHoveredCountry(null)
+                  return
+                }
+
+                const bounds =
+                  event.currentTarget.ownerSVGElement?.getBoundingClientRect()
+                if (!bounds) return
+
+                setHoveredCountry({
+                  name: summary.name,
+                  invoiceCount: summary.invoiceCount,
+                  amount: summary.amount,
+                  x: Math.max(
+                    8,
+                    Math.min(
+                      event.clientX - bounds.left + 12,
+                      bounds.width - 190
+                    )
+                  ),
+                  y: Math.max(
+                    8,
+                    Math.min(
+                      event.clientY - bounds.top + 12,
+                      bounds.height - 100
+                    )
+                  ),
+                })
+              }}
+              onPointerDown={(event) => {
+                if (!summary) return
+
+                const bounds =
+                  event.currentTarget.ownerSVGElement?.getBoundingClientRect()
+                if (!bounds) return
+
+                setHoveredCountry({
+                  name: summary.name,
+                  invoiceCount: summary.invoiceCount,
+                  amount: summary.amount,
+                  x: Math.max(
+                    8,
+                    Math.min(
+                      event.clientX - bounds.left + 12,
+                      bounds.width - 190
+                    )
+                  ),
+                  y: Math.max(
+                    8,
+                    Math.min(
+                      event.clientY - bounds.top + 12,
+                      bounds.height - 100
+                    )
+                  ),
+                })
+              }}
+              onFocus={() => {
+                if (!summary) return
+                setHoveredCountry({
+                  name: summary.name,
+                  invoiceCount: summary.invoiceCount,
+                  amount: summary.amount,
+                  x: 8,
+                  y: 8,
+                })
+              }}
+              onBlur={() => setHoveredCountry(null)}
+            />
+          )
+        })}
+      </svg>
+      {hoveredCountry ? (
+        <div
+          className="pointer-events-none absolute z-20 grid w-44 gap-1 rounded-lg border bg-popover/95 p-3 text-sm text-popover-foreground shadow-lg backdrop-blur-sm"
+          style={{ left: hoveredCountry.x, top: hoveredCountry.y }}
+        >
+          <div className="font-semibold">{hoveredCountry.name}</div>
+          <div className="flex items-center justify-between gap-3 text-muted-foreground">
+            <span>Value</span>
+            <span className="font-medium text-foreground tabular-nums">
+              {formatDashboardCurrency(hoveredCountry.amount)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-3 text-muted-foreground">
+            <span>Invoices</span>
+            <span className="font-medium text-foreground tabular-nums">
+              {hoveredCountry.invoiceCount}
+            </span>
+          </div>
+        </div>
+      ) : null}
+    </div>
   )
 }
 
@@ -967,7 +1189,8 @@ export function MonthEndView({ period }: { period?: string } = {}) {
     )
   const [activeDashboardMetric, setActiveDashboardMetric] =
     React.useState<DashboardMetricDetailId | null>(null)
-  const [showAllTopCustomers, setShowAllTopCustomers] = React.useState(false)
+  const [visibleTopCustomerCount, setVisibleTopCustomerCount] =
+    React.useState(5)
   const [showAllCountryMovers, setShowAllCountryMovers] = React.useState(false)
   const [topCustomerSort, setTopCustomerSort] =
     React.useState<(typeof topCustomerSortOptions)[number]>("Most Invoices")
@@ -1597,6 +1820,13 @@ export function MonthEndView({ period }: { period?: string } = {}) {
       amount: invoiceValueByDay.get(index + 1) ?? 0,
     })
   )
+  const currentMonthRevenue = monthlyValueByDay.reduce(
+    (total, item) => total + item.amount,
+    0
+  )
+  const averageOrderValue = chartedInvoiceIds.size
+    ? currentMonthRevenue / chartedInvoiceIds.size
+    : 0
   const previousMonthMetrics = (() => {
     const invoiceIds = new Set<string>()
     const revenue = includedPreviousMasterRecords.reduce((total, item) => {
@@ -1609,6 +1839,11 @@ export function MonthEndView({ period }: { period?: string } = {}) {
 
     return { revenue, invoiceCount: invoiceIds.size }
   })()
+  const revenueChangePercent = previousMonthMetrics.revenue
+    ? ((currentMonthRevenue - previousMonthMetrics.revenue) /
+        previousMonthMetrics.revenue) *
+      100
+    : undefined
   const countryProgressRows = checkableRows.map((row) => {
     const requiredTasks = getRequiredTasks(row)
     const done = requiredTasks.filter((task) =>
@@ -2601,7 +2836,9 @@ export function MonthEndView({ period }: { period?: string } = {}) {
         }}
       >
         <DropdownMenuTrigger
-          render={<HeaderActionMenuTrigger label="Month end actions" />}
+          render={
+            <HeaderActionMenuTrigger label="Month end actions" headerStyle />
+          }
         />
         <DropdownMenuContent align="end" className="min-w-56">
           <DropdownMenuItem render={<AppLink href="/previous-month-ends" />}>
@@ -2715,7 +2952,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
           />
         }
       >
-        <div className="@container/month-end flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6">
+        <div className="@container/month-end flex flex-1 flex-col gap-4 px-4 pt-4 pb-24 md:pb-4 lg:px-6">
           <Skeleton className="h-10 w-full rounded-lg md:hidden" />
           <MonthEndDashboardSkeleton />
         </div>
@@ -2783,7 +3020,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
         role="tabpanel"
         id="month-end-section"
         aria-labelledby={`month-end-section-${activeMonthEndSection}`}
-        className="@container/month-end flex flex-1 flex-col gap-4 px-4 py-4 lg:px-6"
+        className="@container/month-end flex flex-1 flex-col gap-4 px-4 pt-4 pb-24 md:pb-4 lg:px-6"
       >
         {masterUploadMessage ? (
           <p className="text-sm text-muted-foreground">{masterUploadMessage}</p>
@@ -2829,83 +3066,153 @@ export function MonthEndView({ period }: { period?: string } = {}) {
         </Tabs>
 
         {activeMonthEndSection === "dashboard" ? (
-          <div className="grid gap-6">
-            <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-              <MonthEndMetricCard
-                title="Overall Progress"
-                value={`${completion}%`}
-                icon={CheckCircle2Icon}
-                progress={completion}
-              />
-              <MonthEndMetricCard
-                title="Countries Complete"
-                value={`${completedCountryCount}/${checkableRows.length}`}
-                icon={Building2Icon}
-                isActive={activeDashboardMetric === "countries"}
-                expandedContent={renderDashboardMetricDetail("countries", true)}
-                onActivate={() =>
-                  setActiveDashboardMetric((current) =>
-                    current === "countries" ? null : "countries"
-                  )
-                }
-              />
-              <MonthEndMetricCard
-                title="Tasks"
-                value={`${supplementalTaskDone}/${supplementalTaskTotal}`}
-                icon={ListTodoIcon}
-                isActive={activeDashboardMetric === "shared-tasks"}
-                expandedContent={renderDashboardMetricDetail(
-                  "shared-tasks",
-                  true
-                )}
-                onActivate={() =>
-                  setActiveDashboardMetric((current) =>
-                    current === "shared-tasks" ? null : "shared-tasks"
-                  )
-                }
-              />
-              <MonthEndMetricCard
-                title="Customers"
-                value={`${customerSummaries.length}`}
-                stats={[
-                  { label: "Repeat", value: `${repeatCustomers.length}` },
-                  { label: "One-time", value: `${oneTimeCustomers.length}` },
-                ]}
-                icon={UserRoundCheckIcon}
-                isActive={activeDashboardMetric === "customers"}
-                expandedContent={renderDashboardMetricDetail("customers", true)}
-                onActivate={() =>
-                  setActiveDashboardMetric((current) =>
-                    current === "customers" ? null : "customers"
-                  )
-                }
-              />
-              <MonthEndMetricCard
-                title="Comments"
-                value={`${dashboardNotes.length}`}
-                stats={[
-                  {
-                    label: "Open",
-                    value: `${commentTaskTotal - commentTaskDone}`,
-                  },
-                  { label: "Complete", value: `${commentTaskDone}` },
-                ]}
-                icon={MessageSquareTextIcon}
-                iconActionLabel="Add"
-                iconActionDisabled={isClosed}
-                onIconActivate={() => {
-                  setDashboardHandoffDraft("")
-                  setDashboardHandoffSaveError("")
-                  setIsDashboardCommentDialogOpen(true)
-                }}
-                isActive={activeDashboardMetric === "comments"}
-                expandedContent={renderDashboardMetricDetail("comments", true)}
-                onActivate={() =>
-                  setActiveDashboardMetric((current) =>
-                    current === "comments" ? null : "comments"
-                  )
-                }
-              />
+          <div className="grid min-w-0 gap-4">
+            <section className="grid min-w-0 grid-cols-2 items-stretch gap-4 lg:grid-cols-4">
+              <Card className="col-span-2 min-h-56 min-w-0 gap-0 py-0 shadow-sm lg:row-span-2">
+                <CardHeader className="flex flex-row items-center justify-between px-5 pt-5 pb-2">
+                  <CardDescription className="font-medium text-foreground">
+                    Total Revenue
+                  </CardDescription>
+                  <DollarSignIcon className="size-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent className="flex flex-1 flex-col justify-between gap-6 px-4 pb-4 sm:px-5 sm:pb-5">
+                  <div className="flex items-center justify-between gap-3 sm:gap-6">
+                    <div className="min-w-0">
+                      <div className="text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl">
+                        {formatDashboardCurrency(currentMonthRevenue)}
+                      </div>
+                      <p
+                        className={cn(
+                          "mt-2 text-sm font-medium tabular-nums",
+                          revenueChangePercent === undefined
+                            ? "text-muted-foreground"
+                            : revenueChangePercent >= 0
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : "text-red-600 dark:text-red-400"
+                        )}
+                      >
+                        {revenueChangePercent === undefined
+                          ? "No Prior Month"
+                          : `${revenueChangePercent >= 0 ? "+" : ""}${revenueChangePercent.toFixed(1)}% vs Previous Month`}
+                      </p>
+                    </div>
+                    <RevenueSparkline
+                      previousRevenue={previousMonthMetrics.revenue}
+                      currentRevenue={currentMonthRevenue}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 border-t pt-4">
+                    <div className="pr-3 sm:pr-5">
+                      <p className="text-xs whitespace-nowrap text-muted-foreground sm:text-sm">
+                        Avg. Order Value
+                      </p>
+                      <p className="mt-1 text-lg font-semibold tabular-nums sm:text-xl">
+                        {formatDashboardCurrency(averageOrderValue)}
+                      </p>
+                    </div>
+                    <div className="border-l pl-3 sm:pl-5">
+                      <p className="text-xs whitespace-nowrap text-muted-foreground sm:text-sm">
+                        Total Invoices
+                      </p>
+                      <p className="mt-1 text-lg font-semibold tabular-nums sm:text-xl">
+                        {chartedInvoiceIds.size.toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <div className="contents">
+                <MonthEndMetricCard
+                  title="Countries"
+                  value={`${completedCountryCount}/${checkableRows.length}`}
+                  icon={Building2Icon}
+                  className={cn(
+                    activeDashboardMetric === "shared-tasks" && "hidden md:flex"
+                  )}
+                  isActive={activeDashboardMetric === "countries"}
+                  expandedContent={renderDashboardMetricDetail(
+                    "countries",
+                    true
+                  )}
+                  onActivate={() =>
+                    setActiveDashboardMetric((current) =>
+                      current === "countries" ? null : "countries"
+                    )
+                  }
+                />
+                <MonthEndMetricCard
+                  title="Tasks"
+                  value={`${supplementalTaskDone}/${supplementalTaskTotal}`}
+                  icon={ListTodoIcon}
+                  className={cn(
+                    activeDashboardMetric === "countries" && "hidden md:flex"
+                  )}
+                  isActive={activeDashboardMetric === "shared-tasks"}
+                  expandedContent={renderDashboardMetricDetail(
+                    "shared-tasks",
+                    true
+                  )}
+                  onActivate={() =>
+                    setActiveDashboardMetric((current) =>
+                      current === "shared-tasks" ? null : "shared-tasks"
+                    )
+                  }
+                />
+                <MonthEndMetricCard
+                  title="Customers"
+                  value={`${customerSummaries.length}`}
+                  className={cn(
+                    activeDashboardMetric === "comments" && "hidden md:flex"
+                  )}
+                  stats={[
+                    { label: "Repeat", value: `${repeatCustomers.length}` },
+                    { label: "One-time", value: `${oneTimeCustomers.length}` },
+                  ]}
+                  icon={UserRoundCheckIcon}
+                  isActive={activeDashboardMetric === "customers"}
+                  expandedContent={renderDashboardMetricDetail(
+                    "customers",
+                    true
+                  )}
+                  onActivate={() =>
+                    setActiveDashboardMetric((current) =>
+                      current === "customers" ? null : "customers"
+                    )
+                  }
+                />
+                <MonthEndMetricCard
+                  title="Comments"
+                  value={`${dashboardNotes.length}`}
+                  className={cn(
+                    activeDashboardMetric === "customers" && "hidden md:flex"
+                  )}
+                  stats={[
+                    {
+                      label: "Open",
+                      value: `${commentTaskTotal - commentTaskDone}`,
+                    },
+                    { label: "Complete", value: `${commentTaskDone}` },
+                  ]}
+                  icon={MessageSquareTextIcon}
+                  iconActionLabel="Add"
+                  iconActionDisabled={isClosed}
+                  onIconActivate={() => {
+                    setDashboardHandoffDraft("")
+                    setDashboardHandoffSaveError("")
+                    setIsDashboardCommentDialogOpen(true)
+                  }}
+                  isActive={activeDashboardMetric === "comments"}
+                  expandedContent={renderDashboardMetricDetail(
+                    "comments",
+                    true
+                  )}
+                  onActivate={() =>
+                    setActiveDashboardMetric((current) =>
+                      current === "comments" ? null : "comments"
+                    )
+                  }
+                />
+              </div>
             </section>
 
             {activeDashboardMetric ? (
@@ -2920,55 +3227,25 @@ export function MonthEndView({ period }: { period?: string } = {}) {
               </div>
             ) : null}
 
-            <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(18rem,1fr)]">
-              <MonthEndValueByDayChart
-                data={monthlyValueByDay}
-                invoiceCount={chartedInvoiceIds.size}
-                previousInvoiceCount={previousMonthMetrics.invoiceCount}
-                previousTotalRevenue={previousMonthMetrics.revenue}
-              />
+            <section className="grid min-w-0 items-stretch gap-4 lg:grid-cols-4">
+              <div className="min-w-0 lg:col-span-3 [&>[data-slot=card]]:h-full">
+                <MonthEndValueByDayChart data={monthlyValueByDay} />
+              </div>
 
-              <Card className="h-full gap-0 py-0 shadow-none">
+              <Card className="h-full min-w-0 gap-0 py-0 shadow-none">
                 <CardHeader className="px-4 pt-4 pb-3">
                   <CardTitle>Top Countries</CardTitle>
-                  <CardDescription>
-                    Highest invoice value this month
+                  <CardDescription className="truncate whitespace-nowrap">
+                    Invoice value this month
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="flex flex-1 flex-col px-0 pb-0">
+                <CardContent className="flex min-h-0 flex-1 flex-col px-0 pb-0">
                   {topCountries.length ? (
-                    <>
-                      <Table className="table-fixed">
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-1/2 pl-4">
-                              Country
-                            </TableHead>
-                            <TableHead className="w-1/4 text-center">
-                              Invoices
-                            </TableHead>
-                            <TableHead className="w-1/4 pr-4 text-center">
-                              Value
-                            </TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {topCountries.map((country) => (
-                            <TableRow key={country.name} className="h-12">
-                              <TableCell className="max-w-52 truncate pl-4 font-medium">
-                                {country.name}
-                              </TableCell>
-                              <TableCell className="text-center tabular-nums">
-                                {country.invoiceCount}
-                              </TableCell>
-                              <TableCell className="pr-4 text-center font-medium tabular-nums">
-                                {formatDashboardCurrency(country.amount)}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </>
+                    <div className="flex min-h-0 flex-1 border-t">
+                      <CountryRevenueHeatMap
+                        countries={currentCountrySummaries}
+                      />
+                    </div>
                   ) : (
                     <p className="flex-1 border-t px-4 py-6 text-sm text-muted-foreground">
                       No invoice data is available in this month&apos;s master
@@ -2979,12 +3256,12 @@ export function MonthEndView({ period }: { period?: string } = {}) {
               </Card>
             </section>
 
-            <section className="grid items-stretch gap-4 xl:grid-cols-2">
-              <Card className="h-full gap-0 py-0 shadow-none">
-                <CardHeader className="flex min-h-17 flex-row items-start justify-between gap-3 px-4 pt-4 pb-3">
+            <section className="grid min-w-0 items-stretch gap-4 lg:grid-cols-4">
+              <Card className="h-full min-w-0 gap-0 py-0 shadow-none lg:col-span-2">
+                <CardHeader className="flex min-h-17 flex-col items-stretch justify-between gap-3 px-4 pt-4 pb-3 sm:flex-row sm:items-start">
                   <div className="grid gap-1.5">
                     <CardTitle>Top Customers</CardTitle>
-                    <CardDescription>
+                    <CardDescription className="truncate whitespace-nowrap">
                       {topCustomerSort === "Most Invoices"
                         ? "Most invoices this month"
                         : "Highest invoice value this month"}
@@ -2999,13 +3276,13 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                         value === "Highest Value"
                       ) {
                         setTopCustomerSort(value)
-                        setShowAllTopCustomers(false)
+                        setVisibleTopCustomerCount(5)
                       }
                     }}
                   >
                     <ComboboxTrigger
                       aria-label="Sort top customers"
-                      className="h-7 w-auto min-w-36 shrink-0 cursor-pointer rounded-md px-2.5 text-sm"
+                      className="h-9 w-full cursor-pointer rounded-md px-2.5 text-sm sm:h-7 sm:w-auto sm:min-w-36 sm:shrink-0"
                     >
                       {topCustomerSort}
                     </ComboboxTrigger>
@@ -3024,36 +3301,65 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                 </CardHeader>
                 <CardContent className="flex flex-1 flex-col px-0 pb-0">
                   {topCustomers.length ? (
-                    <Table className="table-fixed">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-1/2 pl-4">Customer</TableHead>
-                          <TableHead className="w-1/4 text-center">
-                            Invoices
-                          </TableHead>
-                          <TableHead className="w-1/4 pr-4 text-center">
-                            Value
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
+                    <>
+                      <div className="divide-y border-t sm:hidden">
                         {topCustomers
-                          .slice(0, showAllTopCustomers ? undefined : 5)
+                          .slice(0, visibleTopCustomerCount)
                           .map((customer) => (
-                            <TableRow key={customer.name} className="h-12">
-                              <TableCell className="max-w-52 truncate pl-4 font-medium">
-                                {customer.name}
-                              </TableCell>
-                              <TableCell className="text-center tabular-nums">
-                                {customer.invoiceCount}
-                              </TableCell>
-                              <TableCell className="pr-4 text-center font-medium tabular-nums">
+                            <div
+                              key={customer.name}
+                              className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3"
+                            >
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-medium">
+                                  {customer.name}
+                                </div>
+                                <div className="mt-0.5 text-xs text-muted-foreground tabular-nums">
+                                  {customer.invoiceCount} invoices
+                                </div>
+                              </div>
+                              <div className="text-sm font-semibold tabular-nums">
                                 {formatDashboardCurrency(customer.amount)}
-                              </TableCell>
-                            </TableRow>
+                              </div>
+                            </div>
                           ))}
-                      </TableBody>
-                    </Table>
+                      </div>
+                      <Table
+                        className="table-fixed"
+                        containerClassName="hidden sm:block"
+                      >
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-1/2 pl-4">
+                              Customer
+                            </TableHead>
+                            <TableHead className="w-1/4 text-center">
+                              Invoices
+                            </TableHead>
+                            <TableHead className="w-1/4 pr-4 text-center">
+                              Value
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {topCustomers
+                            .slice(0, visibleTopCustomerCount)
+                            .map((customer) => (
+                              <TableRow key={customer.name} className="h-12">
+                                <TableCell className="max-w-52 truncate pl-4 font-medium">
+                                  {customer.name}
+                                </TableCell>
+                                <TableCell className="text-center tabular-nums">
+                                  {customer.invoiceCount}
+                                </TableCell>
+                                <TableCell className="pr-4 text-center font-medium tabular-nums">
+                                  {formatDashboardCurrency(customer.amount)}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                        </TableBody>
+                      </Table>
+                    </>
                   ) : (
                     <p className="flex-1 border-t px-4 py-6 text-sm text-muted-foreground">
                       No customer data is available in this month&apos;s master
@@ -3066,22 +3372,26 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                       variant="ghost"
                       className="mt-auto w-full rounded-none border-t"
                       onClick={() =>
-                        setShowAllTopCustomers((current) => !current)
+                        setVisibleTopCustomerCount((current) =>
+                          current >= topCustomers.length
+                            ? 5
+                            : Math.min(current + 5, topCustomers.length)
+                        )
                       }
                     >
-                      {showAllTopCustomers
+                      {visibleTopCustomerCount >= topCustomers.length
                         ? "Show fewer"
-                        : `Show ${topCustomers.length - 5} more`}
+                        : `Show ${Math.min(5, topCustomers.length - visibleTopCustomerCount)} more`}
                     </Button>
                   ) : null}
                 </CardContent>
               </Card>
 
-              <Card className="h-full gap-0 py-0 shadow-none">
-                <CardHeader className="flex min-h-17 flex-row items-start justify-between gap-3 px-4 pt-4 pb-3">
+              <Card className="h-full min-w-0 gap-0 py-0 shadow-none lg:col-span-2">
+                <CardHeader className="flex min-h-17 flex-col items-stretch justify-between gap-3 px-4 pt-4 pb-3 sm:flex-row sm:items-start">
                   <div className="grid gap-1.5">
                     <CardTitle>Biggest Movers</CardTitle>
-                    <CardDescription>
+                    <CardDescription className="truncate whitespace-nowrap">
                       {countryMoverSort === "Invoice Swing"
                         ? "Largest invoice swings from last month"
                         : "Largest value swings from last month"}
@@ -3102,7 +3412,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                   >
                     <ComboboxTrigger
                       aria-label="Sort biggest movers"
-                      className="h-7 w-auto min-w-36 shrink-0 cursor-pointer rounded-md px-2.5 text-sm"
+                      className="h-9 w-full cursor-pointer rounded-md px-2.5 text-sm sm:h-7 sm:w-auto sm:min-w-36 sm:shrink-0"
                     >
                       {countryMoverSort}
                     </ComboboxTrigger>
@@ -3121,24 +3431,75 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                 </CardHeader>
                 <CardContent className="flex flex-1 flex-col px-0 pb-0">
                   {sortedCountryMovers.length ? (
-                    <Table className="table-fixed">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-1/2 pl-4">Country</TableHead>
-                          <TableHead className="w-1/4 text-center">
-                            Invoices
-                          </TableHead>
-                          <TableHead className="w-1/4 pr-4 text-center">
-                            Value
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
+                    <>
+                      <div className="divide-y border-t sm:hidden">
                         {sortedCountryMovers
                           .slice(0, showAllCountryMovers ? undefined : 5)
-                          .map((country) => renderCountryMoverRow(country))}
-                      </TableBody>
-                    </Table>
+                          .map((country) => (
+                            <div
+                              key={country.name}
+                              className="grid gap-2 px-4 py-3"
+                            >
+                              <div className="truncate text-sm font-medium">
+                                {country.name}
+                              </div>
+                              <div className="grid grid-cols-2 gap-3 text-xs">
+                                <div>
+                                  <div className="text-muted-foreground">
+                                    Invoices
+                                  </div>
+                                  <div className="mt-0.5 font-semibold tabular-nums">
+                                    {country.invoiceCount}{" "}
+                                    <span
+                                      className={cn(
+                                        country.invoiceChange < 0
+                                          ? "text-destructive"
+                                          : country.invoiceChange > 0
+                                            ? "text-emerald-600 dark:text-emerald-400"
+                                            : "text-muted-foreground"
+                                      )}
+                                    >
+                                      {country.invoiceChange < 0 ? "↓" : "↑"}{" "}
+                                      {Math.abs(country.invoiceChange)}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-muted-foreground">
+                                    Value
+                                  </div>
+                                  <div className="mt-0.5 font-semibold tabular-nums">
+                                    {formatDashboardCurrency(country.amount)}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                      <Table
+                        className="table-fixed"
+                        containerClassName="hidden sm:block"
+                      >
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-1/2 pl-4">
+                              Country
+                            </TableHead>
+                            <TableHead className="w-1/4 text-center">
+                              Invoices
+                            </TableHead>
+                            <TableHead className="w-1/4 pr-4 text-center">
+                              Value
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {sortedCountryMovers
+                            .slice(0, showAllCountryMovers ? undefined : 5)
+                            .map((country) => renderCountryMoverRow(country))}
+                        </TableBody>
+                      </Table>
+                    </>
                   ) : (
                     <p className="flex-1 border-t px-4 py-6 text-sm text-muted-foreground">
                       {previousAnalyticsRecords.length

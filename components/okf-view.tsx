@@ -18,7 +18,7 @@ import {
 import { NotebookSkeleton } from "@/components/page-skeletons"
 import {
   SiteHeaderBackButton,
-  siteHeaderGlassButtonClassName,
+  SiteHeaderIconButton,
 } from "@/components/site-header"
 import {
   KnowledgeTree,
@@ -619,16 +619,11 @@ export function OkfView() {
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
-                  <Button
-                    variant="outline"
-                    size="icon-lg"
-                    className={siteHeaderGlassButtonClassName}
-                    aria-label="Knowledge Base actions"
-                  />
+                  <SiteHeaderIconButton label="Knowledge Base actions">
+                    <MoreHorizontalIcon />
+                  </SiteHeaderIconButton>
                 }
-              >
-                <MoreHorizontalIcon />
-              </DropdownMenuTrigger>
+              />
               <DropdownMenuContent align="end" className="min-w-52! p-1.5!">
                 {!folder && !updates ? (
                   <DropdownMenuItem

@@ -133,6 +133,15 @@ export type MadagascarAnalysis = {
   invoiceItems: MadagascarInvoiceItem[]
   issues: string[]
   missingCorrectionsMessage: string
+  recordDetails?: {
+    customerReference: string
+    correctionInvoiceNumber: string
+    zohoTicketId: string
+    agent: string
+    territory: string
+    ctnNumber: string
+    reviewedByAgent: boolean
+  }
 }
 
 export type MadagascarDocument = {
@@ -143,11 +152,36 @@ export type MadagascarDocument = {
   storagePath: string
 }
 
+export const certificateRecordStatuses = [
+  "Initiated",
+  "Changes Needed",
+  "Draft Available",
+  "Draft Approved",
+  "Validation Submitted",
+  "Completed",
+  "Cancelled",
+  "Rejected",
+  "Pending",
+  "Missing Docs",
+] as const
+
+export type CertificateRecordStatus = (typeof certificateRecordStatuses)[number]
+
+export function normalizeCertificateRecordStatus(
+  status: unknown
+): CertificateRecordStatus {
+  if (status === "Needs review") return "Changes Needed"
+  if (status === "Ready") return "Draft Available"
+  return certificateRecordStatuses.includes(status as CertificateRecordStatus)
+    ? (status as CertificateRecordStatus)
+    : "Initiated"
+}
+
 export type MadagascarRequest = {
   id: string
   reference: string
   country: string
-  status: "Needs review" | "Ready"
+  status: CertificateRecordStatus
   documents: MadagascarDocument[]
   analysis: MadagascarAnalysis
   createdAt: string
@@ -614,9 +648,7 @@ export function extractedBillOfLadingReference(analysis: MadagascarAnalysis) {
     ])
   const reviewed =
     analysis.okf?.mappedFields
-      .filter(
-        (item) => item.row === null && isBillReference(item.key)
-      )
+      .filter((item) => item.row === null && isBillReference(item.key))
       .flatMap((item) => [item.value, item.observedText]) ?? []
   const observed =
     analysis.okf?.observations.fields

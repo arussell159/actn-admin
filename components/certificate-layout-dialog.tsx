@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Switch } from "@base-ui/react/switch"
+import { Label, Switch, SwitchGroup } from "@heroui/react"
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon, Trash2Icon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -125,31 +125,12 @@ function GoodsColumnsEditor({
   return (
     <div className="grid gap-3">
       {columns.map((column, index) => (
-        <div key={column.key} className="grid gap-3 rounded-lg border p-3">
-          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem_auto]">
-            <Field className="gap-1.5">
-              <FieldLabel>Column Name</FieldLabel>
-              <Input
-                aria-label={`Column ${index + 1} name`}
-                placeholder="Description"
-                value={column.label}
-                onChange={(event) =>
-                  updateColumn(index, { label: event.target.value })
-                }
-              />
-            </Field>
-            <Choice
-              label="Field Type"
-              value={column.control}
-              options={goodsControlOptions}
-              onChange={(value) =>
-                updateColumn(index, {
-                  control: value as CertificateField["control"],
-                  options: value === "select" ? column.options : "",
-                })
-              }
-            />
-            <div className="flex items-end gap-1">
+        <div key={column.key} className="grid gap-4 rounded-lg border p-4">
+          <div className="flex min-h-8 items-center justify-between gap-3">
+            <span className="text-sm font-medium text-muted-foreground">
+              Column {index + 1}
+            </span>
+            <div className="flex shrink-0 items-center gap-1">
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -182,6 +163,30 @@ function GoodsColumnsEditor({
                 <Trash2Icon />
               </Button>
             </div>
+          </div>
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+            <Field className="min-w-0 gap-1.5">
+              <FieldLabel>Column Name</FieldLabel>
+              <Input
+                aria-label={`Column ${index + 1} name`}
+                placeholder="Description"
+                value={column.label}
+                onChange={(event) =>
+                  updateColumn(index, { label: event.target.value })
+                }
+              />
+            </Field>
+            <Choice
+              label="Field Type"
+              value={column.control}
+              options={goodsControlOptions}
+              onChange={(value) =>
+                updateColumn(index, {
+                  control: value as CertificateField["control"],
+                  options: value === "select" ? column.options : "",
+                })
+              }
+            />
           </div>
           {column.control === "select" ? (
             <Field className="gap-1.5">
@@ -231,17 +236,21 @@ function DividerSwitch({
   onCheckedChange: (checked: boolean) => void
 }) {
   return (
-    <label className="flex min-h-8 items-center justify-between gap-4 text-sm">
-      <span>Divider above</span>
-      <Switch.Root
-        checked={checked}
-        onCheckedChange={onCheckedChange}
-        aria-label="Divider above"
-        className="relative h-5 w-9 shrink-0 cursor-pointer rounded-full bg-input transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 data-checked:bg-primary"
+    <SwitchGroup className="w-full">
+      <Switch
+        isSelected={checked}
+        onChange={onCheckedChange}
+        size="sm"
+        className="w-full"
       >
-        <Switch.Thumb className="block size-4 translate-x-0.5 rounded-full bg-background shadow-sm transition-transform data-checked:translate-x-[1.125rem]" />
-      </Switch.Root>
-    </label>
+        <Switch.Content className="flex min-h-8 w-full justify-between gap-4">
+          <Label>Divider Above</Label>
+          <Switch.Control>
+            <Switch.Thumb />
+          </Switch.Control>
+        </Switch.Content>
+      </Switch>
+    </SwitchGroup>
   )
 }
 

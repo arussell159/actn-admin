@@ -20,9 +20,10 @@ import { relevantKnowledge } from "@/lib/okf/bundle"
 import { saveKnowledgeDraft } from "@/lib/okf/write-service"
 
 const inputSchema = z.object({
-  mode: z.enum(["question", "update", "review"]),
+  mode: z.enum(["question", "update", "review", "rejection"]),
   text: z.string().max(40000),
   pageId: z.string(),
+  requestId: z.string().min(1).max(160).optional(),
   draftId: z.string().uuid().optional(),
   attachments: z.array(sourceSchema).max(10).default([]),
   correctionId: z.string().uuid().optional(),
@@ -43,6 +44,21 @@ const responseSchema = z.object({
   question: z.string(),
   pageIds: z.array(z.string()),
   changes: z.array(changeSchema),
+})
+const rejectionRequirementsSchema = z.object({
+  summary: z.string().trim().min(1).max(500),
+  requirements: z
+    .array(
+      z.object({
+        document: z.string().trim().min(1).max(160),
+        title: z.string().trim().min(1).max(160),
+        instruction: z.string().trim().min(1).max(12000),
+        condition: z.string().trim().max(12000),
+        consequence: z.string().trim().min(1).max(12000),
+      })
+    )
+    .min(0)
+    .max(20),
 })
 
 export async function POST(request: Request) {
@@ -120,6 +136,189 @@ export async function POST(request: Request) {
         ok: true,
         review: result.review,
         edit: draft.edit_version,
+      })
+    }
+    if (input.mode === "rejection") {
+      if (!input.requestId || !input.text.trim())
+        throw new OkfError("Paste the rejection reason before reviewing it.")
+      const requestResult = await client
+        .from("madagascar_bsc_requests")
+        .select("id,reference,country,analysis")
+        .eq("id", input.requestId)
+        .single()
+      databaseError(requestResult.error)
+      const requestRecord = requestResult.data as {
+        id: string
+        reference: string
+        country: string | null
+        analysis: unknown
+      }
+      const analyzedCountry = z
+        .object({
+          okf: z
+            .object({
+              observations: z.object({
+                country: z.object({ name: z.string() }),
+              }),
+            })
+            .optional(),
+        })
+        .safeParse(requestRecord.analysis)
+      const recordCountry =
+        analyzedCountry.success &&
+        analyzedCountry.data.okf?.observations.country.name
+          ? analyzedCountry.data.okf.observations.country.name
+          : requestRecord.country
+      if (recordCountry?.toLocaleLowerCase() !== "madagascar")
+        throw new OkfError(
+          "Rejection learning is currently available for Madagascar records."
+        )
+      const documentPages = state.pages.filter(
+        (page) => page.country === "Madagascar" && page.template === "document"
+      )
+      const extraction = await structuredAi(
+        rejectionRequirementsSchema,
+        [
+          "Convert the pasted Madagascar authority rejection into atomic, testable document acceptance requirements.",
+          "Clean grammar and wording without adding facts. Preserve every explicit condition, document name, date, value, and exception.",
+          "Use only a canonical document title supplied in availableDocuments. Put each requirement on the narrowest matching document.",
+          "Do not merge separate defects. Do not infer a general condition from shipment details that the rejection did not state.",
+          "The instruction must say exactly what the document must contain or satisfy. The consequence must be a concise correction sentence suitable for sending to staff or a customer.",
+          "Exclude requirements already fully covered by existingRules. Return no commentary inside the requirements.",
+        ].join(" "),
+        {
+          country: "Madagascar",
+          requestReference: requestRecord.reference,
+          originalRejection: input.text,
+          availableDocuments: documentPages.map((page) => page.title),
+          existingRules: documentPages.flatMap((page) =>
+            page.content.rules.map((rule) => ({
+              document: page.title,
+              instruction: rule.instruction,
+              condition: rule.condition,
+            }))
+          ),
+        }
+      )
+      if (!extraction.requirements.length)
+        return Response.json({
+          ok: true,
+          result: {
+            classification: "duplicate",
+            message: "Already covered by the current Madagascar knowledge.",
+            question: "",
+            pageIds: [],
+            changes: [],
+          },
+          draft: null,
+        })
+      const recognizedDocuments = new Set(
+        documentPages.map((page) => page.title)
+      )
+      const unrecognizedDocument = extraction.requirements.find(
+        (requirement) => !recognizedDocuments.has(requirement.document)
+      )
+      if (unrecognizedDocument)
+        throw new OkfError(
+          `The rejection refers to an unsupported document: ${unrecognizedDocument.document}. Add or map that document in Madagascar knowledge first.`
+        )
+      const changes = documentPages.flatMap((page) => {
+        const additions = extraction.requirements.filter(
+          (requirement) => requirement.document === page.title
+        )
+        if (!additions.length) return []
+        const sourceId = `${page.id}-rejection-${randomUUID()}`
+        return [
+          {
+            pageId: page.id,
+            level: "minor" as const,
+            content: {
+              ...page.content,
+              sources: [
+                ...page.content.sources,
+                {
+                  id: sourceId,
+                  title: `Authority rejection — ${requestRecord.reference || requestRecord.id}`,
+                  url: "",
+                  attachmentPath: "",
+                  note: `Observed on certificate request ${requestRecord.id}. Original rejection: ${input.text.trim().slice(0, 10000)}`,
+                },
+              ],
+              rules: [
+                ...page.content.rules,
+                ...additions.map((requirement) => ({
+                  id: `mg-rejection-rule-${randomUUID()}`,
+                  country: "Madagascar",
+                  document: page.title,
+                  instruction: requirement.instruction,
+                  requirement: requirement.condition
+                    ? ("conditionally required" as const)
+                    : ("always required" as const),
+                  condition: requirement.condition,
+                  stage: "intake" as const,
+                  consequence: requirement.consequence,
+                  sourceIds: [sourceId],
+                  effectiveFrom: "",
+                  effectiveTo: "",
+                  kind: "acceptance" as const,
+                  check: {
+                    operator: "interpret" as const,
+                    fieldIds: [],
+                    expected: "",
+                  },
+                })),
+              ],
+            },
+          },
+        ]
+      })
+      if (!changes.length)
+        throw new OkfError(
+          "The rejection did not identify a requirement for a recognized Madagascar document."
+        )
+      const saved = await saveKnowledgeDraft(client, {
+        expectedEdit: 0,
+        baseGeneration: state.generation,
+        changes,
+        reason: `Madagascar rejection on ${requestRecord.reference || requestRecord.id}: ${input.text.trim().slice(0, 10000)}`,
+        source: `Certificate request ${requestRecord.id}`,
+      })
+      if (saved.duplicate || !saved.draft)
+        return Response.json({
+          ok: true,
+          result: {
+            classification: "duplicate",
+            message: "Already covered by the current Madagascar knowledge.",
+            question: "",
+            pageIds: [],
+            changes: [],
+          },
+          draft: null,
+        })
+      const intake = await client.from("okf_intake").insert({
+        page_id: input.pageId || "mg-overview",
+        note: input.text,
+        sources: [],
+        result: {
+          classification: "new rule",
+          message: extraction.summary,
+          question: "",
+          pageIds: changes.map((change) => change.pageId),
+          draftId: saved.draft.id,
+          requestId: requestRecord.id,
+        },
+      })
+      databaseError(intake.error)
+      return Response.json({
+        ok: true,
+        result: {
+          classification: "new rule",
+          message: extraction.summary,
+          question: "",
+          pageIds: changes.map((change) => change.pageId),
+          changes: [],
+        },
+        draft: saved.draft,
       })
     }
     let correction: unknown = null

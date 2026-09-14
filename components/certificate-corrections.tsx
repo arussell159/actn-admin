@@ -8,14 +8,18 @@ export function CertificateCorrections({
   message,
   error,
   loading,
+  title = "Missing / Corrections Needed",
+  emptyMessage = "No corrections needed.",
 }: {
   message: string
   error?: string
   loading?: boolean
+  title?: string
+  emptyMessage?: string
 }) {
   return (
     <CertificateSection
-      title="Missing / Corrections Needed"
+      title={title}
       action={
         <Button
           variant="outline"
@@ -32,7 +36,7 @@ export function CertificateCorrections({
         <AiTextShimmer />
       ) : (
         <p className="max-w-4xl text-sm leading-6 whitespace-pre-wrap text-muted-foreground">
-          {error || message || "No corrections needed."}
+          {error || message || emptyMessage}
         </p>
       )}
     </CertificateSection>

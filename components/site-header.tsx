@@ -1,13 +1,12 @@
 "use client"
 
-import type { ReactNode } from "react"
+import type { ComponentProps, ReactNode } from "react"
 import { useRouter } from "next/navigation"
-import { AppLink } from "@/components/app-link"
+import { CloseButton } from "@heroui/react"
 import { MobileTabBar } from "@/components/mobile-tab-bar"
 import { MobilePullRefresh } from "@/components/mobile-pull-refresh"
 import { useMobileScrollLock } from "@/hooks/use-mobile-scroll-lock"
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,7 +17,27 @@ import { createClient } from "@/lib/client"
 import { ArrowLeftIcon, CircleUserRoundIcon, LogOutIcon } from "lucide-react"
 
 export const siteHeaderGlassButtonClassName =
-  "relative isolate size-10 overflow-hidden rounded-full border-white/50 bg-background/65 shadow-[0_8px_24px_rgba(15,23,42,0.14),inset_0_1px_0_rgba(255,255,255,0.8),inset_0_-1px_0_rgba(15,23,42,0.05)] backdrop-blur-2xl before:absolute before:inset-0 before:-z-10 before:bg-[linear-gradient(135deg,rgba(255,255,255,0.5),rgba(255,255,255,0.08)_42%,rgba(15,23,42,0.04))] hover:bg-background/75 supports-backdrop-filter:bg-background/50 dark:border-white/15 dark:bg-background/40 dark:shadow-[0_8px_24px_rgba(0,0,0,0.24),inset_0_1px_0_rgba(255,255,255,0.12)] dark:hover:bg-background/55"
+  "grid size-10 shrink-0 place-items-center rounded-full border border-white bg-white text-slate-950 shadow-sm transition-colors hover:bg-white/90 pressed:bg-white/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-5"
+
+export function SiteHeaderIconButton({
+  label,
+  children,
+  className,
+  ...props
+}: {
+  label: string
+  children: ReactNode
+} & Omit<ComponentProps<typeof CloseButton>, "aria-label" | "children">) {
+  return (
+    <CloseButton
+      {...props}
+      aria-label={label}
+      className={cn(siteHeaderGlassButtonClassName, className)}
+    >
+      {children}
+    </CloseButton>
+  )
+}
 
 export function SiteHeaderBackButton({
   label = "Back",
@@ -29,20 +48,16 @@ export function SiteHeaderBackButton({
   href?: string
   onClick?: () => void
 }) {
+  const router = useRouter()
+
   return (
-    <Button
-      type={href ? undefined : "button"}
-      variant="outline"
-      size="icon-lg"
-      className={siteHeaderGlassButtonClassName}
+    <SiteHeaderIconButton
+      label={label}
       data-site-header-back=""
-      aria-label={label}
-      nativeButton={href ? false : undefined}
-      render={href ? <AppLink href={href} /> : undefined}
-      onClick={onClick}
+      onPress={href ? () => router.push(href) : onClick}
     >
       <ArrowLeftIcon className="size-4.5" />
-    </Button>
+    </SiteHeaderIconButton>
   )
 }
 
@@ -60,11 +75,12 @@ function MobileProfileMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="grid size-10 place-items-center rounded-full text-foreground transition-colors active:bg-muted"
-        aria-label="Open profile menu"
-        title="Profile"
+        render={
+          <SiteHeaderIconButton label="Open profile menu">
+            <CircleUserRoundIcon />
+          </SiteHeaderIconButton>
+        }
       >
-        <CircleUserRoundIcon className="size-6" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={8} className="min-w-40">
         <DropdownMenuItem onClick={signOut}>

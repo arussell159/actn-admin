@@ -13,6 +13,7 @@ import type {
   MadagascarAnalysis,
   MadagascarDocument,
 } from "@/lib/madagascar-bsc"
+import { certificateRecordStatuses } from "@/lib/madagascar-bsc"
 import { verifyCorrectionSources } from "@/lib/okf/openai-document-provider"
 import {
   correctionLearningReason,
@@ -83,6 +84,45 @@ export async function POST(request: Request) {
     ensureSameOrigin(request)
     const session = await okfSession("edit")
     const body = await request.json()
+    if (body.action === "save-record-summary") {
+      const parsed = z
+        .object({
+          requestId: z.string().min(1),
+          expectedUpdatedAt: z.string(),
+          status: z.enum(certificateRecordStatuses),
+          details: z.object({
+            customerReference: z.string().max(4000),
+            correctionInvoiceNumber: z.string().max(4000),
+            zohoTicketId: z.string().max(4000),
+            agent: z.string().max(4000),
+            territory: z.string().max(4000),
+            ctnNumber: z.string().max(4000),
+            reviewedByAgent: z.boolean(),
+          }),
+        })
+        .parse(body)
+      const current = await session.client
+        .from("madagascar_bsc_requests")
+        .select("analysis")
+        .eq("id", parsed.requestId)
+        .eq("updated_at", parsed.expectedUpdatedAt)
+        .single()
+      databaseError(current.error)
+      const analysis = current.data!.analysis as MadagascarAnalysis
+      const result = await session.client
+        .from("madagascar_bsc_requests")
+        .update({
+          analysis: { ...analysis, recordDetails: parsed.details },
+          status: parsed.status,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", parsed.requestId)
+        .eq("updated_at", parsed.expectedUpdatedAt)
+        .select("*")
+        .single()
+      databaseError(result.error)
+      return Response.json({ ok: true, request: requestPayload(result.data!) })
+    }
     if (body.action === "save-goods-table") {
       const parsed = z
         .object({
@@ -110,7 +150,7 @@ export async function POST(request: Request) {
         .from("madagascar_bsc_requests")
         .update({
           analysis: { ...analysis, invoiceItems: parsed.items },
-          status: "Needs review",
+          status: "Changes Needed",
           updated_at: new Date().toISOString(),
         })
         .eq("id", parsed.requestId)

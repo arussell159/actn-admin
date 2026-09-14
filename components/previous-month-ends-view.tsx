@@ -15,6 +15,7 @@ import { PreviousMonthEndsSkeleton } from "@/components/page-skeletons"
 import { SiteHeader } from "@/components/site-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,6 +38,62 @@ import {
   listMonthEndRecords,
   type MonthEndRecord,
 } from "@/lib/month-end-db"
+
+function MonthEndActions({
+  monthEnd,
+  confirmDeletePeriod,
+  setConfirmDeletePeriod,
+  onView,
+  onDelete,
+}: {
+  monthEnd: MonthEndRecord
+  confirmDeletePeriod: string
+  setConfirmDeletePeriod: React.Dispatch<React.SetStateAction<string>>
+  onView: () => void
+  onDelete: () => void
+}) {
+  return (
+    <DropdownMenu
+      onOpenChange={(open) => {
+        if (!open) setConfirmDeletePeriod("")
+      }}
+    >
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Actions for ${getMonthEndTitle(monthEnd)}`}
+          />
+        }
+      >
+        <MoreHorizontalIcon />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-40">
+        <DropdownMenuItem onClick={onView}>
+          <FileTextIcon />
+          View
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {confirmDeletePeriod === monthEnd.period ? (
+          <DropdownMenuItem variant="destructive" onClick={onDelete}>
+            <Trash2Icon />
+            Confirm Delete
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem
+            variant="destructive"
+            closeOnClick={false}
+            onClick={() => setConfirmDeletePeriod(monthEnd.period)}
+          >
+            <Trash2Icon />
+            Delete
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
 
 export function PreviousMonthEndsView() {
   const router = useRouter()
@@ -105,7 +162,7 @@ export function PreviousMonthEndsView() {
 
   return (
     <PageFrame header={<SiteHeader title="Month End" />}>
-      <div className="grid gap-4 px-4 py-4 lg:px-6">
+      <div className="grid gap-4 px-4 pt-4 pb-24 md:pb-4 lg:px-6">
         <section className="flex justify-end">
           <Button
             className="w-fit"
@@ -123,28 +180,20 @@ export function PreviousMonthEndsView() {
         {isLoading ? (
           <PreviousMonthEndsSkeleton />
         ) : (
-          <Table containerClassName="rounded-lg border bg-background">
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Completion Date</TableHead>
-                <TableHead>Last Updated</TableHead>
-                <TableHead aria-label="Actions" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          <>
+            <div className="grid gap-3 md:hidden">
               {records.map((monthEnd) => {
                 const href = monthEndRecordHref(monthEnd)
                 return (
-                  <TableRow key={monthEnd.period}>
-                    <TableCell className="font-medium">
-                      <AppLink href={href} className="block">
+                  <Card
+                    key={monthEnd.period}
+                    className="gap-0 py-0 shadow-none"
+                  >
+                    <CardHeader className="flex flex-row items-center justify-between gap-3 px-4 py-3">
+                      <AppLink href={href} className="min-w-0 font-semibold">
                         {getMonthEndTitle(monthEnd)}
                       </AppLink>
-                    </TableCell>
-                    <TableCell>
-                      <AppLink href={href} className="block">
+                      <div className="flex shrink-0 items-center gap-1">
                         <Badge
                           variant={
                             monthEnd.status === "Open" ? "default" : "secondary"
@@ -152,79 +201,106 @@ export function PreviousMonthEndsView() {
                         >
                           {monthEnd.status}
                         </Badge>
-                      </AppLink>
-                    </TableCell>
-                    <TableCell>
-                      <AppLink href={href} className="block">
-                        {formatDateTime(monthEnd.completedAt)}
-                      </AppLink>
-                    </TableCell>
-                    <TableCell>
-                      <AppLink href={href} className="block">
-                        {formatDateTime(monthEnd.updatedAt)}
-                      </AppLink>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu
-                        onOpenChange={(open) => {
-                          if (!open) setConfirmDeletePeriod("")
-                        }}
-                      >
-                        <DropdownMenuTrigger
-                          render={
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              aria-label={`Actions for ${getMonthEndTitle(monthEnd)}`}
-                            />
-                          }
-                        >
-                          <MoreHorizontalIcon />
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="min-w-40">
-                          <DropdownMenuItem onClick={() => router.push(href)}>
-                            <FileTextIcon />
-                            View
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          {confirmDeletePeriod === monthEnd.period ? (
-                            <DropdownMenuItem
-                              variant="destructive"
-                              onClick={() => void deleteRecord(monthEnd.period)}
-                            >
-                              <Trash2Icon />
-                              Confirm Delete
-                            </DropdownMenuItem>
-                          ) : (
-                            <DropdownMenuItem
-                              variant="destructive"
-                              closeOnClick={false}
-                              onClick={() =>
-                                setConfirmDeletePeriod(monthEnd.period)
-                              }
-                            >
-                              <Trash2Icon />
-                              Delete
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
+                        <MonthEndActions
+                          monthEnd={monthEnd}
+                          confirmDeletePeriod={confirmDeletePeriod}
+                          setConfirmDeletePeriod={setConfirmDeletePeriod}
+                          onView={() => router.push(href)}
+                          onDelete={() => void deleteRecord(monthEnd.period)}
+                        />
+                      </div>
+                    </CardHeader>
+                    <CardContent className="grid gap-2 border-t px-4 py-3 text-sm">
+                      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-4">
+                        <div className="text-muted-foreground">Completed</div>
+                        <div className="text-right break-words">
+                          {formatDateTime(monthEnd.completedAt)}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-4">
+                        <div className="text-muted-foreground">Updated</div>
+                        <div className="text-right break-words">
+                          {formatDateTime(monthEnd.updatedAt)}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
                 )
               })}
               {!records.length ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={5}
-                    className="py-10 text-center text-muted-foreground"
-                  >
-                    No month ends yet.
-                  </TableCell>
-                </TableRow>
+                <Card className="py-10 text-center text-muted-foreground shadow-none">
+                  No month ends yet.
+                </Card>
               ) : null}
-            </TableBody>
-          </Table>
+            </div>
+            <Table containerClassName="hidden rounded-lg border bg-background md:block">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Completion Date</TableHead>
+                  <TableHead>Last Updated</TableHead>
+                  <TableHead aria-label="Actions" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {records.map((monthEnd) => {
+                  const href = monthEndRecordHref(monthEnd)
+                  return (
+                    <TableRow key={monthEnd.period}>
+                      <TableCell className="font-medium">
+                        <AppLink href={href} className="block">
+                          {getMonthEndTitle(monthEnd)}
+                        </AppLink>
+                      </TableCell>
+                      <TableCell>
+                        <AppLink href={href} className="block">
+                          <Badge
+                            variant={
+                              monthEnd.status === "Open"
+                                ? "default"
+                                : "secondary"
+                            }
+                          >
+                            {monthEnd.status}
+                          </Badge>
+                        </AppLink>
+                      </TableCell>
+                      <TableCell>
+                        <AppLink href={href} className="block">
+                          {formatDateTime(monthEnd.completedAt)}
+                        </AppLink>
+                      </TableCell>
+                      <TableCell>
+                        <AppLink href={href} className="block">
+                          {formatDateTime(monthEnd.updatedAt)}
+                        </AppLink>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <MonthEndActions
+                          monthEnd={monthEnd}
+                          confirmDeletePeriod={confirmDeletePeriod}
+                          setConfirmDeletePeriod={setConfirmDeletePeriod}
+                          onView={() => router.push(href)}
+                          onDelete={() => void deleteRecord(monthEnd.period)}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+                {!records.length ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={5}
+                      className="py-10 text-center text-muted-foreground"
+                    >
+                      No month ends yet.
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+              </TableBody>
+            </Table>
+          </>
         )}
       </div>
     </PageFrame>

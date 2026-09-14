@@ -33,11 +33,7 @@ import {
   quoteItemCatalog,
   type QuoteCatalogItem,
 } from "@/lib/quote-items-catalog"
-import {
-  listQuoteItems,
-  syncQuoteItemCatalog,
-  type QuoteLineItem,
-} from "@/lib/quote-items-db"
+import type { QuoteLineItem } from "@/lib/quote-items-db"
 
 const currency = "USD"
 const defaultZone = "ROW"
@@ -214,6 +210,7 @@ function CountrySearchField({
       onValueChange={onChange}
       autoOpenOnDesktop={autoOpenOnDesktop}
       focusSignal={focusSignal}
+      className={autoOpenOnDesktop ? undefined : "h-11 rounded-xl text-base"}
       listClassName="mt-1"
     />
   )
@@ -365,9 +362,18 @@ export function QuoteToolView() {
   const subtotal = quoteItems.reduce((total, item) => total + item.lineTotal, 0)
 
   React.useEffect(() => {
-    function loadCatalog() {
+    let cancelled = false
+
+    async function loadCatalog() {
+      const { listQuoteItems, syncQuoteItemCatalog } =
+        await import("@/lib/quote-items-db")
+
+      if (cancelled) return
+
       listQuoteItems()
         .then((items) => {
+          if (cancelled) return
+
           if (items.length) {
             setCatalog(items)
             const nextCountries = getCountries(items)
@@ -392,10 +398,21 @@ export function QuoteToolView() {
         .catch(() => {})
     }
 
-    loadCatalog()
+    const idleId = window.requestIdleCallback?.(() => void loadCatalog(), {
+      timeout: 1500,
+    })
+    const timeoutId =
+      idleId === undefined
+        ? window.setTimeout(() => void loadCatalog(), 0)
+        : undefined
     window.addEventListener("quote-items:updated", loadCatalog)
 
-    return () => window.removeEventListener("quote-items:updated", loadCatalog)
+    return () => {
+      cancelled = true
+      if (idleId !== undefined) window.cancelIdleCallback?.(idleId)
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId)
+      window.removeEventListener("quote-items:updated", loadCatalog)
+    }
   }, [])
 
   React.useEffect(() => {

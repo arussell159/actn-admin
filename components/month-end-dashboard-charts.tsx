@@ -47,105 +47,30 @@ function formatCompactDollars(value: number) {
   }).format(value)
 }
 
-function ChangePill({ change, label }: { change: number; label: string }) {
-  return (
-    <span
-      className={
-        change > 0
-          ? "rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 tabular-nums dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
-          : change < 0
-            ? "rounded-full border border-red-300 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 tabular-nums dark:border-red-700 dark:bg-red-950/40 dark:text-red-300"
-            : "rounded-full border bg-muted/50 px-2 py-0.5 text-xs font-medium text-muted-foreground tabular-nums"
-      }
-    >
-      {change > 0 ? "↑" : change < 0 ? "↓" : "—"} {label}
-    </span>
-  )
-}
-
 export function MonthEndValueByDayChart({
   data,
-  invoiceCount,
-  previousInvoiceCount,
-  previousTotalRevenue,
 }: {
   data: Array<{ day: number; amount: number }>
-  invoiceCount: number
-  previousInvoiceCount: number
-  previousTotalRevenue: number
 }) {
-  const totalRevenue = data.reduce((total, item) => total + item.amount, 0)
-  const averageOrderValue = invoiceCount ? totalRevenue / invoiceCount : 0
-  const previousAverageOrderValue = previousInvoiceCount
-    ? previousTotalRevenue / previousInvoiceCount
-    : 0
-  const revenueChangePercentage = previousTotalRevenue
-    ? ((totalRevenue - previousTotalRevenue) / previousTotalRevenue) * 100
-    : undefined
-  const averageOrderValueChangePercentage = previousAverageOrderValue
-    ? ((averageOrderValue - previousAverageOrderValue) /
-        previousAverageOrderValue) *
-      100
-    : undefined
-  const invoiceCountChange = invoiceCount - previousInvoiceCount
+  const lastDay = data.at(-1)?.day ?? 31
+  const maximumAmount = Math.max(...data.map((item) => item.amount), 0)
+  const dayTicks = Array.from(
+    new Set([
+      1,
+      Math.ceil(lastDay * 0.25),
+      Math.ceil(lastDay * 0.5),
+      Math.ceil(lastDay * 0.75),
+      lastDay,
+    ])
+  )
 
   return (
     <Card className="relative gap-0 py-0 shadow-none">
-      <CardHeader className="px-4 pt-4 pr-[31rem] pb-3">
-        <CardTitle>Invoice Value by Day</CardTitle>
+      <CardHeader className="px-4 pt-4 pb-3">
+        <CardTitle className="truncate whitespace-nowrap">
+          Daily Invoice Value
+        </CardTitle>
       </CardHeader>
-      <div className="absolute top-3 right-4 z-10 flex items-stretch gap-2">
-        <div className="rounded-lg border bg-background/95 px-4 py-2 text-right shadow-sm backdrop-blur-sm">
-          <div className="text-[0.65rem] font-medium tracking-wide text-muted-foreground uppercase">
-            Total Revenue
-          </div>
-          <div className="flex items-center justify-end gap-2">
-            <span className="text-xl font-semibold tabular-nums">
-              {formatCompactDollars(totalRevenue)}
-            </span>
-            {revenueChangePercentage !== undefined ? (
-              <ChangePill
-                change={revenueChangePercentage}
-                label={`${Math.abs(revenueChangePercentage).toFixed(1)}%`}
-              />
-            ) : null}
-          </div>
-        </div>
-        <div className="rounded-lg border bg-background/95 px-4 py-2 text-right shadow-sm backdrop-blur-sm">
-          <div className="text-[0.65rem] font-medium tracking-wide text-muted-foreground uppercase">
-            Average Order Value
-          </div>
-          <div className="flex items-center justify-end gap-2">
-            <span className="text-xl font-semibold tabular-nums">
-              {formatCompactDollars(averageOrderValue)}
-            </span>
-            {averageOrderValueChangePercentage !== undefined ? (
-              <ChangePill
-                change={averageOrderValueChangePercentage}
-                label={`${Math.abs(averageOrderValueChangePercentage).toFixed(
-                  1
-                )}%`}
-              />
-            ) : null}
-          </div>
-        </div>
-        <div className="rounded-lg border bg-background/95 px-4 py-2 text-right shadow-sm backdrop-blur-sm">
-          <div className="text-[0.65rem] font-medium tracking-wide text-muted-foreground uppercase">
-            Total Invoices
-          </div>
-          <div className="flex items-center justify-end gap-2">
-            <span className="text-xl font-semibold tabular-nums">
-              {invoiceCount.toLocaleString("en-US")}
-            </span>
-            {previousInvoiceCount ? (
-              <ChangePill
-                change={invoiceCountChange}
-                label={Math.abs(invoiceCountChange).toLocaleString("en-US")}
-              />
-            ) : null}
-          </div>
-        </div>
-      </div>
       <CardContent className="px-2 pb-3 sm:px-4">
         <ChartContainer
           config={monthlyValueChartConfig}
@@ -162,6 +87,7 @@ export function MonthEndValueByDayChart({
               axisLine={false}
               tickLine={false}
               tickMargin={8}
+              ticks={dayTicks}
               interval={0}
               tick={{ fontSize: 10 }}
             />
@@ -169,6 +95,8 @@ export function MonthEndValueByDayChart({
               axisLine={false}
               tickLine={false}
               tickMargin={8}
+              domain={maximumAmount ? [0, "auto"] : [0, 1]}
+              ticks={maximumAmount ? undefined : [0]}
               tickFormatter={(value) => formatCompactDollars(Number(value))}
               width={58}
             />

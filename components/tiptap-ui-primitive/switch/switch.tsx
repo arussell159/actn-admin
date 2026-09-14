@@ -1,30 +1,44 @@
 "use client"
 
-import { Switch as SwitchPrimitive } from "@base-ui/react/switch"
+import { Label, Switch as HeroSwitch, SwitchGroup } from "@heroui/react"
 
 import { cn } from "@/lib/tiptap-utils"
-
-import "./switch.scss"
 
 function Switch({
   className,
   size = "default",
+  checked,
+  onCheckedChange,
+  disabled,
+  "aria-label": ariaLabel,
   ...props
-}: SwitchPrimitive.Root.Props & {
+}: Omit<
+  React.ComponentProps<typeof HeroSwitch>,
+  "isSelected" | "onChange" | "size"
+> & {
   size?: "sm" | "default"
+  checked?: boolean
+  onCheckedChange?: (checked: boolean) => void
+  disabled?: boolean
 }) {
   return (
-    <SwitchPrimitive.Root
-      data-slot="tiptap-switch"
-      data-size={size}
-      className={cn("tiptap-switch", className)}
-      {...props}
-    >
-      <SwitchPrimitive.Thumb
-        data-slot="tiptap-switch-thumb"
-        className="tiptap-switch-thumb"
-      />
-    </SwitchPrimitive.Root>
+    <SwitchGroup>
+      <HeroSwitch
+        {...props}
+        isSelected={checked}
+        onChange={onCheckedChange}
+        isDisabled={disabled}
+        size={size === "default" ? "md" : "sm"}
+        className={cn(className)}
+      >
+        <HeroSwitch.Content>
+          <HeroSwitch.Control>
+            <HeroSwitch.Thumb />
+          </HeroSwitch.Control>
+          {ariaLabel ? <Label className="sr-only">{ariaLabel}</Label> : null}
+        </HeroSwitch.Content>
+      </HeroSwitch>
+    </SwitchGroup>
   )
 }
 

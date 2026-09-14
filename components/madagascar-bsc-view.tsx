@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { Label, Switch, SwitchGroup } from "@heroui/react"
 import { EditorContent, useEditor } from "@tiptap/react"
 import { StarterKit } from "@tiptap/starter-kit"
 import {
@@ -49,7 +50,14 @@ import { authenticatedFetch, ensureLocalDevelopmentSession } from "@/lib/client"
 import type { CorrectionSourceLearning } from "@/lib/okf/correction-learning"
 import { SiteHeader, SiteHeaderBackButton } from "@/components/site-header"
 import { Badge } from "@/components/ui/badge"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxItem,
+  ComboboxTrigger,
+} from "@/components/ui/combobox"
 import {
   Card,
   CardContent,
@@ -57,6 +65,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -86,6 +102,7 @@ import { Textarea } from "@/components/ui/textarea"
 import "@/components/tiptap-templates/simple/simple-editor.scss"
 import {
   certificateDocumentDownloadName,
+  certificateRecordStatuses,
   certificateDocumentTypeRank,
   createMadagascarId,
   madagascarFieldGroups,
@@ -97,6 +114,7 @@ import {
 } from "@/lib/madagascar-bsc"
 import { bscCountryModules } from "@/lib/bsc-country-modules"
 import { cn } from "@/lib/utils"
+import { agentProfileNames } from "@/lib/agents"
 import {
   deleteMadagascarRequest,
   downloadMadagascarDocument,
@@ -161,6 +179,101 @@ type KnowledgeChatApiResponse = {
   ok: boolean
   analysis?: KnowledgeAnalysis
   message?: string
+}
+type RejectionRequirementReview = {
+  document: string
+  instruction: string
+  consequence: string
+}
+type RejectionReview = {
+  draftId: string
+  token: string
+  message: string
+  requirements: RejectionRequirementReview[]
+}
+
+function SummaryInput({
+  label,
+  value,
+  onCommit,
+  type = "text",
+  readOnly = false,
+}: {
+  label: string
+  value: string
+  onCommit?: (value: string) => void
+  type?: React.ComponentProps<typeof Input>["type"]
+  readOnly?: boolean
+}) {
+  const [draft, setDraft] = React.useState(value)
+  React.useEffect(() => setDraft(value), [value])
+  const commit = () => {
+    const next = draft.trim()
+    if (next !== value) onCommit?.(next)
+  }
+  return (
+    <div className="grid min-w-0 gap-1.5">
+      <label className="text-xs font-medium text-muted-foreground">
+        {label}
+      </label>
+      <Input
+        aria-label={label}
+        type={type}
+        value={draft}
+        readOnly={readOnly}
+        className={cn("h-10", readOnly && "bg-muted/50 text-muted-foreground")}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault()
+            commit()
+            event.currentTarget.blur()
+          }
+        }}
+      />
+    </div>
+  )
+}
+
+function SummaryGroup({
+  title,
+  children,
+}: {
+  title: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="min-w-0 rounded-xl border bg-muted/15 p-4 sm:p-5">
+      <h3 className="mb-4 text-sm font-semibold">{title}</h3>
+      <div className="grid min-w-0 gap-4 sm:grid-cols-2">{children}</div>
+    </section>
+  )
+}
+
+const certificateStatusClass: Record<MadagascarRequest["status"], string> = {
+  Initiated: "border-slate-300 bg-slate-100 text-slate-700",
+  "Changes Needed": "border-orange-300 bg-orange-100 text-orange-800",
+  "Draft Available": "border-blue-300 bg-blue-100 text-blue-800",
+  "Draft Approved": "border-emerald-300 bg-emerald-100 text-emerald-800",
+  "Validation Submitted": "border-violet-300 bg-violet-100 text-violet-800",
+  Completed: "border-green-300 bg-green-100 text-green-800",
+  Cancelled: "border-zinc-300 bg-zinc-100 text-zinc-700",
+  Rejected: "border-red-300 bg-red-100 text-red-800",
+  Pending: "border-amber-300 bg-amber-100 text-amber-800",
+  "Missing Docs": "border-rose-300 bg-rose-100 text-rose-800",
+}
+
+function CertificateStatusBadge({
+  status,
+}: {
+  status: MadagascarRequest["status"]
+}) {
+  return (
+    <Badge variant="outline" className={certificateStatusClass[status]}>
+      {status}
+    </Badge>
+  )
 }
 const knowledgeAnchors = Extension.create({
   name: "knowledgeAnchors",
@@ -326,8 +439,36 @@ function analysisHasIssues(analysis: MadagascarAnalysis) {
   )
 }
 
+function publishedCorrectionMessage(analysis: MadagascarAnalysis) {
+  const review = analysis.okf
+  if (!review) return ""
+
+  const publishedPageIds = new Set(
+    review.revisions
+      .filter((revision) => revision.revision > 0)
+      .map((revision) => revision.pageId)
+  )
+
+  return Array.from(
+    new Set(
+      review.findings
+        .map((finding) => analysis.okfOverrides?.[finding.id] ?? finding)
+        .filter(
+          (finding) =>
+            finding.ruleId.startsWith("mg-rejection-rule-") &&
+            publishedPageIds.has(finding.pageId) &&
+            !["passed", "not applicable"].includes(finding.status)
+        )
+        .map((finding) => finding.consequence || finding.explanation)
+        .filter(Boolean)
+    )
+  ).join("\n\n")
+}
+
 function statusVariant(status: string) {
-  return status === "extracted" || status === "Ready"
+  return status === "extracted" ||
+    status === "Completed" ||
+    status === "Draft Approved"
     ? "default"
     : status === "derived"
       ? "secondary"
@@ -414,6 +555,15 @@ function AnalysisView({
   const saveFieldEditsRef = React.useRef<() => Promise<void>>(async () => {})
   const [isSavingEdits, setIsSavingEdits] = React.useState(false)
   const [saveEditError, setSaveEditError] = React.useState("")
+  const [summaryDirty, setSummaryDirty] = React.useState(false)
+  const [isSavingSummary, setIsSavingSummary] = React.useState(false)
+  const [rejectionOpen, setRejectionOpen] = React.useState(false)
+  const [rejectionText, setRejectionText] = React.useState("")
+  const [rejectionReview, setRejectionReview] =
+    React.useState<RejectionReview | null>(null)
+  const [rejectionError, setRejectionError] = React.useState("")
+  const [rejectionNotice, setRejectionNotice] = React.useState("")
+  const [rejectionBusy, setRejectionBusy] = React.useState(false)
   const [goodsDirty, setGoodsDirty] = React.useState(false)
   const [isSavingGoods, setIsSavingGoods] = React.useState(false)
   const savedRequestRef = React.useRef(request)
@@ -429,6 +579,19 @@ function AnalysisView({
     : isAnalyzing || editableRequest.country === "Unknown"
       ? ""
       : editableRequest.country
+  const isMadagascarRecord = [country, editableRequest.country].some(
+    (value) => value.trim().toLocaleLowerCase() === "madagascar"
+  )
+  const recordDetails = {
+    customerReference: "",
+    correctionInvoiceNumber: "",
+    zohoTicketId: "",
+    agent: "",
+    territory: "",
+    ctnNumber: "",
+    reviewedByAgent: false,
+    ...analysis.recordDetails,
+  }
   const snapshot = layoutRecordSchema.safeParse(analysis.okf?.certificateLayout)
   const catalogLayout = resolveLayout(catalog.rows, country)
   const requestLayout = snapshot.success
@@ -490,6 +653,82 @@ function AnalysisView({
 
     return () => window.cancelAnimationFrame(frame)
   }, [analysis.invoiceItems.length])
+
+  function updateRecordDetail(
+    key: keyof typeof recordDetails,
+    value: string | boolean
+  ) {
+    setEditableRequest((current) => ({
+      ...current,
+      analysis: {
+        ...current.analysis,
+        recordDetails: {
+          customerReference: "",
+          correctionInvoiceNumber: "",
+          zohoTicketId: "",
+          agent: "",
+          territory: "",
+          ctnNumber: "",
+          reviewedByAgent: false,
+          ...current.analysis.recordDetails,
+          [key]: value,
+        },
+      },
+    }))
+    setSummaryDirty(true)
+    setSaveEditError("")
+  }
+
+  function updateRecordStatus(status: MadagascarRequest["status"]) {
+    setEditableRequest((current) => ({ ...current, status }))
+    setSummaryDirty(true)
+    setSaveEditError("")
+  }
+
+  React.useEffect(() => {
+    if (!summaryDirty || isSavingSummary) return
+    const timeout = window.setTimeout(async () => {
+      setIsSavingSummary(true)
+      try {
+        const current = editableRequest
+        const details = {
+          customerReference: "",
+          correctionInvoiceNumber: "",
+          zohoTicketId: "",
+          agent: "",
+          territory: "",
+          ctnNumber: "",
+          reviewedByAgent: false,
+          ...current.analysis.recordDetails,
+        }
+        const result = await okfApi<{ request: MadagascarRequest }>(
+          "/api/okf/requests",
+          {
+            action: "save-record-summary",
+            requestId: current.id,
+            expectedUpdatedAt: savedRequestRef.current.updatedAt,
+            status: current.status,
+            details,
+          }
+        )
+        savedRequestRef.current = result.request
+        setEditableRequest((visible) => ({
+          ...visible,
+          updatedAt: result.request.updatedAt,
+        }))
+        setSummaryDirty(false)
+      } catch (error) {
+        setSaveEditError(
+          error instanceof Error
+            ? error.message
+            : "Could not save the record summary."
+        )
+      } finally {
+        setIsSavingSummary(false)
+      }
+    }, 900)
+    return () => window.clearTimeout(timeout)
+  }, [editableRequest, isSavingSummary, summaryDirty])
 
   function requestValue(target: string, source = savedRequestRef.current) {
     if (target.startsWith("invoiceValue:")) {
@@ -581,6 +820,98 @@ function AnalysisView({
       field?.label || "Invoice value",
       value
     )
+  }
+
+  async function reviewRejection() {
+    if (!rejectionText.trim() || rejectionBusy) return
+    setRejectionBusy(true)
+    setRejectionError("")
+    setRejectionReview(null)
+    try {
+      const proposal = await okfApi<{
+        result: { message: string }
+        draft: { id: string } | null
+      }>("/api/okf/assistant", {
+        mode: "rejection",
+        text: rejectionText.trim(),
+        pageId: "mg-overview",
+        requestId: editableRequest.id,
+      })
+      if (!proposal.draft)
+        throw new Error(
+          proposal.result.message ||
+            "This rejection is already covered by Madagascar knowledge."
+        )
+      const preview = await okfApi<{
+        token: string
+        comparisons: {
+          before: {
+            rules: { id: string }[]
+          }
+          after: {
+            rules: {
+              id: string
+              document: string
+              instruction: string
+              consequence: string
+            }[]
+          }
+        }[]
+      }>("/api/okf", { action: "preview", id: proposal.draft.id })
+      const requirements = preview.comparisons.flatMap((comparison) => {
+        const existingIds = new Set(
+          comparison.before.rules.map((rule) => rule.id)
+        )
+        return comparison.after.rules
+          .filter((rule) => !existingIds.has(rule.id))
+          .map((rule) => ({
+            document: rule.document,
+            instruction: rule.instruction,
+            consequence: rule.consequence,
+          }))
+      })
+      setRejectionReview({
+        draftId: proposal.draft.id,
+        token: preview.token,
+        message: proposal.result.message,
+        requirements,
+      })
+    } catch (error) {
+      setRejectionError(
+        error instanceof Error
+          ? error.message
+          : "Could not review this rejection."
+      )
+    } finally {
+      setRejectionBusy(false)
+    }
+  }
+
+  async function approveRejection() {
+    if (!rejectionReview || rejectionBusy) return
+    setRejectionBusy(true)
+    setRejectionError("")
+    try {
+      await okfApi("/api/okf", {
+        action: "publish",
+        id: rejectionReview.draftId,
+        token: rejectionReview.token,
+      })
+      setRejectionOpen(false)
+      setRejectionText("")
+      setRejectionReview(null)
+      setRejectionNotice(
+        "Rejection requirements added to Madagascar knowledge. Future uploads will check them."
+      )
+    } catch (error) {
+      setRejectionError(
+        error instanceof Error
+          ? error.message
+          : "Could not approve this rejection."
+      )
+    } finally {
+      setRejectionBusy(false)
+    }
   }
 
   function updateGoodsItems(
@@ -750,8 +1081,30 @@ function AnalysisView({
     )
   }
 
+  React.useEffect(() => {
+    function saveWithKeyboard(event: KeyboardEvent) {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLocaleLowerCase() === "s" &&
+        pendingEditsRef.current.length
+      ) {
+        event.preventDefault()
+        void saveFieldEditsRef.current()
+      }
+    }
+    window.addEventListener("keydown", saveWithKeyboard)
+    return () => window.removeEventListener("keydown", saveWithKeyboard)
+  }, [])
+
   return (
-    <div className="mx-auto grid w-full max-w-6xl gap-8">
+    <div
+      className={cn(
+        "mx-auto grid w-full gap-8",
+        activeSection === "dashboard" || activeSection === "errors"
+          ? "max-w-none"
+          : "max-w-6xl"
+      )}
+    >
       {isProgressivelyLoading ? (
         <div className="flex items-center gap-3 rounded-xl border border-indigo-500/20 bg-linear-to-r from-indigo-500/8 via-fuchsia-500/5 to-cyan-500/8 px-4 py-3 text-sm shadow-[0_0_28px_rgba(99,102,241,0.10)]">
           <span className="relative flex size-8 shrink-0 items-center justify-center rounded-full bg-background text-indigo-600 shadow-sm dark:text-indigo-300">
@@ -785,39 +1138,201 @@ function AnalysisView({
           role="tabpanel"
           id="certificate-record-section"
           aria-labelledby="certificate-header-dashboard certificate-mobile-dashboard"
-          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+          className="grid gap-4"
         >
-          {[
-            {
-              label: "Bill of Lading",
-              value:
-                fieldMap.get("billOfLadingReference")?.value ||
-                (isAnalyzing ? "Extracting…" : "Not available"),
-            },
-            {
-              label: "Customer",
-              value:
-                fieldMap.get("importerName")?.value ||
-                (isAnalyzing ? "Extracting…" : "Not available"),
-            },
-            {
-              label: "Destination",
-              value: country || editableRequest.country || "Not available",
-            },
-            {
-              label: "Documents",
-              value: `${editableRequest.documents.length} uploaded`,
-            },
-          ].map((item) => (
-            <Card key={item.label} className="gap-2 py-4 shadow-sm">
-              <CardHeader className="px-4">
-                <CardDescription>{item.label}</CardDescription>
-                <CardTitle className="truncate text-base">
-                  {item.value}
-                </CardTitle>
-              </CardHeader>
-            </Card>
-          ))}
+          <Card className="gap-0 overflow-hidden py-0 shadow-sm">
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b px-4 py-4 sm:px-5">
+              <CardTitle className="text-lg">Submission Summary</CardTitle>
+              <Combobox
+                items={[...certificateRecordStatuses]}
+                value={editableRequest.status}
+                onValueChange={(value) =>
+                  value &&
+                  updateRecordStatus(value as MadagascarRequest["status"])
+                }
+              >
+                <ComboboxTrigger
+                  aria-label="Status"
+                  className="h-9 w-auto min-w-44 bg-background"
+                >
+                  <CertificateStatusBadge status={editableRequest.status} />
+                </ComboboxTrigger>
+                <ComboboxContent focusListOnOpen>
+                  {certificateRecordStatuses.map((status) => (
+                    <ComboboxItem key={status} value={status}>
+                      <CertificateStatusBadge status={status} />
+                    </ComboboxItem>
+                  ))}
+                </ComboboxContent>
+              </Combobox>
+            </CardHeader>
+            <CardContent className="grid gap-4 p-4 sm:p-5 xl:grid-cols-2">
+              <SummaryGroup title="Record">
+                <SummaryInput
+                  label="Customer Name"
+                  value={fieldMap.get("importerName")?.value ?? ""}
+                  onCommit={(value) =>
+                    stageFieldEdit("importerName", "Customer Name", value)
+                  }
+                />
+                <SummaryInput
+                  label="Customer Reference"
+                  value={recordDetails.customerReference}
+                  onCommit={(value) =>
+                    updateRecordDetail("customerReference", value)
+                  }
+                />
+                <SummaryInput
+                  label="Country"
+                  value={savedLayout?.layout.country ?? country}
+                  readOnly
+                />
+                <div className="grid min-w-0 gap-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Agent
+                  </span>
+                  <Combobox
+                    items={agentProfileNames}
+                    value={recordDetails.agent || null}
+                    onValueChange={(value) =>
+                      updateRecordDetail("agent", value ?? "")
+                    }
+                  >
+                    <ComboboxTrigger aria-label="Agent" className="h-10">
+                      {recordDetails.agent || "Assign Agent"}
+                    </ComboboxTrigger>
+                    <ComboboxContent focusListOnOpen>
+                      {agentProfileNames.map((agent) => (
+                        <ComboboxItem key={agent} value={agent}>
+                          {agent}
+                        </ComboboxItem>
+                      ))}
+                    </ComboboxContent>
+                  </Combobox>
+                </div>
+              </SummaryGroup>
+
+              <SummaryGroup title="Shipment">
+                <SummaryInput
+                  label="Bill of Lading Number"
+                  value={fieldMap.get("billOfLadingReference")?.value ?? ""}
+                  onCommit={(value) =>
+                    stageFieldEdit(
+                      "billOfLadingReference",
+                      "Bill of Lading Number",
+                      value
+                    )
+                  }
+                />
+                <SummaryInput
+                  label="CTN Number"
+                  value={recordDetails.ctnNumber}
+                  onCommit={(value) => updateRecordDetail("ctnNumber", value)}
+                />
+                <SummaryInput
+                  label="ETD"
+                  type="date"
+                  value={fieldMap.get("loadingDate")?.value ?? ""}
+                  onCommit={(value) =>
+                    stageFieldEdit("loadingDate", "ETD", value)
+                  }
+                />
+                <SummaryInput
+                  label="ETA"
+                  type="date"
+                  value={fieldMap.get("unloadingDate")?.value ?? ""}
+                  onCommit={(value) =>
+                    stageFieldEdit("unloadingDate", "ETA", value)
+                  }
+                />
+                <div className="grid min-w-0 gap-1.5 sm:col-span-2">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Territory
+                  </span>
+                  <Combobox
+                    items={["In Territory", "Out of Territory"]}
+                    value={recordDetails.territory || null}
+                    onValueChange={(value) =>
+                      updateRecordDetail("territory", value ?? "")
+                    }
+                  >
+                    <ComboboxTrigger aria-label="Territory" className="h-10">
+                      {recordDetails.territory || "Select Territory"}
+                    </ComboboxTrigger>
+                    <ComboboxContent focusListOnOpen>
+                      <ComboboxItem value="In Territory">
+                        In Territory
+                      </ComboboxItem>
+                      <ComboboxItem value="Out of Territory">
+                        Out of Territory
+                      </ComboboxItem>
+                    </ComboboxContent>
+                  </Combobox>
+                </div>
+              </SummaryGroup>
+
+              <SummaryGroup title="Invoice">
+                <SummaryInput
+                  label="Invoice Number"
+                  value={
+                    fieldMap.get("commercialInvoiceReference")?.value ?? ""
+                  }
+                  onCommit={(value) =>
+                    stageFieldEdit(
+                      "commercialInvoiceReference",
+                      "Invoice Number",
+                      value
+                    )
+                  }
+                />
+                <SummaryInput
+                  label="Correction Invoice Number"
+                  value={recordDetails.correctionInvoiceNumber}
+                  onCommit={(value) =>
+                    updateRecordDetail("correctionInvoiceNumber", value)
+                  }
+                />
+                <div className="sm:col-span-2">
+                  <SummaryInput
+                    label="Amount"
+                    type="number"
+                    value={primaryInvoiceValue.value}
+                    onCommit={(value) =>
+                      updateInvoiceValue(
+                        fobValueIndex >= 0 ? fobValueIndex : 0,
+                        value
+                      )
+                    }
+                  />
+                </div>
+              </SummaryGroup>
+
+              <SummaryGroup title="Workflow">
+                <SummaryInput
+                  label="Zoho Ticket ID"
+                  value={recordDetails.zohoTicketId}
+                  onCommit={(value) =>
+                    updateRecordDetail("zohoTicketId", value)
+                  }
+                />
+                <SwitchGroup className="self-end">
+                  <Switch
+                    isSelected={recordDetails.reviewedByAgent}
+                    onChange={(value) =>
+                      updateRecordDetail("reviewedByAgent", value)
+                    }
+                  >
+                    <Switch.Content className="h-10">
+                      <Switch.Control>
+                        <Switch.Thumb />
+                      </Switch.Control>
+                      <Label>Reviewed by Agent</Label>
+                    </Switch.Content>
+                  </Switch>
+                </SwitchGroup>
+              </SummaryGroup>
+            </CardContent>
+          </Card>
         </div>
       ) : null}
 
@@ -1163,20 +1678,126 @@ function AnalysisView({
           id="certificate-record-section"
           aria-labelledby="certificate-header-errors certificate-mobile-errors"
         >
+          {!isAnalyzing && isMadagascarRecord ? (
+            <div className="mb-4 flex justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setRejectionError("")
+                  setRejectionOpen(true)
+                }}
+              >
+                <MessageSquareTextIcon />
+                Add Rejection Reason
+              </Button>
+            </div>
+          ) : null}
+          {rejectionNotice ? (
+            <Alert className="mb-4 border-emerald-200 bg-emerald-50 text-emerald-950">
+              <CheckIcon />
+              <AlertTitle>Knowledge Updated</AlertTitle>
+              <AlertDescription>{rejectionNotice}</AlertDescription>
+            </Alert>
+          ) : null}
           {isAnalyzing ? (
             <p className="text-sm text-muted-foreground">
-              Missing fields and corrections will be checked after all document
-              extraction is complete.
+              Published corrections will be checked after document extraction is
+              complete.
             </p>
           ) : (
             <CertificateCorrections
-              message={analysis.missingCorrectionsMessage}
-              error={analysisError}
+              title="Published Correction Checks"
+              message={publishedCorrectionMessage(analysis)}
+              emptyMessage="No published correction issues found."
               loading={false}
             />
           )}
         </div>
       ) : null}
+
+      <Dialog
+        open={rejectionOpen}
+        onOpenChange={(open) => {
+          if (rejectionBusy) return
+          setRejectionOpen(open)
+          if (!open) {
+            setRejectionError("")
+            setRejectionReview(null)
+          }
+        }}
+      >
+        <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Add Rejection Reason</DialogTitle>
+            <DialogDescription>
+              Paste the authority&apos;s rejection. AI will turn it into clean
+              requirements for you to approve.
+            </DialogDescription>
+          </DialogHeader>
+          {!rejectionReview ? (
+            <Textarea
+              autoFocus
+              rows={8}
+              value={rejectionText}
+              placeholder="Paste the original rejection reason…"
+              onChange={(event) => setRejectionText(event.target.value)}
+              disabled={rejectionBusy}
+            />
+          ) : (
+            <div className="grid gap-3">
+              <p className="text-sm text-muted-foreground">
+                {rejectionReview.message}
+              </p>
+              {rejectionReview.requirements.map((requirement, index) => (
+                <Alert key={`${requirement.document}-${index}`}>
+                  <FileSearchIcon />
+                  <AlertTitle>{requirement.document}</AlertTitle>
+                  <AlertDescription>{requirement.instruction}</AlertDescription>
+                </Alert>
+              ))}
+              <p className="text-xs text-muted-foreground">
+                The original rejection will be retained as evidence. These
+                checks become active only after approval.
+              </p>
+            </div>
+          )}
+          {rejectionError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {rejectionError}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={rejectionBusy}
+              onClick={() => setRejectionOpen(false)}
+            >
+              Cancel
+            </Button>
+            {rejectionReview ? (
+              <Button
+                type="button"
+                disabled={rejectionBusy}
+                onClick={() => void approveRejection()}
+              >
+                <CheckIcon />
+                {rejectionBusy ? "Approving…" : "Approve Requirements"}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                disabled={!rejectionText.trim() || rejectionBusy}
+                onClick={() => void reviewRejection()}
+              >
+                <SparklesIcon />
+                {rejectionBusy ? "Reviewing…" : "Review Requirements"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {downloadError ? (
         <p className="text-sm text-destructive">{downloadError}</p>
@@ -1233,7 +1854,7 @@ function NewRequest() {
       id: requestId,
       reference: "Analyzing certificate",
       country: "Unknown",
-      status: "Needs review",
+      status: "Initiated",
       documents,
       analysis: emptyMadagascarAnalysis(files.map((file) => file.name)),
       createdAt: now,
@@ -1337,8 +1958,8 @@ function NewRequest() {
               status:
                 event.type === "complete"
                   ? analysisHasIssues(analysis)
-                    ? "Needs review"
-                    : "Ready"
+                    ? "Changes Needed"
+                    : "Draft Available"
                   : job.request.status,
               analysis,
               updatedAt: new Date().toISOString(),
@@ -1378,7 +1999,9 @@ function NewRequest() {
           completedAnalysis.consigneeCountry ||
           completedAnalysis.okf?.observations.country.name ||
           "Unknown",
-        status: analysisHasIssues(completedAnalysis) ? "Needs review" : "Ready",
+        status: analysisHasIssues(completedAnalysis)
+          ? "Changes Needed"
+          : "Draft Available",
         documents,
         analysis: completedAnalysis,
         createdAt: now,
@@ -1609,8 +2232,16 @@ function Requests({
     const matchesFilter =
       selectedFilter === "all" ||
       (selectedFilter === "needs-review" &&
-        request.status === "Needs review") ||
-      (selectedFilter === "ready" && request.status === "Ready")
+        ["Changes Needed", "Rejected", "Missing Docs"].includes(
+          request.status
+        )) ||
+      (selectedFilter === "ready" &&
+        [
+          "Draft Available",
+          "Draft Approved",
+          "Validation Submitted",
+          "Completed",
+        ].includes(request.status))
     const searchableValues = [
       request.reference,
       getBillOfLadingTitle(request),
@@ -1641,13 +2272,21 @@ function Requests({
       id: "needs-review",
       label: "Needs Review",
       mobileLabel: "Review",
-      count: requests.filter((request) => request.status === "Needs review")
-        .length,
+      count: requests.filter((request) =>
+        ["Changes Needed", "Rejected", "Missing Docs"].includes(request.status)
+      ).length,
     },
     {
       id: "ready",
       label: "Ready",
-      count: requests.filter((request) => request.status === "Ready").length,
+      count: requests.filter((request) =>
+        [
+          "Draft Available",
+          "Draft Approved",
+          "Validation Submitted",
+          "Completed",
+        ].includes(request.status)
+      ).length,
     },
   ]
 
@@ -2798,6 +3437,23 @@ export function MadagascarBscView({ section }: { section: Section }) {
   React.useEffect(() => {
     setActiveCertificateSection("fields")
   }, [selectedRequest?.id])
+  React.useEffect(() => {
+    if (!selectedRequest) return
+    const sectionByKey: Record<string, CertificateRecordSection> = {
+      "1": "dashboard",
+      "2": "fields",
+      "3": "errors",
+    }
+    function switchCertificateSection(event: KeyboardEvent) {
+      if (!event.altKey || event.ctrlKey || event.metaKey) return
+      const nextSection = sectionByKey[event.key]
+      if (!nextSection) return
+      event.preventDefault()
+      setActiveCertificateSection(nextSection)
+    }
+    window.addEventListener("keydown", switchCertificateSection)
+    return () => window.removeEventListener("keydown", switchCertificateSection)
+  }, [selectedRequest])
 
   return (
     <PageFrame

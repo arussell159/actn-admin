@@ -36,7 +36,7 @@ import {
 import { NotebookSkeleton } from "@/components/page-skeletons"
 import {
   SiteHeaderBackButton,
-  siteHeaderGlassButtonClassName,
+  SiteHeaderIconButton,
 } from "@/components/site-header"
 import { SimpleEditor } from "@/components/tiptap-templates/simple/simple-editor"
 import { Button } from "@/components/ui/button"
@@ -1011,16 +1011,11 @@ function MobileNotebookActions({
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button
-            variant="outline"
-            size="icon-lg"
-            className={siteHeaderGlassButtonClassName}
-            aria-label="Notebook actions"
-          />
+          <SiteHeaderIconButton label="Notebook actions">
+            <MoreHorizontalIcon />
+          </SiteHeaderIconButton>
         }
-      >
-        <MoreHorizontalIcon />
-      </DropdownMenuTrigger>
+      />
       <DropdownMenuContent align="end" className="min-w-52! p-1.5!">
         {!isNote ? (
           <>

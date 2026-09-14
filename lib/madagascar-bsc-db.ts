@@ -4,6 +4,7 @@ import { createClient } from "@/lib/client"
 import {
   createMadagascarId,
   extractedBillOfLadingReference,
+  normalizeCertificateRecordStatus,
   type MadagascarRequest,
   type MadagascarRule,
 } from "@/lib/madagascar-bsc"
@@ -40,9 +41,7 @@ function notifyRequestChange() {
     window.dispatchEvent(new Event(requestChangedEvent))
 }
 
-export function subscribeToMadagascarRequestChanges(
-  listener: () => void
-) {
+export function subscribeToMadagascarRequestChanges(listener: () => void) {
   if (typeof window === "undefined") return () => undefined
 
   window.addEventListener(requestChangedEvent, listener)
@@ -76,7 +75,7 @@ function toRequest(row: RequestRow): MadagascarRequest {
       (row.analysis?.okf?.observations.country.status === "supported"
         ? row.analysis.okf.observations.country.name
         : "Unknown"),
-    status: row.status,
+    status: normalizeCertificateRecordStatus(row.status),
     documents: row.documents ?? [],
     analysis: row.analysis,
     createdAt: row.created_at,

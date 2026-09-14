@@ -10,7 +10,6 @@ import {
   isPhoneAuthSession,
   markAuthSessionStarted,
 } from "@/lib/auth-session-timeout"
-import { createClient, ensureLocalDevelopmentSession } from "@/lib/client"
 
 export function AuthSessionGuard() {
   const router = useRouter()
@@ -18,7 +17,6 @@ export function AuthSessionGuard() {
   React.useEffect(() => {
     let isMounted = true
     let isChecking = false
-    const supabase = createClient()
 
     async function enforceTimeout() {
       if (
@@ -32,6 +30,9 @@ export function AuthSessionGuard() {
       isChecking = true
 
       try {
+        const { createClient, ensureLocalDevelopmentSession } =
+          await import("@/lib/client")
+        const supabase = createClient()
         const {
           data: { session },
           error,
