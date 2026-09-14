@@ -75,8 +75,8 @@ import { Textarea } from "@/components/ui/textarea"
 import {
   defaultCountryReportMapping,
   defaultMasterReportMapping,
+  createDefaultMonthEndTemplate,
   getMonthEndTemplate,
-  loadMonthEndTemplate,
   makeTemplateId,
   saveMonthEndTemplate,
   type MonthEndTemplate,
@@ -364,7 +364,7 @@ type ItemForm =
 
 export function TemplateEditorView() {
   const [template, setTemplate] =
-    React.useState<MonthEndTemplate>(loadMonthEndTemplate)
+    React.useState<MonthEndTemplate>(createDefaultMonthEndTemplate)
   const [activeModuleId, setActiveModuleId] = React.useState<string | null>(
     countriesModuleId
   )
