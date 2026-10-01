@@ -429,7 +429,8 @@ export function parseCameroonCountryReportCsv(csvText: string) {
   }
 
   const normalizedHeaders = headers.map(normalizeCsvHeader)
-  const invoiceIndex = findCsvColumn(headers, ["numero", "minumber", "mi"])
+  const invoiceIndex = findCsvColumn(headers, ["numero", "minumber", "besc", "mi"])
+  const bookingIndex = findCsvColumn(headers, ["booking", "billoflading"])
   const amountIndex = normalizedHeaders.findIndex(
     (header) =>
       (header === "val" ||
@@ -463,7 +464,8 @@ export function parseCameroonCountryReportCsv(csvText: string) {
       return {
         invoiceNumber,
         ctnNumber: invoiceNumber,
-        billOfLadingNumber: "",
+        billOfLadingNumber:
+          bookingIndex >= 0 ? (row[bookingIndex]?.trim() ?? "") : "",
         reference: invoiceNumber,
         amount: parseAmount(row[amountIndex]),
         secondaryAmount: parseAmount(row[commissionIndex]),
@@ -500,7 +502,7 @@ export function getCameroonCountryReportTotals(
       header === "com" || header === "comusd" || header.includes("commission")
   )
   const totalRow = dataRows.find((row) =>
-    row.some((cell) => normalizeCsvHeader(cell).includes("totalamount"))
+    row.some((cell) => normalizeCsvHeader(cell).startsWith("total"))
   )
 
   if (!totalRow || amountIndex < 0 || commissionIndex < 0) {
@@ -508,8 +510,18 @@ export function getCameroonCountryReportTotals(
   }
 
   return {
-    amount: parseAmount(totalRow[amountIndex]),
-    secondaryAmount: parseAmount(totalRow[commissionIndex]),
+    amount: totalRow[amountIndex]?.trim()
+      ? parseAmount(totalRow[amountIndex])
+      : parseCameroonCountryReportCsv(csvText).reduce(
+          (total, record) => total + record.amount,
+          0
+        ),
+    secondaryAmount: totalRow[commissionIndex]?.trim()
+      ? parseAmount(totalRow[commissionIndex])
+      : parseCameroonCountryReportCsv(csvText).reduce(
+          (total, record) => total + (record.secondaryAmount ?? 0),
+          0
+        ),
   }
 }
 
