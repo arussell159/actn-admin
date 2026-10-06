@@ -113,6 +113,12 @@ import {
   type MonthEndMasterRecord,
 } from "@/lib/month-end-master-records"
 import { monthEndCountryHref } from "@/lib/month-end-country-route"
+import {
+  formatExchangeRate,
+  isExchangeRateDraft,
+  normalizeExchangeRateText,
+  parseExchangeRate,
+} from "@/lib/exchange-rate"
 import { extractWorkbookRows } from "@/lib/country-report-import"
 import {
   getMonthEndTemplate,
@@ -444,28 +450,6 @@ function asNumber(value: unknown) {
 
 function exchangeRateDisplayKey(rowId: string) {
   return `${rowId}__exchange_rate_display`
-}
-
-function parseExchangeRate(value: string) {
-  const normalizedValue = value.trim().replace(",", ".")
-
-  if (!/^\d+(?:\.\d{1,4})?$/.test(normalizedValue)) {
-    return undefined
-  }
-
-  const exchangeRate = Number(normalizedValue)
-
-  return Number.isFinite(exchangeRate) && exchangeRate > 0
-    ? exchangeRate
-    : undefined
-}
-
-function formatExchangeRate(value: number) {
-  return value.toLocaleString("en-US", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 4,
-    useGrouping: false,
-  })
 }
 
 function MonthEndMetricCard({
@@ -2212,7 +2196,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
       return
     }
 
-    const trimmedValue = exchangeRateDraft.trim().replace(",", ".")
+    const trimmedValue = normalizeExchangeRateText(exchangeRateDraft)
     const nextValue = parseExchangeRate(trimmedValue)
 
     if (trimmedValue && nextValue === undefined) {
@@ -4043,11 +4027,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                       onChange={(event) => {
                                         const nextValue = event.target.value
 
-                                        if (
-                                          /^\d*(?:[.,]\d{0,4})?$/.test(
-                                            nextValue
-                                          )
-                                        ) {
+                                        if (isExchangeRateDraft(nextValue)) {
                                           setExchangeRateDraft(nextValue)
                                         }
                                       }}
@@ -4060,7 +4040,7 @@ export function MonthEndView({ period }: { period?: string } = {}) {
                                           cancelEditExchangeRate()
                                         }
                                       }}
-                                      className="h-8 w-28 text-foreground"
+                                      className="h-8 w-32 text-foreground"
                                       autoFocus
                                       aria-label={`Exchange rate for ${row.name}`}
                                     />

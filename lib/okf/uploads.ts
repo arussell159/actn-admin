@@ -24,6 +24,10 @@ import {
   type SupportedCountry,
 } from "./openai-document-provider"
 import {
+  documentReconciliationRequired,
+  selectReconciliationCandidate,
+} from "./document-reconciliation"
+import {
   databaseError,
   type okfSession,
   readKnowledge,
@@ -265,15 +269,14 @@ async function readCorrectionMemory(
       if (!country || !learning) continue
       const repeatableEvidence =
         learning.basis === "observed correction" && learning.relatedTarget
-            ? `relation:${learning.relatedTarget}`
+          ? `relation:${learning.relatedTarget}`
           : learning.basis === "document evidence" &&
               learning.verified &&
               learning.documentType &&
               learning.missedReason
             ? `document:${learning.documentType}`
             : ""
-      if (!repeatableEvidence)
-        continue
+      if (!repeatableEvidence) continue
       const key = `${country.toLocaleLowerCase()}:${learning.target.toLocaleLowerCase()}:${repeatableEvidence.toLocaleLowerCase()}`
       const current = observedGroups.get(key)
       if (current) current.requestIds.add(String(correction.request_id))
@@ -1221,28 +1224,11 @@ export async function reviewUploads(
         })
       )
     )
-    const fieldsBySystemId = new Map<string, Set<string>>()
-    for (const mapping of reconciliationMappings) {
-      if (mapping.repeated) continue
-      const filesWithValues = new Set(
-        documentAnalyses.flatMap((analysis) =>
-          analysis.fields.some(
-            (field) =>
-              field.id === mapping.sourceFieldId && field.value !== null
-          )
-            ? [analysis.originalFilename]
-            : []
-        )
-      )
-      const current = fieldsBySystemId.get(mapping.systemFieldId) ?? new Set()
-      filesWithValues.forEach((filename) => current.add(filename))
-      fieldsBySystemId.set(mapping.systemFieldId, current)
-    }
-    const needsReconciliation =
-      documentAnalyses.some(
-        (analysis) => analysis.possibleConflicts.length > 0
-      ) ||
-      [...fieldsBySystemId.values()].some((filenames) => filenames.size > 1)
+    const needsReconciliation = documentReconciliationRequired(
+      documentAnalyses,
+      reconciliationMappings,
+      Number(process.env.OPENAI_DOCUMENT_CONFIDENCE_THRESHOLD ?? 0.72)
+    )
     if (needsReconciliation) {
       try {
         const documentForSourceField = new Map(
@@ -1290,14 +1276,7 @@ export async function reviewUploads(
               )
             continue
           }
-          const selected = candidates.find(
-            (field) =>
-              field.value === resolved.value &&
-              (!resolved.source ||
-                field.evidence.some(
-                  (evidence) => evidence.document === resolved.source?.filename
-                ))
-          )
+          const selected = selectReconciliationCandidate(candidates, resolved)
           if (!selected) continue
           observations.fields = [
             ...observations.fields.filter(

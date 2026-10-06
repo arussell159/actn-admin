@@ -188,6 +188,12 @@ type ResponseUsage = {
   output_tokens?: number
   total_tokens?: number
 }
+type ProviderResponse = {
+  status?: string
+  output_text?: string
+  output?: Array<{ content?: Array<{ type?: string; text?: string }> }>
+  usage?: ResponseUsage
+}
 
 export type ExtractionFieldDelta = {
   id: string
@@ -411,11 +417,12 @@ function extractionDeltaReader(
       const start = (match.index ?? 0) + match[0].length
       const end = matches[index + 1]?.index ?? fields.length
       const fieldText = fields.slice(start, end)
-      const valueMatch = /"value"\s*:\s*"((?:\\.|[^"\\])*)/.exec(fieldText)
+      const valueMatch = /"value"\s*:\s*"((?:\\.|[^"\\])*)"/.exec(fieldText)
       if (!valueMatch) return
       const value = decodeJsonStringFragment(valueMatch[1])
-      if (!value || emitted.get(id) === value) return
-      emitted.set(id, value)
+      const key = `${id}:${match.index}`
+      if (!value || emitted.get(key) === value) return
+      emitted.set(key, value)
       onFieldDelta({ id, value })
     })
   }
@@ -430,12 +437,7 @@ async function streamedResponse(
   const decoder = new TextDecoder()
   let buffer = ""
   let text = ""
-  let completed: {
-    status?: string
-    output_text?: string
-    output?: Array<{ content?: Array<{ type?: string; text?: string }> }>
-    usage?: ResponseUsage
-  } | null = null
+  let completed: ProviderResponse | null = null
 
   const consume = (block: string) => {
     const data = block
@@ -456,8 +458,10 @@ async function streamedResponse(
     }
     if (event.type === "response.completed" && event.response)
       completed = event.response
-    if (event.type === "response.failed")
+    if (event.type === "response.failed" || event.type === "error")
       throw new Error(event.error?.message || "OpenAI streaming failed.")
+    if (event.type === "response.incomplete")
+      throw new Error("OpenAI returned an incomplete document review.")
   }
 
   while (true) {
@@ -469,9 +473,12 @@ async function streamedResponse(
     if (done) break
   }
   if (buffer.trim()) consume(buffer)
+  const finalResponse = completed as ProviderResponse | null
+  if (!finalResponse)
+    throw new Error("OpenAI document stream ended before completion.")
   return {
-    ...(completed ?? { status: "completed" }),
-    output_text: completed ? outputText(completed) || text : text,
+    ...finalResponse,
+    output_text: outputText(finalResponse) || text,
   }
 }
 
@@ -864,6 +871,52 @@ function ensureRequestedFields(
   result: z.infer<typeof analysisSchema>,
   fields: ExtractionField[]
 ) {
+  const requested = new Map(fields.map((field) => [field.id, field]))
+  result.fields = result.fields.filter((field) => requested.has(field.id))
+  result.missingFields = result.missingFields.filter((id) => requested.has(id))
+  result.uncertainFields = result.uncertainFields.filter((id) =>
+    requested.has(id)
+  )
+  result.possibleConflicts = result.possibleConflicts.filter((conflict) =>
+    requested.has(conflict.fieldId)
+  )
+  const unique = new Map<string, (typeof result.fields)[number]>()
+  for (const field of result.fields) {
+    const definition = requested.get(field.id)!
+    const key = `${field.id}:${definition.repeated ? field.row : "scalar"}`
+    const previous = unique.get(key)
+    if (previous && previous.value !== field.value) {
+      const values = [previous.value, field.value].filter(
+        (value): value is string => Boolean(value?.trim())
+      )
+      if (values.length > 1)
+        result.possibleConflicts.push({
+          fieldId: field.id,
+          values,
+          explanation:
+            "The document returned conflicting values for the same field and row.",
+        })
+    }
+    if (!previous || field.confidence > previous.confidence)
+      unique.set(key, field)
+  }
+  result.fields = [...unique.values()]
+  for (const field of result.fields) {
+    const definition = requested.get(field.id)!
+    if (!field.value?.trim()) continue
+    if (
+      !field.sourcePage ||
+      !field.supportingText?.trim() ||
+      (definition.repeated && field.row === null) ||
+      (definition.options.length > 0 &&
+        !definition.options.some(
+          (option) => option.trim() === field.value!.trim()
+        ))
+    ) {
+      if (!result.uncertainFields.includes(field.id))
+        result.uncertainFields.push(field.id)
+    }
+  }
   const returned = new Set(result.fields.map((field) => field.id))
   for (const field of fields) {
     if (!field.repeated && !returned.has(field.id)) {
@@ -900,6 +953,22 @@ function escalationReasons(
     )
   )
     reasons.push("low_field_confidence")
+  if (
+    result.uncertainFields.some(
+      (id) =>
+        critical.has(id) ||
+        result.fields.some((field) => field.id === id && field.value?.trim())
+    )
+  )
+    reasons.push("uncertain_fields")
+  if (
+    result.fields.some(
+      (field) =>
+        field.value?.trim() &&
+        (!field.sourcePage || !field.supportingText?.trim())
+    )
+  )
+    reasons.push("missing_field_evidence")
   if (
     [...critical].some(
       (id) =>
@@ -999,9 +1068,22 @@ function toObservations(
       const definition = definitions.get(field.id)!
       const value = field.value?.trim() ?? ""
       const supportingText = field.supportingText?.trim() ?? ""
-      const hasSource = Boolean(value && field.sourcePage)
+      const hasSource = Boolean(value && field.sourcePage && supportingText)
       const confident = field.confidence >= confidenceThreshold()
-      const status = hasSource && confident ? "passed" : "unconfirmed"
+      const conflict = analysis.possibleConflicts.some(
+        (candidate) => candidate.fieldId === field.id
+      )
+      const uncertain =
+        analysis.uncertainFields.includes(field.id) ||
+        analysis.missingFields.includes(field.id) ||
+        (definition.repeated && field.row === null) ||
+        (definition.options.length > 0 &&
+          !definition.options.some((option) => option.trim() === value))
+      const status = conflict
+        ? "conflicting"
+        : hasSource && confident && !uncertain
+          ? "passed"
+          : "unconfirmed"
       return {
         id: field.id,
         observedText: supportingText,
@@ -1012,7 +1094,7 @@ function toObservations(
               {
                 document: analysis.originalFilename,
                 page: String(field.sourcePage),
-                observedText: supportingText || value,
+                observedText: supportingText,
               },
             ]
           : [],
@@ -1144,7 +1226,7 @@ async function inspectDocument(
     const result = await structuredResponse({
       schema,
       schemaName: "shipment_document_inspection",
-      instructions: `${systemInstruction} Inspect this file once. First classify it. For a Bill of Lading, read the explicit country from the consignee name/address block and match it to the supported-country catalogue; never use the notify party or a port as consignee-country evidence. Then select only the extraction profile whose documentType exactly matches the classification and extract its requested fields. If no profile matches, return an empty extraction. Return each requested non-repeated field once, use zero-based rows for repeated fields, and emit fields in the supplied order. The classification and extraction document types must match. Keep evidence excerpts short and return null rather than guessing.`,
+      instructions: `${systemInstruction} Inspect this file once. First classify it. For a Bill of Lading, read the explicit country from the consignee name/address block and match it to the supported-country catalogue; never use the notify party or a port as consignee-country evidence. Then select only the extraction profile whose documentType exactly matches the classification and extract its requested fields. If no profile matches, return an empty extraction. Return each requested non-repeated field once, use zero-based rows for repeated fields, and emit fields in the supplied order. The classification and extraction document types must match. Preserve identifiers, decimal precision and line-item alignment. Read dates from their printed label and calendar convention; do not guess ambiguous day/month order. Each non-null value must include its one-based source page and a short exact supporting excerpt. List uncertain fields and conflicting alternatives even when confidence is high. Keep evidence excerpts short and return null rather than guessing.`,
       data: {
         originalFilename: file.name,
         supportedCountries,
@@ -1171,6 +1253,10 @@ async function inspectDocument(
     const profile = profiles.find(
       (candidate) => candidate.documentType === classification.documentType
     )
+    if (result.extraction.documentType !== classification.documentType)
+      throw new SyntaxError(
+        "Document classification and extraction types do not match."
+      )
     const extraction = ensureRequestedFields(
       analysisSchema.parse({
         ...result.extraction,
@@ -1301,6 +1387,8 @@ export async function reconcileDocuments(
     documentType: analysis.documentType,
     documentTypeConfidence: analysis.documentTypeConfidence,
     warnings: analysis.warnings,
+    missingFields: analysis.missingFields,
+    uncertainFields: analysis.uncertainFields,
     possibleConflicts: analysis.possibleConflicts,
     fields: analysis.fields.flatMap((field) => {
       const mapping = mappingBySource.get(field.id)
@@ -1313,6 +1401,12 @@ export async function reconcileDocuments(
               confidence: field.confidence,
               sourcePage: field.sourcePage,
               supportingText: field.supportingText,
+              uncertain:
+                analysis.uncertainFields.includes(field.id) ||
+                analysis.missingFields.includes(field.id),
+              conflicting: analysis.possibleConflicts.some(
+                (conflict) => conflict.fieldId === field.id
+              ),
             },
           ]
         : []
@@ -1322,7 +1416,7 @@ export async function reconcileDocuments(
     schema: reconciliationSchema,
     schemaName: "shipment_reconciliation",
     instructions:
-      "Reconcile only the supplied extracted JSON; no source PDFs are available in this step. Match related documents, remove obvious duplicate values, and detect conflicts in parties, BL and invoice references, vessel, ports, weight, quantity, currency, value, and goods descriptions. Prefer the normally authoritative document named for a field and stronger direct evidence. Never invent a value. If a conflict cannot be resolved, return value null and preserve every conflicting value. Explain which source supports a selected value. Return at most one resolvedFields entry per supplied system field id.",
+      "Reconcile only the supplied extracted JSON; no source PDFs are available in this step. Match related documents, remove obvious duplicate values, and detect conflicts in parties, BL and invoice references, vessel, ports, weight, quantity, currency, value, and goods descriptions. Prefer the normally authoritative document named for a field and stronger direct evidence. Never invent a value or upgrade an uncertain, missing or internally conflicting source field without a source reread. Select only a source candidate that is already supported and certain. If a conflict cannot be resolved, return value null and preserve every conflicting value. Explain which source supports a selected value. Return at most one resolvedFields entry per supplied system field id.",
     data: { allowedFieldIds, documents: data },
     model: baseModel(),
     reasoningEffort: "none",

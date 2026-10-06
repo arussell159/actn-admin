@@ -127,6 +127,12 @@ import {
 import { normalizeCsvHeader, parseCsv } from "@/lib/csv"
 import { fetchWithTimeout } from "@/lib/network"
 import { cn } from "@/lib/utils"
+import {
+  formatExchangeRate,
+  isExchangeRateDraft,
+  normalizeExchangeRateText,
+  parseExchangeRate,
+} from "@/lib/exchange-rate"
 
 const ANGOLA_OOT_COUNTRY_ID = "angola-oot"
 const ANGOLA_OOT_COUNTRY_NAME = "Angola OOT"
@@ -1258,28 +1264,6 @@ function parseCongoMoneyValue(value: string) {
   const amount = Number(normalized)
 
   return Number.isFinite(amount) ? Math.abs(isNegative ? -amount : amount) : 0
-}
-
-function parseFrabemarExchangeRate(value: string) {
-  const normalizedValue = value.trim().replace(",", ".")
-
-  if (!/^\d+(?:\.\d{1,4})?$/.test(normalizedValue)) {
-    return undefined
-  }
-
-  const exchangeRate = Number(normalizedValue)
-
-  return Number.isFinite(exchangeRate) && exchangeRate > 0
-    ? exchangeRate
-    : undefined
-}
-
-function formatFrabemarExchangeRate(value: number) {
-  return value.toLocaleString("en-US", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 4,
-    useGrouping: false,
-  })
 }
 
 function congoMoneyValuesFromLine(line: string) {
@@ -5639,7 +5623,9 @@ function JournalEntryPreview({
       : `${sourceDocumentCount} / 4`
   const exchangeRateLabel =
     entries.length === 1
-      ? entries[0]?.exchangeRate?.toFixed(4) || "Not applied"
+      ? entries[0]?.exchangeRate
+        ? formatExchangeRate(entries[0].exchangeRate)
+        : "Not applied"
       : "By country"
 
   React.useEffect(() => {
@@ -5755,7 +5741,7 @@ function JournalEntryPreview({
                       onChange={(event) => {
                         const nextValue = event.target.value
 
-                        if (/^\d*(?:[.,]\d{0,4})?$/.test(nextValue)) {
+                        if (isExchangeRateDraft(nextValue)) {
                           onExchangeRateAttentionHandled?.()
                           exchangeRateEditor.onDraftChange(nextValue)
                         }
@@ -5944,7 +5930,7 @@ function JournalEntryPreview({
                             <div className="text-xs font-normal text-muted-foreground">
                               {formatAmount(entry.countryTotal)}
                               {entry.exchangeRate
-                                ? ` x ${entry.exchangeRate.toFixed(4)}`
+                                ? ` x ${formatExchangeRate(entry.exchangeRate)}`
                                 : ""}
                             </div>
                           </TableCell>
@@ -6311,9 +6297,7 @@ function FrabemarInvoicePackageStep({
     }
   }
 
-  const parsedSharedExchangeRate = parseFrabemarExchangeRate(
-    sharedExchangeRateDraft
-  )
+  const parsedSharedExchangeRate = parseExchangeRate(sharedExchangeRateDraft)
   const frabemarReviewRows = packageDocument
     ? FRABEMAR_CHILD_COUNTRIES.map((country) => {
         const countryValue = packageDocument.countryValues[country.id]
@@ -6363,7 +6347,7 @@ function FrabemarInvoicePackageStep({
             parsedSharedExchangeRate && row.countryValue
               ? `(${formatAmount(row.countryValue.invoiceTotal)} - ${formatAmount(
                   row.countryValue.commission
-                )}) = ${formatAmount(row.netAmount)} * ${formatFrabemarExchangeRate(
+                )}) = ${formatAmount(row.netAmount)} * ${formatExchangeRate(
                   parsedSharedExchangeRate
                 )}`
               : undefined,
@@ -6738,7 +6722,7 @@ export function MonthEndCountryReconciliationView({
             : typeof savedFrabemarExchangeRate === "number" &&
                 Number.isFinite(savedFrabemarExchangeRate) &&
                 savedFrabemarExchangeRate > 0
-              ? formatFrabemarExchangeRate(savedFrabemarExchangeRate)
+              ? formatExchangeRate(savedFrabemarExchangeRate)
               : ""
         )
         const transactionDates = new Map<string, string>()
@@ -7708,7 +7692,7 @@ export function MonthEndCountryReconciliationView({
       return false
     }
 
-    const exchangeRate = parseFrabemarExchangeRate(value)
+    const exchangeRate = parseExchangeRate(value)
 
     if (exchangeRate === undefined) {
       return false
@@ -7719,7 +7703,7 @@ export function MonthEndCountryReconciliationView({
 
     try {
       const latestRecord = (await getMonthEndRecord(record.period)) ?? record
-      const exchangeRateDisplay = value.trim().replace(",", ".")
+      const exchangeRateDisplay = normalizeExchangeRateText(value)
       const checked = {
         ...latestRecord.checked,
         [exchangeRateKey(countryId)]: exchangeRate,
@@ -7765,7 +7749,7 @@ export function MonthEndCountryReconciliationView({
       return false
     }
 
-    const exchangeRate = parseFrabemarExchangeRate(value)
+    const exchangeRate = parseExchangeRate(value)
 
     if (exchangeRate === undefined) {
       return false
@@ -7775,7 +7759,7 @@ export function MonthEndCountryReconciliationView({
 
     try {
       const latestRecord = (await getMonthEndRecord(record.period)) ?? record
-      const exchangeRateDisplay = value.trim().replace(",", ".")
+      const exchangeRateDisplay = normalizeExchangeRateText(value)
       const checked = { ...latestRecord.checked }
 
       for (const childCountryId of FRABEMAR_CHILD_COUNTRY_IDS) {
@@ -8333,7 +8317,7 @@ export function MonthEndCountryReconciliationView({
       return false
     }
 
-    const exchangeRate = parseFrabemarExchangeRate(exchangeRateText)
+    const exchangeRate = parseExchangeRate(exchangeRateText)
 
     if (exchangeRate === undefined) {
       return false
@@ -8358,7 +8342,7 @@ export function MonthEndCountryReconciliationView({
       }
 
       const checked = { ...latestRecord.checked }
-      const exchangeRateDisplay = exchangeRateText.trim().replace(",", ".")
+      const exchangeRateDisplay = normalizeExchangeRateText(exchangeRateText)
       const countryRows = FRABEMAR_CHILD_COUNTRIES.flatMap((country) => {
         const countryValue = packageDocument.countryValues[country.id]
 
@@ -9417,7 +9401,7 @@ export function MonthEndCountryReconciliationView({
             account: "Accounts Payable",
             credit: frabemarConvertedNetInvoiceAmount,
             lineDescription: frabemarExchangeRate
-              ? `${formatAmount(frabemarNetInvoiceAmount)} * ${formatFrabemarExchangeRate(frabemarExchangeRate)}`
+              ? `${formatAmount(frabemarNetInvoiceAmount)} * ${formatExchangeRate(frabemarExchangeRate)}`
               : undefined,
           },
         ]
@@ -9549,7 +9533,7 @@ export function MonthEndCountryReconciliationView({
         : typeof exchangeRateValue === "number" &&
             Number.isFinite(exchangeRateValue) &&
             exchangeRateValue > 0
-          ? formatFrabemarExchangeRate(exchangeRateValue)
+          ? formatExchangeRate(exchangeRateValue)
           : ""
     }).find(Boolean) ?? ""
   const activeInvoiceDocument = parseInvoiceDocument(

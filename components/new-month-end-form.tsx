@@ -37,6 +37,7 @@ import {
   type MonthEndValue,
 } from "@/lib/month-end-db"
 import { parseCsv } from "@/lib/csv"
+import { parseExchangeRates } from "@/lib/month-end-exchange-rates"
 import {
   getMasterTransactionDateCheckedValues,
   getMasterCustomerNamesCheckedValue,
@@ -47,10 +48,7 @@ import {
   parseMonthEndMasterCsv,
   saveMonthEndMasterRecords,
 } from "@/lib/month-end-master-records"
-import {
-  getMonthEndTemplate,
-  type TemplateCountryRow,
-} from "@/lib/month-end-template"
+import { getMonthEndTemplate } from "@/lib/month-end-template"
 
 const months = [
   { value: "01", label: "January" },
@@ -103,69 +101,6 @@ function suggestedPeriod(existingRecords: MonthEndRecord[]) {
 
 function normalizeMatch(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "")
-}
-
-function parseExchangeRates(csvText: string, countries: TemplateCountryRow[]) {
-  const rows = parseCsv(csvText)
-  const [headers, ...dataRows] = rows
-
-  if (!headers) {
-    throw new Error("The exchange rate CSV is empty.")
-  }
-
-  const accountIndex = headers.findIndex((header) =>
-    normalizeMatch(header).includes("account")
-  )
-  const rateIndex = headers.findIndex((header) =>
-    normalizeMatch(header).includes("exchangerate")
-  )
-  const dateIndex = headers.findIndex((header) =>
-    normalizeMatch(header).includes("date")
-  )
-
-  if (accountIndex === -1 || rateIndex === -1) {
-    throw new Error("The CSV must include Account and Exchange Rate columns.")
-  }
-
-  const rowByName = new Map(
-    countries
-      .filter((country) => country.checkable !== false)
-      .map((country) => [normalizeMatch(country.name), country])
-  )
-  const latestByCountry = new Map<
-    string,
-    { country: TemplateCountryRow; date: number; rate: number }
-  >()
-
-  for (const csvRow of dataRows) {
-    const account = csvRow[accountIndex]?.trim()
-    const rawRate = csvRow[rateIndex]?.trim()
-
-    if (!account || !rawRate) {
-      continue
-    }
-
-    const countryName = account.split(":").at(-1)?.trim() ?? account
-    const country = rowByName.get(normalizeMatch(countryName))
-    const rate = Number(rawRate)
-
-    if (!country || !Number.isFinite(rate)) {
-      continue
-    }
-
-    const date = dateIndex >= 0 ? Date.parse(csvRow[dateIndex] ?? "") : 0
-    const existing = latestByCountry.get(country.id)
-
-    if (!existing || date >= existing.date) {
-      latestByCountry.set(country.id, {
-        country,
-        date: Number.isNaN(date) ? 0 : date,
-        rate: Math.round(rate * 100) / 100,
-      })
-    }
-  }
-
-  return Array.from(latestByCountry.values())
 }
 
 function isExchangeRateCsv(csvText: string) {
@@ -347,6 +282,8 @@ export function NewMonthEndForm({
       const checked = parsedRates.reduce<Record<string, MonthEndValue>>(
         (nextChecked, item) => {
           nextChecked[exchangeRateKey(item.country.id)] = item.rate
+          nextChecked[`${item.country.id}__exchange_rate_display`] =
+            item.display
           return nextChecked
         },
         {}

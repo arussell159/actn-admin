@@ -19,6 +19,7 @@ import {
   ComboboxItem,
 } from "@/components/ui/combobox"
 import { cn } from "@/lib/utils"
+import { certificateFieldCopyValue } from "@/lib/certificate-field-copy"
 import type { CertificateField } from "@/lib/certificate-layout/schema"
 
 function formatDateValue(date?: Date) {
@@ -114,13 +115,14 @@ export function CertificateFieldControl({
       setIsCtrlPressed(false)
     }
 
-    window.addEventListener("keydown", syncCtrlState)
-    window.addEventListener("keyup", syncCtrlState)
+    // Track modifier changes even when a focused control handles the key event.
+    window.addEventListener("keydown", syncCtrlState, true)
+    window.addEventListener("keyup", syncCtrlState, true)
     window.addEventListener("blur", clearCtrlState)
 
     return () => {
-      window.removeEventListener("keydown", syncCtrlState)
-      window.removeEventListener("keyup", syncCtrlState)
+      window.removeEventListener("keydown", syncCtrlState, true)
+      window.removeEventListener("keyup", syncCtrlState, true)
       window.removeEventListener("blur", clearCtrlState)
     }
   }, [])
@@ -136,21 +138,27 @@ export function CertificateFieldControl({
   }
   function copyDraftValue() {
     if (draftValueRef.current.trim()) {
-      void copyText(draftValueRef.current)
+      void copyText(certificateFieldCopyValue(draftValueRef.current, isDate))
     }
   }
-  function copyOnCtrlClick(event: React.MouseEvent<HTMLElement>) {
+  function copyOnCtrlClick(
+    event: React.MouseEvent<HTMLElement> & { preventBaseUIHandler?: () => void }
+  ) {
     if (!event.ctrlKey || !draftValueRef.current.trim()) {
       return
     }
 
     event.preventDefault()
+    event.preventBaseUIHandler?.()
     event.stopPropagation()
     copyDraftValue()
   }
 
   const isMissing = !draftValue.trim()
   const isCopyCursor = isCtrlPressed && !isMissing
+  const copyCursorStyle: React.CSSProperties | undefined = isCopyCursor
+    ? { cursor: "pointer" }
+    : undefined
   const editableFieldClassName = cn(
     "h-9 pr-9 text-[15px] font-medium",
     isCopyCursor && "cursor-pointer",
@@ -207,12 +215,25 @@ export function CertificateFieldControl({
         className="block h-auto border-transparent bg-background p-0"
         aria-busy={isLoading || undefined}
       >
-        <div className="group relative w-full rounded-lg">
+        <div
+          className="group relative w-full rounded-lg"
+          style={copyCursorStyle}
+          onPointerEnter={(event) => setIsCtrlPressed(event.ctrlKey)}
+        >
           {isDate ? (
             <div className="flex min-w-0 items-center gap-1">
               <Popover
                 open={isDateOpen}
-                onOpenChange={(open) => {
+                onOpenChange={(open, details) => {
+                  if (
+                    open &&
+                    "ctrlKey" in details.event &&
+                    details.event.ctrlKey &&
+                    draftValueRef.current.trim()
+                  ) {
+                    details.cancel()
+                    return
+                  }
                   setIsDateOpen(open)
                   if (open) {
                     setCalendarMonth(
@@ -323,7 +344,16 @@ export function CertificateFieldControl({
               <Combobox
                 items={chooserOptions}
                 open={isChooserOpen}
-                onOpenChange={(open) => {
+                onOpenChange={(open, details) => {
+                  if (
+                    open &&
+                    "ctrlKey" in details.event &&
+                    details.event.ctrlKey &&
+                    draftValueRef.current.trim()
+                  ) {
+                    details.cancel()
+                    return
+                  }
                   setIsChooserOpen(open)
                   if (open) {
                     setHighlightedChooserIndex(
@@ -425,6 +455,7 @@ export function CertificateFieldControl({
                 tabIndex={isLoading ? -1 : undefined}
                 placeholder={isLoading ? "" : "Missing"}
                 className={cn(editableFieldClassName, "h-auto min-h-24")}
+                style={copyCursorStyle}
                 onClick={copyOnCtrlClick}
                 onChange={(event) => {
                   setDraftValue(event.target.value)
@@ -445,6 +476,7 @@ export function CertificateFieldControl({
                 readOnly={isLoading}
                 tabIndex={isLoading ? -1 : undefined}
                 className={editableFieldClassName}
+                style={copyCursorStyle}
                 onClick={copyOnCtrlClick}
                 onChange={(event) => {
                   setDraftValue(event.target.value)

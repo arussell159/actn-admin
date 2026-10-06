@@ -187,7 +187,7 @@ test("new ECTN streams the Certificate Settings layout immediately after the BL 
     .click()
   await expect(
     page.getByText(
-      "Missing fields and corrections will be checked after all document extraction is complete.",
+      "Published corrections will be checked after document extraction is complete.",
       { exact: true }
     )
   ).toBeVisible()
@@ -197,7 +197,9 @@ test("new ECTN streams the Certificate Settings layout immediately after the BL 
   await certificateTabs
     .getByRole("tab", { name: "Dashboard", exact: true })
     .click()
-  await expect(page.getByText("Bill of Lading", { exact: true })).toBeVisible()
+  await expect(
+    page.getByRole("textbox", { name: "Customer Name", exact: true })
+  ).toBeVisible()
 })
 
 test("certificate editor preserves field edits across preview and reload", async ({
