@@ -94,6 +94,7 @@ import {
   extractWorkbookRows,
   getCameroonCountryReportTotals,
   parseCameroonCountryReportCsv,
+  parseKenyaCountryReportCsv,
   parseMappedCountryReportCsv,
   parseGabonCountryReportCsv,
   parseCountryReportUploadFile,
@@ -8632,6 +8633,14 @@ export function MonthEndCountryReconciliationView({
             activeCountryId === "cameroon"
               ? parseCameroonCountryReportCsv(csvText)
               : []
+          const kenyaRecords =
+            activeCountryId === "sck-kenya"
+              ? parseKenyaCountryReportCsv(csvText, { period: record?.period })
+              : []
+
+          if (kenyaRecords.length) {
+            return { records: kenyaRecords, antaserJournalDocument: undefined }
+          }
 
           if (gabonRecords.length) {
             return {
@@ -8789,11 +8798,19 @@ export function MonthEndCountryReconciliationView({
         activeCountryId === "cameroon"
           ? getCameroonCountryReportTotals(pastedReportText)
           : undefined
+      const kenyaRecords =
+        activeCountryId === "sck-kenya"
+          ? parseKenyaCountryReportCsv(pastedReportText, {
+              period: record.period,
+            })
+          : []
       const mappedRecords = shouldUseSavedMapping
         ? parseMappedCountryReportCsv(pastedReportText, savedMapping)
         : undefined
       const aiMappedRecords =
         !gabonRecords.length &&
+        !cameroonRecords.length &&
+        !kenyaRecords.length &&
         shouldUseSavedMapping &&
         savedMapping &&
         !mappedRecords?.length
@@ -8807,6 +8824,7 @@ export function MonthEndCountryReconciliationView({
       if (
         !gabonRecords.length &&
         !cameroonRecords.length &&
+        !kenyaRecords.length &&
         shouldUseSavedMapping &&
         !mappedRecords?.length &&
         !aiMappedRecords.length
@@ -8817,17 +8835,19 @@ export function MonthEndCountryReconciliationView({
       }
 
       await saveParsedCountryReportRecords({
-        parsedRecords: gabonRecords.length
-          ? gabonRecords
-          : cameroonRecords.length
-            ? cameroonRecords
-            : mappedRecords?.length
-              ? mappedRecords
-              : aiMappedRecords.length
-                ? aiMappedRecords
-                : parseCountryReportText(pastedReportText, {
-                    period: record.period,
-                  }),
+        parsedRecords: kenyaRecords.length
+          ? kenyaRecords
+          : gabonRecords.length
+            ? gabonRecords
+            : cameroonRecords.length
+              ? cameroonRecords
+              : mappedRecords?.length
+                ? mappedRecords
+                : aiMappedRecords.length
+                  ? aiMappedRecords
+                  : parseCountryReportText(pastedReportText, {
+                      period: record.period,
+                    }),
         sourceLabel: "Pasted report",
         cameroonCommissionTotal:
           activeCountryId === "cameroon"

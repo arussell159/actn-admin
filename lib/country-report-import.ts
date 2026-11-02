@@ -429,13 +429,19 @@ export function parseCameroonCountryReportCsv(csvText: string) {
   }
 
   const normalizedHeaders = headers.map(normalizeCsvHeader)
-  const invoiceIndex = findCsvColumn(headers, ["numero", "minumber", "besc", "mi"])
+  const invoiceIndex = findCsvColumn(headers, [
+    "numero",
+    "minumber",
+    "besc",
+    "mi",
+  ])
   const bookingIndex = findCsvColumn(headers, ["booking", "billoflading"])
   const amountIndex = normalizedHeaders.findIndex(
     (header) =>
       (header === "val" ||
         header === "valeur" ||
-        header.startsWith("valeur")) &&
+        header.startsWith("valeur") ||
+        header === "valeuro") &&
       !header.includes("date")
   )
   const commissionIndex = normalizedHeaders.findIndex(
@@ -448,7 +454,11 @@ export function parseCameroonCountryReportCsv(csvText: string) {
     "date",
   ])
 
-  if (invoiceIndex < 0 || amountIndex < 0 || commissionIndex < 0) {
+  if (
+    (invoiceIndex < 0 && bookingIndex < 0) ||
+    amountIndex < 0 ||
+    commissionIndex < 0
+  ) {
     return []
   }
 
@@ -459,14 +469,16 @@ export function parseCameroonCountryReportCsv(csvText: string) {
       return !rowText.includes("total amount") && !rowText.includes("total")
     })
     .map((row) => {
-      const invoiceNumber = row[invoiceIndex]?.trim() ?? ""
+      const invoiceNumber =
+        invoiceIndex >= 0 ? (row[invoiceIndex]?.trim() ?? "") : ""
+      const billOfLadingNumber =
+        bookingIndex >= 0 ? (row[bookingIndex]?.trim() ?? "") : ""
 
       return {
         invoiceNumber,
         ctnNumber: invoiceNumber,
-        billOfLadingNumber:
-          bookingIndex >= 0 ? (row[bookingIndex]?.trim() ?? "") : "",
-        reference: invoiceNumber,
+        billOfLadingNumber,
+        reference: invoiceNumber || billOfLadingNumber,
         amount: parseAmount(row[amountIndex]),
         secondaryAmount: parseAmount(row[commissionIndex]),
         sourceRowCount: 1,
@@ -476,7 +488,7 @@ export function parseCameroonCountryReportCsv(csvText: string) {
             : "",
       }
     })
-    .filter((record) => record.invoiceNumber)
+    .filter((record) => record.invoiceNumber || record.billOfLadingNumber)
 }
 
 export function getCameroonCountryReportTotals(
@@ -494,7 +506,8 @@ export function getCameroonCountryReportTotals(
     (header) =>
       (header === "val" ||
         header === "valeur" ||
-        header.startsWith("valeur")) &&
+        header.startsWith("valeur") ||
+        header === "valeuro") &&
       !header.includes("date")
   )
   const commissionIndex = normalizedHeaders.findIndex(
@@ -1635,10 +1648,63 @@ export function parseIvoryCoastStatementText(text: string) {
   )
 }
 
+// Kenya's approval export has no header and no invoice, CTN, or fee columns.
+// Recognize its date/status layout before mapping so the first shipment survives.
+export function parseKenyaCountryReportCsv(
+  csvText: string,
+  options: { period?: string } = {}
+): ParsedCountryReportRecord[] {
+  const rows = parseCsv(csvText)
+  const isoDate = (value: string | undefined) => {
+    const match = value
+      ?.trim()
+      .match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+\d{1,2}:\d{2})?$/)
+    return match
+      ? `${match[3]}-${match[2].padStart(2, "0")}-${match[1].padStart(2, "0")}`
+      : ""
+  }
+  if (
+    !rows.length ||
+    !rows.every(
+      (row) =>
+        isoDate(row[0]) &&
+        row[1]?.trim() &&
+        /^(approved|pending|rejected|cancelled)$/i.test(row[2]?.trim() ?? "") &&
+        isoDate(row[5]) &&
+        row.slice(6).every((cell) => !cell.trim())
+    )
+  )
+    return []
+
+  return rows.flatMap((row) => {
+    const transactionDate = isoDate(row[5])
+    if (options.period && !transactionDate.startsWith(`${options.period}-`))
+      return []
+    const billOfLadingNumber = row[1].trim()
+    return [
+      {
+        invoiceNumber: "",
+        ctnNumber: "",
+        billOfLadingNumber,
+        reference: billOfLadingNumber,
+        amount: 0,
+        sourceRowCount: 1,
+        status: row[2].trim(),
+        sellingDate: isoDate(row[0]),
+        transactionDate,
+      },
+    ]
+  })
+}
+
 export function parseCountryReportCsv(
   csvText: string,
   options: { period?: string } = {}
 ) {
+  const cameroonRecords = parseCameroonCountryReportCsv(csvText)
+  if (cameroonRecords.length) return cameroonRecords
+  const kenyaRecords = parseKenyaCountryReportCsv(csvText, options)
+  if (kenyaRecords.length) return kenyaRecords
   const rawRows = parseCsv(csvText)
   const creditsLedgerRecords = parseCreditsLedgerCsv(rawRows)
 
