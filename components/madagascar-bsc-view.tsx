@@ -23,6 +23,7 @@ import {
 } from "lucide-react"
 
 import { CertificateCorrections } from "@/components/certificate-corrections"
+import { MadagascarScreenshotDraft } from "@/components/madagascar-screenshot-draft"
 import { FileDropWorkspace } from "@/components/file-drop-workspace"
 import {
   CertificateForm,
@@ -3518,6 +3519,7 @@ export function MadagascarBscView({ section }: { section: Section }) {
         }
       >
         {section === "new" ? <NewRequest /> : null}
+        {section === "new" ? <MadagascarScreenshotDraft /> : null}
         {showCertificateBackButton ? (
           <div className="md:hidden">
             <SectionNavigation
