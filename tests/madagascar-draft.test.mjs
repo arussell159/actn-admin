@@ -63,6 +63,7 @@ test("draft PDF preserves review edits, goods and references and is visibly a dr
     .flat()
     .map((item) => item.str)
     .join(" ")
+  assert.equal(pages.length, 1)
   for (const value of [
     "AWB-12345",
     "Société Example - corrected",
@@ -76,8 +77,8 @@ test("draft PDF preserves review edits, goods and references and is visibly a dr
     assert.ok(text.includes(value), value)
 })
 
-test("long tables paginate, repeat headers, and keep text within the printable page", async () => {
-  const rows = Array.from({ length: 80 }, (_, i) => [
+test("dense goods tables fit one page and preserve all rows within the margins", async () => {
+  const rows = Array.from({ length: 12 }, (_, i) => [
     `REF${i}`,
     `Cargo row ${i} ` + "Long description ".repeat(8),
   ])
@@ -92,33 +93,109 @@ test("long tables paginate, repeat headers, and keep text within the printable p
           {
             title: "First consignment",
             columns: ["Reference", "Description"],
-            rows: rows.slice(0, 40),
+            rows: rows.slice(0, 6),
           },
           {
             title: "Second consignment",
             columns: ["Reference", "Description"],
-            rows: rows.slice(40),
+            rows: rows.slice(6),
           },
         ],
       },
     ],
   })
-  assert.ok(pages.length > 2)
+  assert.equal(pages.length, 1)
   const text = pages
     .flat()
     .map((item) => item.str)
     .join(" ")
-  for (let i = 0; i < 80; i++) assert.ok(text.includes(`REF${i}`))
+  for (let i = 0; i < 12; i++) assert.ok(text.includes(`REF${i}`))
   for (const page of pages) {
     assert.ok(page.some((item) => item.str === "Reference"))
     for (const item of page) {
-      assert.ok(item.transform[5] >= 24, `${item.str}: below footer`)
+      assert.ok(item.transform[5] >= 18, `${item.str}: below footer`)
       assert.ok(
-        item.transform[4] + item.width <= 558,
+        item.transform[4] + item.width <= 568,
         `${item.str}: beyond right margin`
       )
     }
   }
+})
+
+test("party boxes and financial fields remain intact on a single page", async () => {
+  const draft = {
+    reference: "PARTY-REFERENCE",
+    warnings: ["Confirm the customs reference."],
+    sections: [
+      {
+        title: "Participants",
+        fields: [],
+        tables: ["Exporter", "Exporter forwarder", "Importer"].map(
+          (title, i) => ({
+            title,
+            columns: ["Name", "Account NB", "Address", "Country"],
+            rows: [
+              [
+                `Company ${i} Limited`,
+                `ACCOUNT${i}`,
+                `${i} Example Road`,
+                i === 2 ? "Madagascar" : "South Africa",
+              ],
+            ],
+          })
+        ),
+      },
+      {
+        title: "Invoice",
+        fields: [
+          "Incoterm",
+          "Currency",
+          "FOB value",
+          "Freight",
+          "Insurance",
+          "Invoice value",
+        ].map((label, i) => ({ label, value: `VALUE${i}` })),
+        tables: [],
+      },
+    ],
+  }
+  const pages = await readPdf(draft)
+  assert.equal(pages.length, 1)
+  const text = pages[0].map((item) => item.str).join(" ")
+  for (let i = 0; i < 3; i++)
+    for (const value of [
+      `Company ${i} Limited`,
+      `ACCOUNT${i}`,
+      `${i} Example Road`,
+    ])
+      assert.ok(text.includes(value), value)
+  for (let i = 0; i < 6; i++) assert.ok(text.includes(`VALUE${i}`))
+})
+
+test("oversized drafts fail visibly instead of clipping content or adding pages", async () => {
+  await assert.rejects(
+    createMadagascarDraftPdf({
+      reference: "OVERSIZED",
+      warnings: [],
+      sections: [
+        {
+          title: "Goods",
+          fields: [],
+          tables: [
+            {
+              title: "Items",
+              columns: ["Reference", "Description"],
+              rows: Array.from({ length: 50 }, (_, i) => [
+                `REF${i}`,
+                "Long cargo description ".repeat(30),
+              ]),
+            },
+          ],
+        },
+      ],
+    }),
+    /too much detail for one readable A4 page/
+  )
 })
 
 test("oversized extraction output is rejected before PDF rendering", () => {

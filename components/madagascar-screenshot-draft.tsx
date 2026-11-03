@@ -211,8 +211,8 @@ export function MadagascarScreenshotDraft() {
       <CardHeader>
         <CardTitle>Madagascar draft certificate</CardTitle>
         <CardDescription>
-          Combine your three SGS application screenshots into one draft PDF for
-          customer review.
+          Combine your three SGS application screenshots into a one-page draft
+          PDF for customer review.
         </CardDescription>
       </CardHeader>
       <CardContent

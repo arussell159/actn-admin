@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test"
+import { readFile } from "node:fs/promises"
+import { PDFDocument } from "pdf-lib"
 import { mockStaffSession } from "./mobile-layout-fixtures"
 import { createMadagascarLayout } from "../../lib/certificate-layout/seed"
 
@@ -70,15 +72,13 @@ test("Madagascar screenshot draft reviews edits, downloads PDF, and invalidates 
     context.fillText("Synthetic screenshot", 5, 30)
     return canvas.toDataURL("image/png").split(",")[1]
   })
-  await card
-    .getByLabel("SGS application screenshots")
-    .setInputFiles(
-      [1, 2, 3].map((n) => ({
-        name: `system-${n}.png`,
-        mimeType: "image/png",
-        buffer: Buffer.from(base64, "base64"),
-      }))
-    )
+  await card.getByLabel("SGS application screenshots").setInputFiles(
+    [1, 2, 3].map((n) => ({
+      name: `system-${n}.png`,
+      mimeType: "image/png",
+      buffer: Buffer.from(base64, "base64"),
+    }))
+  )
   await card
     .getByRole("button", { name: "Read screenshots", exact: true })
     .click()
@@ -98,6 +98,10 @@ test("Madagascar screenshot draft reviews edits, downloads PDF, and invalidates 
   ])
   expect(download.suggestedFilename()).toBe("madagascar-bsc-draft-AWB-TEST.pdf")
   await download.saveAs(info.outputPath("draft.pdf"))
+  const downloadedPdf = await PDFDocument.load(
+    await readFile(info.outputPath("draft.pdf"))
+  )
+  expect(downloadedPdf.getPageCount()).toBe(1)
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth
